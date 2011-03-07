@@ -1,0 +1,14 @@
+*~
+output/
+valix.iso
+valix.img
+valixiso/
+config
+kernel.map
+buildlog
+buildenv/
+build/image_root/boot/kernel.elf
+.DS_Store
+*/*.DS_Store
+*/*/._*.*
+halinit.*

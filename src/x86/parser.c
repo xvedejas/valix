@@ -66,7 +66,7 @@ ParseNode *parseNodeNew(String value)
     node->value = value;
     return node;
 }
-
+/* Doesnt work
 void parseExpression(Token *token, ParseNode *tree)
 {
     ParseNode *node = parseNodeNew("expr");
@@ -84,3 +84,4 @@ void parseExpression(Token *token, ParseNode *tree)
         } break;
     }
 }
+*/

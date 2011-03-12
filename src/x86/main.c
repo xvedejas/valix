@@ -25,6 +25,7 @@
 #include <threading.h>
 #include <types.h>
 #include <parser.h>
+#include <video.h>
 
 const Size systemStackSize = 0x1000;
 
@@ -211,16 +212,14 @@ void kmain(u32 magic, MultibootStructure *multiboot, void *stackPointer)
     debugInstall();
     printf("Valix OS Alpha - Built on " __DATE__ " " __TIME__
         "\nCompiled with gcc " __VERSION__ "...\n");
-    //videoInstall(multiboot);
     mmInstall(multiboot);
     threadingInstall(stackPointer);
+    videoInstall(multiboot);
     //keyboardInstall();
     asm volatile("sti;");
     //FileCoreInit();
     
     spawn("parser", myThread);
-    
-    //spawn("@HAL Driver Initialization", InitializeHAL);
     
     return; /* kills kernel thread */
 }

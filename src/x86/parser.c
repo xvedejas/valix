@@ -69,18 +69,17 @@ ParseNode *parseNodeNew(String value)
 
 void parseExpression(Token *token, ParseNode *tree)
 {
-    ParseNode *node = parseNodeNew("expr");
+    ParseNode *node;
     switch (token->type)
     {
         case openParenToken:
         {
             nextToken();
-            parseExpression(token);
             parserRequire(token, token->type == closeParenToken, "Expected ')' token");
         } break;
         default:
         {
-            //parseValue(token);
+             node = parseNodeNew("expr");
         } break;
     }
 }

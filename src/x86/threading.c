@@ -16,6 +16,7 @@
  */
 
 #include <threading.h>
+#include <mm.h>
 
 #define saveStackRegs(thread) \
     __asm__ __volatile__("mov %%esp, %0" : "=r"(thread->esp)); \
@@ -42,7 +43,7 @@ Thread *getCurrentThread()
 void threadingInstall(void *stackPointer)
 {
     pidCount = 0;
-	Thread *kernelThread = malloc(sizeof(Thread));
+	Thread *kernelThread = kalloc(sizeof(Thread), NULL);
 	kernelThread->stack = (void*)(stackPointer - systemStackSize);
 	kernelThread->pid = pidCount++;
 	kernelThread->name = "Kernel Init Thread";
@@ -52,6 +53,7 @@ void threadingInstall(void *stackPointer)
 	 * highest priority to finish the initialization stage. */
 	kernelThread->next = kernelThread;
 	kernelThread->previous = kernelThread;
+    kernelThread->waitingNext = NULL;
 	currentThread = kernelThread;
 	threadCount = 1;
 	threadingLockObj = 0;
@@ -151,14 +153,17 @@ void schedule()
             /// then unlock the mutex or remove it from the waiting queue.
             if (thread == currentThread)
             {
-                assert(thread->next != thread, "No threads left!");
+                if (unlikely(thread->next == thread))
+                {
+                    printf("\n\nNo threads left! Idling.\n");
+                    ThreadFunc idle() { while (true) asm("hlt"); };
+                    spawn("Idle thread", idle);
+                }
                 assert(ticksUntilSwitch == 0, "Threading error");
             }
             thread->next->previous = thread->previous;
             thread->previous->next = thread->next;
-            if (likely(thread->pid > 0))
-                free(thread->stack);
-            free(thread);
+            freeThread(thread);
         }
     } while ((thread = thread->next) != currentThread);
     
@@ -174,8 +179,8 @@ void schedule()
 Thread *spawn(String name, ThreadFunc (*func)())
 {
     threadingLock();
-	Thread *thread = malloc(sizeof(Thread));
-	thread->stack = (Thread*)malloc(systemStackSize);
+	Thread *thread = (Thread*)kalloc(sizeof(Thread), NULL);
+	thread->stack = kalloc(systemStackSize, thread);
 	thread->pid = pidCount++;
 	thread->name = name;
 	thread->status = ready;
@@ -211,13 +216,14 @@ Mutex *mutexNew()
 {
     Mutex *mutex = malloc(sizeof(Mutex));
     mutex->locked = false;
+    mutex->multiplicity = 0;
     mutex->threadsWaiting = NULL;
     return mutex;
 }
 
 MutexReply mutexAcquireLock(Mutex *mutex)
 {
-    if (mutex->locked)
+    if (mutex->locked && mutex->thread != currentThread)
     {
         threadingLock();
         /// Todo: here detect potential deadlocks
@@ -235,6 +241,7 @@ MutexReply mutexAcquireLock(Mutex *mutex)
         currentThread->status = paused;
         while (currentThread->status == paused);
     }
+    mutex->multiplicity++;
     mutex->thread = currentThread;
     mutex->locked = true;
     return (MutexReply){ .accepted = true, .mutex = mutex };
@@ -242,16 +249,21 @@ MutexReply mutexAcquireLock(Mutex *mutex)
 
 void mutexReleaseLock(Mutex *mutex)
 {
-    assert(mutex->locked, "Attempted to free mutex that was not locked");
+    assert(mutex->locked && mutex->multiplicity, "Attempted to free mutex that was not locked");
     assert(mutex->thread == currentThread,
         "Attempted to free mutex that was not allocated to the current thread");
-    mutex->locked = false;
-    if (mutex->threadsWaiting != NULL)
+    mutex->multiplicity--;
+    if (!mutex->multiplicity)
     {
-        Thread *thread = mutex->threadsWaiting;
-        mutex->threadsWaiting = thread->waitingNext;
-        thread->status = running;
-        threadPromote(thread);
+        mutex->locked = false;
+        if (mutex->threadsWaiting != NULL)
+        {
+            Thread *thread = mutex->threadsWaiting;
+            mutex->threadsWaiting = thread->waitingNext;
+            thread->waitingNext = NULL;
+            thread->status = running;
+            threadPromote(thread);
+        }
     }
 }
 

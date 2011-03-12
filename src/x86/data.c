@@ -18,6 +18,7 @@
  */
 #include <data.h>
 #include <string.h>
+#include <mm.h>
 
 ///////////////////////////////
 // GenericSet Implementation //

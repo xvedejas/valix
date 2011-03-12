@@ -102,6 +102,8 @@ void threadsDebug();
 typedef struct mutex
 {
 	bool locked;
+    /* How many times it is locked */
+    u32 multiplicity;
 	/* Thread under control of this mutex */
 	Thread *thread;
 	/* Linked list of threads waiting on this mutex */

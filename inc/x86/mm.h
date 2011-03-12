@@ -17,6 +17,8 @@
 #define __mm_h__
 #include <main.h>
 
+struct thread;
+
 typedef struct
 {
     u32 size; // this structure size
@@ -63,10 +65,11 @@ typedef struct memoryHeader
 {
     u32 startMagic;
     Size size;
+    struct thread *thread;
     bool free;
     struct memoryHeader *previous, *next;
     u32 endMagic;
-    Size start[0];
+    Size start[0]; // use &start to get the memory directly after the header
 } MemoryHeader;
 
 #ifdef __release
@@ -80,11 +83,12 @@ extern Size memUsed();
 extern Size memFree();
 extern void mmInstall(MultibootStructure *multiboot);
 extern void *malloc(Size size);
+extern void *kalloc(Size size, struct thread *thread);
 extern void *calloc(Size amount, Size elementSize);
 extern void free(void *memory);
 extern void *realloc(void *memory, Size size);
 extern void meminfo();
 extern void coreDump();
-
+extern void freeThread(struct thread *thread);
 
 #endif

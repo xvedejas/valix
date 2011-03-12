@@ -32,6 +32,7 @@ void mmInstall(MultibootStructure *multiboot)
 {
     // Make sure we have mmap* fields
     assert(multiboot->flags & bit(6), "No memory found!");
+    
     // Fix offset of mmap struct
     MMapField *mmap = multiboot->mmapAddr;
 
@@ -94,6 +95,7 @@ void mmInstall(MultibootStructure *multiboot)
     }
     firstUsedBlock = NULL;
     mmInstalled = true;
+    mmLockMutex.multiplicity = 0;
     mmLockMutex.locked = false;
     mmLockMutex.threadsWaiting = NULL;
 }
@@ -177,8 +179,9 @@ void addToUsedList(MemoryHeader *block)
     firstUsedBlock = block;
 }
 
-void *malloc(Size size)
+void *kalloc(Size size, Thread *thread)
 {
+    /* Thread may be null */
     mutexAcquireLock(&mmLockMutex);
     
     assert(mmInstalled, "MM Fatal Error");
@@ -199,6 +202,7 @@ void *malloc(Size size)
             addToUsedList(currentBlock);
             sweep();
             mutexReleaseLock(&mmLockMutex);
+            currentBlock->thread = thread;
             return (void*)&currentBlock->start;
         }
         else if (currentBlock->size > size)
@@ -213,7 +217,6 @@ void *malloc(Size size)
             newBlock->previous = NULL;
             newBlock->next = NULL;
             newBlock->endMagic = mmMagic;
-            newBlock->free = true;
             addToFreeList(newBlock);
 
             assert(newBlock->size + size + sizeof(MemoryHeader) ==
@@ -225,6 +228,7 @@ void *malloc(Size size)
 
             sweep();
             mutexReleaseLock(&mmLockMutex);
+            currentBlock->thread = thread;
             return (void*)&currentBlock->start;
         }
         else // Block not large enough. Next.
@@ -232,6 +236,11 @@ void *malloc(Size size)
     }
     panic("MM Fatal Error");
     return NULL; // here to make compiler happy
+}
+
+void *malloc(Size size)
+{
+    return kalloc(size, getCurrentThread());
 }
 
 void *realloc(void *memory, Size size)
@@ -271,10 +280,10 @@ void *realloc(void *memory, Size size)
         }
         /* else, not big enough, continue */
     }
-    mutexReleaseLock(&mmLockMutex);
     void *new_mem = malloc(size);
     memcpy(new_mem, memory, size);
     free(memory);
+    mutexReleaseLock(&mmLockMutex);
     return new_mem;
 }
 
@@ -300,13 +309,14 @@ void free(void *memory)
     sweep();
 
     MemoryHeader *header = (MemoryHeader*)(memory - sizeof(MemoryHeader));
+    
     if (unlikely(header->startMagic != mmMagic))
     {   
         printf("Incorrect freeing of unallocated pointer at %x.. ignoring\n");
         mutexReleaseLock(&mmLockMutex);
         return;
     }
-
+    
     removeFromUsedList(header);
     header->free = true;
     addToFreeList(header);
@@ -342,6 +352,32 @@ void free(void *memory)
     }
 
     sweep();
+    mutexReleaseLock(&mmLockMutex);
+}
+
+void freeThread(Thread *thread)
+{
+    mutexAcquireLock(&mmLockMutex);
+    if (likely(thread->pid > 0))
+        free(thread->stack);
+    /* free all blocks left allocated to thread and print warning that
+     * they have not been properly freed at thread end. */
+    MemoryHeader *currentBlock = firstUsedBlock;
+    while (currentBlock != NULL)
+    {
+        if (currentBlock->thread == thread)
+        {
+            printf("\nDying thread '%s' failed to free memory at %x, size %x, freeing\n",
+                thread->name, &currentBlock->start, currentBlock->size);
+            free(&currentBlock->start);
+            currentBlock = firstUsedBlock;
+        }
+        else
+        {
+            currentBlock = currentBlock->next;
+        }
+    }
+    free(thread);
     mutexReleaseLock(&mmLockMutex);
 }
 
@@ -392,6 +428,7 @@ Size memFree()
 
 void _sweep() // quick tests
 {
+    mutexAcquireLock(&mmLockMutex);
     MemoryHeader *currentBlock = firstFreeBlock;
     // if assert fails on next line, chances are you used malloc() before
     // the memory manager was initialized.
@@ -399,6 +436,7 @@ void _sweep() // quick tests
     assert(currentBlock->previous == NULL, "Sweep failed");
     do
     {
+        assert(currentBlock->free, "Sweep failed");
         assert(currentBlock->startMagic == mmMagic, "Sweep failed");
 		assert(currentBlock->endMagic == mmMagic, "Sweep failed");
         assert((Size)&currentBlock->start ==
@@ -411,11 +449,13 @@ void _sweep() // quick tests
     assert(currentBlock->previous == NULL, "Sweep failed");
     do
     {
+        assert(!currentBlock->free, "Sweep failed");
         assert(currentBlock->startMagic == mmMagic, "Sweep failed");
 		assert(currentBlock->endMagic == mmMagic, "Sweep failed");
         assert((Size)&currentBlock->start ==
             (Size)currentBlock + sizeof(MemoryHeader), "Sweep failed");
     } while ((currentBlock = currentBlock->next) >= (MemoryHeader*)0x100000);
+    mutexReleaseLock(&mmLockMutex);
 }
 
 void coreDump()
@@ -427,13 +467,13 @@ void coreDump()
 	printf(" >> FREE BLOCK LIST << \n");
 	do
     {
-        printf("MemoryHeader @   %X\n", (Size)block);
-		printf("	start =      %X\n", (Size)&block->start);
-		printf("	size =       %X\n",      block->size, block->size);
-		printf("	startMagic = %X\n",      block->startMagic);
-		printf("	endMagic =   %X\n",      block->endMagic);
-		printf("	previous =   %X\n", (Size)block->previous);
-		printf("	next =       %X\n", (Size)block->next);
+        printf("MemoryHeader @   %x\n", (Size)block);
+		printf("	start =      %x\n", (Size)&block->start);
+		printf("	size =       %x\n",      block->size, block->size);
+		printf("	startMagic = %x\n",      block->startMagic);
+		printf("	endMagic =   %x\n",      block->endMagic);
+		printf("	previous =   %x\n", (Size)block->previous);
+		printf("	next =       %x\n", (Size)block->next);
 
 		block = block->next;
 	} while (block);
@@ -445,13 +485,13 @@ void coreDump()
 	printf(" >> USED BLOCK LIST << \n");
 	do
     {
-        printf("MemoryHeader @   %X\n", (Size)block);
-		printf("	start =      %X\n", (Size)&block->start);
-		printf("	size =       %X\n",      block->size, block->size);
-		printf("	startMagic = %X\n",      block->startMagic);
-		printf("	endMagic =   %X\n",      block->endMagic);
-		printf("	previous =   %X\n", (Size)block->previous);
-		printf("	next =       %X\n", (Size)block->next);
+        printf("MemoryHeader @   %x\n", (Size)block);
+		printf("	start =      %x\n", (Size)&block->start);
+		printf("	size =       %x\n",      block->size, block->size);
+		printf("	startMagic = %x\n",      block->startMagic);
+		printf("	endMagic =   %x\n",      block->endMagic);
+		printf("	previous =   %x\n", (Size)block->previous);
+		printf("	next =       %x\n", (Size)block->next);
 
 		block = block->next;
 	} while (block);

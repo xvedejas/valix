@@ -48,6 +48,7 @@ typedef unsigned int   u32;
 typedef          int   s32;
 typedef unsigned long  u64;
 typedef          long  s64;
+typedef          long long int smax;
 typedef unsigned long long int umax;
 typedef unsigned int   Size; /* processor word */
 typedef enum { false, true } bool;
@@ -74,7 +75,6 @@ extern void halt();
 extern void reboot();
 extern void gdtInstall(void);
 extern void timerInstall();
-
-#include <mm.h>
+extern void quickRestart();
 
 #endif

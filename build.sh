@@ -122,14 +122,14 @@ case $OUTPUT_TYPE in
     grub-mkrescue --modules="iso9660,terminal,gfxterm,vbe,tga" \
         --output=${IMAGE_NAME} output/image_root || error "ISO failed to build"
     notice_build "Build complete"
-    echo -e "Use \033[1mqemu -cdrom ${IMAGE_NAME} -serial stdio\033[0m to run"
+    echo -e "Use \033[1mqemu -cdrom ${IMAGE_NAME} -serial stdio\033[0m to run , or use this script with the run-qemu argument"
   ;;
   "img" )
     notice_build "Building Image"
     grub-mkrescue --modules="fat,terminal,gfxterm,vbe,tga" \
         --output=${IMAGE_NAME} output/image_root || error "Img failed to build"
     notice_build "Build complete"
-    echo -e "Use \033[1mqemu -hda ${IMAGE_NAME} -serial stdio\033[0m to run"
+    echo -e "Use \033[1mqemu -hda ${IMAGE_NAME} -serial stdio\033[0m to run, or use this script with the run-qemu argument"
   ;;
   * ) error "Unknown output type";;
 esac

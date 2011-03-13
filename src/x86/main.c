@@ -26,6 +26,7 @@
 #include <types.h>
 #include <parser.h>
 #include <video.h>
+#include <pci.h>
 
 const Size systemStackSize = 0x1000;
 
@@ -200,6 +201,54 @@ ThreadFunc myThread()
     parse();
 }
 
+void pciinfo()
+{
+    u16 bus, dev, func;
+    for (bus = 0; bus < 256; bus++)
+    {
+        for (dev = 0; dev < 32; dev++)
+        {
+            for (func = 0; func < 8; func++)
+            {
+                if (!pciCheckDeviceExists(bus, dev, func))
+                    continue;
+
+                // Get the basic PCI header information
+                PciConfigHeaderBasic header = pciGetBasicConfigHeader(bus, dev, func);
+
+                // ONLY mess with the bars for header type 0
+                if (header.headerType)
+                    continue;
+
+                printf("\n[%x", (void*)(u32)header.vendorId);
+                printf(":%x] ", (void*)(u32)header.deviceId);
+                printf("rev: %u ", (void*)(u32)header.revisionId);
+                printf("class: %x\n\n", (void*)(u32)header.classBase);
+
+                u8 bar;
+                printf("BAR         Type      Value\n");
+                printf("------------------------------------------------------------\n");
+                for (bar = 0; bar <= 5; bar++)
+                {
+                    if (pciGetBarValue(bus, dev, func, bar) == 0)
+                        continue;
+
+                    printf("%u  ", bar);
+                    if (pciGetBarType(bus, dev, func, bar) == pciMemory)
+                        printf("Memory  ");
+                    else
+                        printf("I/O     ");
+
+                    printf("%x", pciGetBarValue(bus, dev, func, bar));
+
+                    printf("\n");
+                }
+            }
+        }
+    }
+    printf("\nDone.\n");
+}
+
 /* This is the very first C function to be called. Here we initialize the various
  * parts of the system with *Install() functions. */
 void kmain(u32 magic, MultibootStructure *multiboot, void *stackPointer)
@@ -219,7 +268,8 @@ void kmain(u32 magic, MultibootStructure *multiboot, void *stackPointer)
     asm volatile("sti;");
     //FileCoreInit();
     
-    spawn("parser", myThread);
+    //spawn("parser", myThread);
+    pciinfo();
     
     return; /* kills kernel thread */
 }

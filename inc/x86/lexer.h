@@ -61,25 +61,8 @@ typedef enum
     colonToken,        // :
     semiToken,         // ;
 	/* symbols */
-    alnumToken,
-    nonalnumToken,
-    /* parser use */
-    alnumlistToken,
-    listToken,
-    argdefToken,
-    exprlistToken,
-    procedureToken,
-    memberAccessToken,
-    callToken,
-    callArgToken,
-    sliceToken,
-    sliceArgToken,
-    actionToken,
-    stmtToken,
-    forvarToken,
-    exprToken,
-    superclassToken,
-    argToken
+    keywordToken,
+    specialCharToken,
 } TokenType;
 
 extern String tokenTypeNames[];

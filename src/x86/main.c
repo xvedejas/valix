@@ -160,7 +160,7 @@ void _panic(String file, u32 line)
 {
     printf("\n\nPineapple pieces in brine...\n");
     printf("File: '%s'\nLine: %i\nThread: %s %i\n", file, line, getCurrentThread()->name, getCurrentThread()->pid);
-    halt();
+    endThread();
 }
 
 void timerHandler(Regs *r)
@@ -268,8 +268,8 @@ void kmain(u32 magic, MultibootStructure *multiboot, void *stackPointer)
     asm volatile("sti;");
     //FileCoreInit();
     
-    //spawn("parser", myThread);
-    pciinfo();
+    spawn("parser", myThread);
+    //pciinfo();
     
     return; /* kills kernel thread */
 }

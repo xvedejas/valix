@@ -28,6 +28,6 @@ typedef struct
     
 } ParserInstance;
 
-void parse();
+ParseNode *parse();
 
 #endif

@@ -61,8 +61,8 @@ String tokenTypeNames[] =
     "colonToken",        // :
     "semiToken",         // ;
 	/* symbols */
-    "alnumToken",
-    "nonalnumToken",
+    "keywordToken",
+    "specialCharToken",
 };
 
 void lexerError(String message)
@@ -353,14 +353,14 @@ Token *lex(String source)
                     switch (data[0])
                     {
                         case 'a' ... 'z': case 'A' ... 'Z':
-                            token->type = alnumToken;
+                            token->type = keywordToken;
                         break;
                         default:
-                            token->type = nonalnumToken;
+                            token->type = specialCharToken;
                         break;
                     }
                 }
-                if (token->type == alnumToken || token->type == nonalnumToken)
+                if (token->type == keywordToken || token->type == specialCharToken)
                 {
                     token->data = data;
                 } else /* token->type is some keyword type, don't need data */

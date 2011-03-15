@@ -146,6 +146,7 @@ void addToFreeList(MemoryHeader *block)
 
 void removeFromUsedList(MemoryHeader *block)
 {
+    /* This assert tends to fire if modifying mm structures while looping through them */
     assert(!block->free, "MM Fatal Error");
 
     if (block->previous == NULL)
@@ -310,9 +311,17 @@ void free(void *memory)
 
     MemoryHeader *header = (MemoryHeader*)(memory - sizeof(MemoryHeader));
     
+    if (unlikely(header->free))
+    {
+        //printf("memory at %x already freed.\n", memory);
+        return;
+    }
+    
     if (unlikely(header->startMagic != mmMagic))
     {   
-        printf("Incorrect freeing of unallocated pointer at %x.. ignoring\n");
+        /* This is not a bad thing, just happens when the memory given to be
+         * freed is in the stack or something, not handled by the memory manager */
+        //printf("Incorrect freeing of unallocated pointer at %x.. ignoring\n", memory);
         mutexReleaseLock(&mmLockMutex);
         return;
     }
@@ -365,17 +374,14 @@ void freeThread(Thread *thread)
     MemoryHeader *currentBlock = firstUsedBlock;
     while (currentBlock != NULL)
     {
+        MemoryHeader *next = currentBlock->next;
         if (currentBlock->thread == thread)
         {
             printf("\nDying thread '%s' failed to free memory at %x, size %x, freeing\n",
                 thread->name, &currentBlock->start, currentBlock->size);
             free(&currentBlock->start);
-            currentBlock = firstUsedBlock;
         }
-        else
-        {
-            currentBlock = currentBlock->next;
-        }
+        currentBlock = next;
     }
     free(thread);
     mutexReleaseLock(&mmLockMutex);

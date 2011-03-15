@@ -26,24 +26,11 @@ String tokenTypeNames[] =
 {   "undefToken",
     "EOFToken",
 	/* keywords */
-	"throwToken",
-	"tryToken",
-	"catchToken",
-    "classToken",
-    "usingToken",
-    "defToken",
-    "getToken",
-    "setToken",
-    "newToken",
     "returnToken",
     "yieldToken",
     "importToken",
     "breakToken",
     "continueToken",
-    "ifToken",
-    "elseToken",
-	"whileToken",
-	"forToken",
     /* Builtin types */
     "stringToken", // abc
     "numToken",    // 12.34
@@ -276,74 +263,19 @@ Token *lex(String source)
                             token->type = breakToken;
                     break;
                     case 'c':
-                        // class
-                        if (unlikely(strcmp(data + 1, "lass") == 0))
-                            token->type = classToken;
                         // continue
-                        else if (unlikely(strcmp(data + 1, "ontinue") == 0))
+                        if (unlikely(strcmp(data + 1, "ontinue") == 0))
                             token->type = continueToken;
-                        // catch
-                        else if (unlikely(strcmp(data + 1, "atch") == 0))
-                            token->type = catchToken;
-                    break;
-                    case 'd':
-                        // def
-                        if (unlikely(strcmp(data + 1, "ef") == 0))
-                            token->type = defToken;
-                    break;
-                    case 'e':
-                        // else
-                        if (unlikely(strcmp(data + 1, "lse") == 0))
-                            token->type = elseToken;
-                    break;
-                    case 'g':
-                        // get
-                        if (unlikely(strcmp(data + 1, "et") == 0))
-                            token->type = getToken;
                     break;
                     case 'i':
-                        // if
-                        if (unlikely(strcmp(data + 1, "f") == 0))
-                            token->type = ifToken;
                         // import
-                        else if (unlikely(strcmp(data + 1, "mport") == 0))
+                        if (unlikely(strcmp(data + 1, "mport") == 0))
                             token->type = importToken;
-                    break;
-                    case 'n':
-                        // new
-                        if (unlikely(strcmp(data + 1, "ew") == 0))
-                            token->type = newToken;
-                        // none
-                        else if (unlikely(strcmp(data + 1, "one") == 0))
-                            token->type = noneToken;
                     break;
                     case 'r':
                         // return
                         if (unlikely(strcmp(data + 1, "eturn") == 0))
                             token->type = returnToken;
-                    break;
-                    case 's':
-                        // set
-                        if (unlikely(strcmp(data + 1, "et") == 0))
-                            token->type = setToken;
-                    break;
-                    case 't':
-                        // throw
-                        if (unlikely(strcmp(data + 1, "hrow") == 0))
-                            token->type = throwToken;
-                        // try
-                        else if (unlikely(strcmp(data + 1, "ry") == 0))
-                            token->type = tryToken;
-                    break;
-                    case 'u':
-                        // using
-                        if (unlikely(strcmp(data + 1, "sing") == 0))
-                            token->type = usingToken;
-                    break;
-                    case 'w':
-                        // while
-                        if (unlikely(strcmp(data + 1, "hile") == 0))
-                            token->type = whileToken;
                     break;
                     default:
                     break;

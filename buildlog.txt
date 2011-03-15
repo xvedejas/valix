@@ -250,3 +250,11 @@ flat assembler  version 1.68  (16384 kilobytes memory)
 1 passes, 615 bytes.
 flat assembler  version 1.68  (16384 kilobytes memory)
 1 passes, 267 bytes.
+flat assembler  version 1.68  (16384 kilobytes memory)
+2 passes, 823 bytes.
+flat assembler  version 1.68  (16384 kilobytes memory)
+3 passes, 2370 bytes.
+flat assembler  version 1.68  (16384 kilobytes memory)
+1 passes, 615 bytes.
+flat assembler  version 1.68  (16384 kilobytes memory)
+1 passes, 267 bytes.

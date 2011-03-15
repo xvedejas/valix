@@ -26,24 +26,11 @@ typedef enum
     undefToken,        // throws error, make sure this is TokenType == 0
     EOFToken,
     /* keywords */
-	throwToken,
-	tryToken,
-	catchToken,
-    classToken,
-    usingToken,
-    defToken,
-    getToken,
-    setToken,
-    newToken,
     returnToken,
     yieldToken,
     importToken,
     breakToken,
     continueToken,
-    ifToken,
-    elseToken,
-	whileToken,
-	forToken,
     /* Builtin types */
     stringToken, // "abc"
     numToken,    // 12.34

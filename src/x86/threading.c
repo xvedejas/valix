@@ -92,6 +92,10 @@ void switchThreads()
     if (unlikely(destination == currentThread)) /* No thread to switch to. Return. */
         return;
     
+    /// todo: note the available stack size remaining for the thread. If the
+    /// amount is unusually low, show a warning. If the stack size is zero or
+    /// negative, panic.
+    
     switch (destination->status)
     {
         case ready:

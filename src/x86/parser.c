@@ -42,47 +42,38 @@ expr  :: value (Keyword | SpecialCharacter value | (Keyword ':' value)+)
 stmt  :: expr '.'
       :: keyword '=' expr '.'
 */
- 
-void parserRequire(Token *token, bool condition, String error)
-{
-    if (unlikely(!condition))
-    {
-        printf("\n [[ Parser Error ]]\n");
-        printf("Token: %s Data: %s Line: %i Col: %i\n", tokenTypeNames[token->type], token->data, token->line, token->col);
-        printf(error);
-        endThread();
-    }
-}
 
-void parseTreeDump(ParseNode *root, u32 depth)
+/* Note that most function are defined as nested functions, that is they are
+ * declared entirely within the scope of parse(). This allows us to use
+ * variables in parse() that are either on the stack or maybe in registers
+ * between all the functions. This means no lock is needed and no values must
+ * be passed as parameters to use those variables in a thread-safe way. */
+String parse(Token *first)
 {
-    int i;
-    for (i = 0; i < depth; i++)
-        printf(" ");
-    printf("%s\n", root->value);
-    if (root->left != NULL)
-        parseTreeDump(root->left, depth + 1);
-    if (root->right != NULL)
-        parseTreeDump(root->right, depth + 1);
-}
-
-ParseNode *parseNodeNew(String value)
-{
-    ParseNode *node = malloc(sizeof(ParseNode));
-    node->value = value;
-    node->left = NULL;
-    node->right = NULL;
-    return node;
-}
-
-ParseNode *parse()
-{
+    StringBuilder *output = stringBuilderNew("");
     Token *curToken;
     
-    auto ParseNode *parseStmt();
-    auto ParseNode *parseExpr();
-    auto ParseNode *parseValue();
-    auto ParseNode *parseProcedure();
+    auto void parseStmt();
+    auto void parseExpr();
+    auto void parseValue();
+    auto void parseProcedure();
+    
+    void parserRequire(bool condition, String error)
+    {
+        if (unlikely(!condition))
+        {
+            printf("\n [[ Parser Error ]]\n");
+            printf("Token: %s Data: %s Line: %i Col: %i\n",
+                tokenTypeNames[curToken->type], curToken->data, curToken->line, curToken->col);
+            printf(error);
+            endThread();
+        }
+    }
+    
+    void out(String val)
+    {
+        stringBuilderAppend(output, val);
+    }
     
     void nextToken()
     {
@@ -96,202 +87,170 @@ ParseNode *parse()
         return token;
     }
     
-    ParseNode *parseProcedure()
+    void parseProcedure()
     {
-        ParseNode *node = parseStmt();
+        parseStmt();
         while (curToken->type == stopToken)
         {
             nextToken();
             if (curToken->type == EOFToken)
-                return node;
-            ParseNode *replaceNode = parseNodeNew("<statement>");
-            replaceNode->left = node;
-            replaceNode->right = parseStmt();
-            node = replaceNode;
+                return;
+            parseStmt();
         }
-        return node;
+        return;
     }
     
-    ParseNode *parseStmt()
+    void parseStmt()
     {
+        out("STMT\n");
         if (unlikely(curToken->type == returnToken))
         {
-            ParseNode *node = parseNodeNew("<return>");
             nextToken();
-            node->left = parseExpr();
-            return node;
+            parseExpr();
+            out("RET\n");
         }
         else if (unlikely(lookahead(1)->type == eqToken))
         {
-            ParseNode *node = parseNodeNew("<equal>");
-            node->left = parseValue();
-            parserRequire(curToken, curToken->type == eqToken, "Expected '=' token");
+            parseValue();
+            parserRequire(curToken->type == eqToken, "Expected '=' token");
             nextToken();
-            node->right = parseExpr(); 
-            return node;
+            parseExpr();
+            out("EQ\n");
         }
         else
-        {
-            return parseExpr();
-        }
-        return NULL;
+            parseExpr();
+        return;
     }
     
-    ParseNode *parseMsg()
+    void parseMsg()
     {
         String keywords[8];
         u32 i = 0;
-        ParseNode *node = NULL;
-        
-        parserRequire(curToken, curToken->type == keywordToken, "Expected keyword");
+        parserRequire(curToken->type == keywordToken, "Expected keyword");
         while (curToken->type == keywordToken)
         {
-            parserRequire(curToken, i < 8, "More than eight keywords in one message");
+            parserRequire(i < 8, "More than eight keywords in one message");
             keywords[i++] = curToken->data;
             nextToken();
             if (curToken->type != colonToken) /* Binary message */
             {
-                parserRequire(curToken, i == 1, "Expected keyword, not binary message. Maybe use parentheses to show you want to use a binary message?");
-                node->value = keywords[0];
-                return node;
+                parserRequire(i == 1, "Expected keyword, not binary message. Maybe use parentheses to show you want to use a binary message?");
+                out(keywords[0]);
+                out("\n");
+                return;
             }
             nextToken();
-            
-            ParseNode *replaceNode = parseNodeNew("<argument>");
-            replaceNode->left = node;
-            replaceNode->right = parseValue();
-            node = replaceNode;
+            parseValue();
         }        
-        u32 j, len = 0;
+        u32 j;
         for (j = 0; j < i; j++)
         {
-            len += strlen(keywords[j]) + 1;
+            out(keywords[j]);
+            out(":");
         }
-        String messageName = calloc(len, sizeof(char));
-        for (j = 0; j < i; j++)
-        {
-            strcat(messageName, keywords[j]);
-            strcat(messageName, ":");
-        }
-        ParseNode *message = parseNodeNew("<message>");
-        message->left = parseNodeNew(messageName);
-        message->right = node;
-        return message;
+        out("\n");
+        return;
     }
     
-    ParseNode *parseExpr()
+    void parseExpr()
     {
-        ParseNode *node = parseValue();
         while (curToken->type == specialCharToken || curToken->type == keywordToken)
         {
             if (curToken->type == keywordToken)
-            {
-                ParseNode *replaceNode = parseNodeNew("<expression>");
-                replaceNode->left = node;
-                replaceNode->right = parseMsg();
-                node = replaceNode;
-            }
+                parseMsg();
             else /* specialCharToken */
             {
-                ParseNode *binaryMsg = parseNodeNew("<message>");
-                binaryMsg->left = parseNodeNew(curToken->data);;
+                String data = curToken->data;
                 nextToken();
-                binaryMsg->right = parseValue();
-                ParseNode *replaceNode = parseNodeNew("<expression>");
-                replaceNode->left = node;
-                replaceNode->right = binaryMsg;
-                node = replaceNode;
+                parseValue();
+                out(data);
+                out("\n");
             }
         }
-        return node;
+        return;
     }
     
-    ParseNode *parseValue()
+    void parseValue()
     {
         switch (curToken->type)
         {
             case stringToken:
+            {
+                out("\"");
+                out(curToken->data);
+                out("\"\n");
+                nextToken();
+                return;
+            } break;
             case numToken:
             case keywordToken:
             {
-                ParseNode *node = parseNodeNew(curToken->data);
+                out(curToken->data);
+                out("\n");
                 nextToken();
-                return node;
+                return;
             } break;
             case openBracketToken: /* '[' denotes a list  */
             {
+                out("beginList\n");
                 nextToken();
-                ParseNode *node = parseValue();
                 while (curToken->type == commaToken)
                 {
                     nextToken();
-                    parserRequire(curToken, curToken->type != EOFToken, "Unexpected EOF Token");
-                    ParseNode *replaceNode = parseNodeNew("<listitem>");
-                    replaceNode->left = node;
-                    replaceNode->right = parseValue();
-                    node = replaceNode;
+                    parserRequire(curToken->type != EOFToken, "Unexpected EOF Token");
+                    parseValue();
                 }
-                parserRequire(curToken, curToken->type == closeBracketToken, "Expected ']' token");
-                return node;
+                parserRequire(curToken->type == closeBracketToken, "Expected ']' token");
+                nextToken();
+                out("endList\n");
+                return;
             } break;
             case openBraceToken: /* '{' denotes a block */
             {
+                out("beginBlock\n");
                 nextToken();
-                parserRequire(curToken, curToken->type == keywordToken, "Expected keyword token");
-                ParseNode *node = parseNodeNew(curToken->data);
+                parserRequire(curToken->type == keywordToken, "Expected keyword token");
+                out(curToken->data);
+                out("\n");
                 nextToken();
                 while (curToken->type != colonToken)
                 {
-                    parserRequire(curToken, curToken->type == commaToken, "Expected ',' token");
+                    parserRequire(curToken->type == commaToken, "Expected ',' token");
                     nextToken();
-                    parserRequire(curToken, curToken->type == keywordToken, "Expected keyword token");
-                    ParseNode *replaceNode = parseNodeNew("<argdef>");
-                    replaceNode->left = node;
-                    replaceNode->right = parseNodeNew(curToken->data);
-                    node = replaceNode;
+                    parserRequire(curToken->type == keywordToken, "Expected keyword token");
+                    out(curToken->data);
+                    out("\n");
                     nextToken();
                 }
+                out("endArgDef\n");
                 nextToken();
-                ParseNode *block = parseNodeNew("<block>");
-                block->left = node;
-                block->right = parseProcedure();
-                return block;
+                parseProcedure();
+                parserRequire(curToken->type == closeBraceToken, "Expected ',' token");
+                nextToken();
+                out("endBlock\n");
+                return;
             } break;
             case openParenToken:
             {
                 nextToken();
-                ParseNode *node = parseExpr();
-                parserRequire(curToken, curToken->type == closeParenToken, "Expected ')' token");
+                parseExpr();
+                parserRequire(curToken->type == closeParenToken, "Expected ')' token");
                 nextToken();
-                return node;
+                return;
             } break;
             case EOFToken:
             {
-                parserRequire(curToken, false, "Unexpected EOF Token");
+                parserRequire(false, "Unexpected EOF Token");
             } break;
             default:
             break;
         }
-        parserRequire(curToken, false, "Expected expression");
+        parserRequire(false, "Expected expression");
         
-        return NULL;
+        return;
     }
-    
-    void parseNodeDel(ParseNode *node)
-    {
-        if (node->left != NULL)
-            parseNodeDel(node->left);
-        if (node->right != NULL)
-            parseNodeDel(node->right);
-        free(node->value);
-        free(node);
-    }
-    
-    Token *first = lex("a = {x, y, z : return x * y * z }.");
     curToken = first;
-    ParseNode *tree = parseProcedure();
-    parseTreeDump(tree, 0);
-    parseNodeDel(tree);
+    parseProcedure();
     Token *next;
     do
     {
@@ -300,5 +259,5 @@ ParseNode *parse()
         if (first->data != NULL)
             free(first->data);
     } while ((first = next) != NULL);
-    return NULL;
+    return stringBuilderToString(output);
 }

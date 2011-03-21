@@ -152,4 +152,23 @@ void *arrayListPop(ArrayList *list, Size index);
 void *arrayListRemove(ArrayList *list, void *value);
 bool arrayListHas(ArrayList *list, void *value);
 
+/////////////////////////////
+// StringBuilder Interface //
+/////////////////////////////
+
+typedef struct
+{
+    String s;
+    Size size;
+    Size capacity;
+} StringBuilder;
+
+extern StringBuilder *stringBuilderNew(String initial);
+/* note: Del will destroy both the string builder and its contents */
+extern void stringBuilderDel(StringBuilder *sb);
+extern void stringBuilderAppend(StringBuilder *sb, String s);
+extern void stringBuilderMerge(StringBuilder *sb1, StringBuilder *sb2);
+/* note: ToString will destroy the string builder! */
+extern String stringBuilderToString(StringBuilder *sb);
+
 #endif

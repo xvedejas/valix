@@ -27,6 +27,8 @@
 #include <parser.h>
 #include <video.h>
 #include <pci.h>
+#include <lexer.h>
+#include <vm.h>
 
 const Size systemStackSize = 0x1000;
 
@@ -198,7 +200,9 @@ void timerInstall()
 
 ThreadFunc myThread()
 {
-    parse();
+    String bytecode = parse(lex("a = MyClass new. a define: \"method\" as: { x, y : x * y }."));
+    printf(bytecode);
+    free(bytecode);
 }
 
 void pciinfo()
@@ -264,6 +268,7 @@ void kmain(u32 magic, MultibootStructure *multiboot, void *stackPointer)
     mmInstall(multiboot);
     threadingInstall(stackPointer);
     videoInstall(multiboot);
+    vmInstall();
     //keyboardInstall();
     asm volatile("sti;");
     //FileCoreInit();

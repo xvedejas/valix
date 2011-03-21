@@ -365,3 +365,51 @@ void genericSetDebug(GenericSet *set)
         } while ((item = item->next) != NULL);
     }
 }
+
+//////////////////////////////////
+// StringBuilder Implementation //
+//////////////////////////////////
+
+StringBuilder *stringBuilderNew(String initial)
+{
+    StringBuilder *sb = malloc(sizeof(StringBuilder));
+    sb->size = strlen(initial);
+    sb->capacity = sb->size * 2;
+    sb->s = malloc(sb->capacity * sizeof(char));
+    strcpy(sb->s, initial);
+    return sb;
+}
+
+void stringBuilderDel(StringBuilder *sb)
+{
+    free(sb->s);
+    free(sb);
+}
+
+void stringBuilderAppend(StringBuilder *sb, String s)
+{
+    Size len = strlen(s);
+    if (sb->size + len > sb->capacity)
+    {
+        sb->capacity = (sb->size + len) * 2;
+        sb->s = realloc(sb->s, sizeof(char) * sb->capacity);
+    }
+    strcat(sb->s, s);
+    sb->size += len;
+}
+
+void stringBuilderMerge(StringBuilder *sb1, StringBuilder *sb2)
+{
+    stringBuilderAppend(sb2, "\0");
+    stringBuilderAppend(sb1, sb2->s);
+    stringBuilderDel(sb2);
+}
+
+/* Delete the string builder; get a string result */
+String stringBuilderToString(StringBuilder *sb)
+{
+    stringBuilderAppend(sb, "\0");
+    String s = sb->s;
+    free(sb);
+    return s;
+}

@@ -299,7 +299,7 @@ void free(void *memory)
     mutexAcquireLock(&mmLockMutex);
     if (unlikely(memory == NULL))
     {
-        printf("Attempted to free NULL pointer...ignoring. ");
+        printf("Attempted to free NULL pointer...ignoring.\n");
         mutexReleaseLock(&mmLockMutex);
 		return;
 	}
@@ -311,18 +311,19 @@ void free(void *memory)
 
     MemoryHeader *header = (MemoryHeader*)(memory - sizeof(MemoryHeader));
     
-    if (unlikely(header->free))
+    if (unlikely(header->startMagic != mmMagic))
     {
-        //printf("memory at %x already freed.\n", memory);
+        /* This is not a bad thing, just happens when the memory given to be
+         * freed is in the stack or something, not handled by the memory manager */
+        printf("Incorrect freeing of unallocated pointer at %x, ignoring.\n", memory);
+        mutexReleaseLock(&mmLockMutex);
         return;
     }
     
-    if (unlikely(header->startMagic != mmMagic))
-    {   
-        /* This is not a bad thing, just happens when the memory given to be
-         * freed is in the stack or something, not handled by the memory manager */
-        //printf("Incorrect freeing of unallocated pointer at %x.. ignoring\n", memory);
-        mutexReleaseLock(&mmLockMutex);
+    if (unlikely(header->free))
+    {
+        /* This is not a bad thing, but probably shouldn't happen either. */
+        printf("Memory at %x already freed, ignoring.\n", memory);
         return;
     }
     
@@ -377,7 +378,7 @@ void freeThread(Thread *thread)
         MemoryHeader *next = currentBlock->next;
         if (currentBlock->thread == thread)
         {
-            printf("\nDying thread '%s' failed to free memory at %x, size %x, freeing\n",
+            printf("\nDying thread '%s' failed to free memory at %x, size %x, freeing.\n",
                 thread->name, &currentBlock->start, currentBlock->size);
             free(&currentBlock->start);
         }
@@ -462,43 +463,4 @@ void _sweep() // quick tests
             (Size)currentBlock + sizeof(MemoryHeader), "Sweep failed");
     } while ((currentBlock = currentBlock->next) >= (MemoryHeader*)0x100000);
     mutexReleaseLock(&mmLockMutex);
-}
-
-void coreDump()
-{
-	printf(" ==[[ MEMORY BLOCK DUMP ]]== \n");
-	MemoryHeader* block = firstFreeBlock;
-	assert(block, "Core dump failed");
-
-	printf(" >> FREE BLOCK LIST << \n");
-	do
-    {
-        printf("MemoryHeader @   %x\n", (Size)block);
-		printf("	start =      %x\n", (Size)&block->start);
-		printf("	size =       %x\n",      block->size, block->size);
-		printf("	startMagic = %x\n",      block->startMagic);
-		printf("	endMagic =   %x\n",      block->endMagic);
-		printf("	previous =   %x\n", (Size)block->previous);
-		printf("	next =       %x\n", (Size)block->next);
-
-		block = block->next;
-	} while (block);
-
-	block = firstUsedBlock;
-	if (block == NULL)
-		return;
-
-	printf(" >> USED BLOCK LIST << \n");
-	do
-    {
-        printf("MemoryHeader @   %x\n", (Size)block);
-		printf("	start =      %x\n", (Size)&block->start);
-		printf("	size =       %x\n",      block->size, block->size);
-		printf("	startMagic = %x\n",      block->startMagic);
-		printf("	endMagic =   %x\n",      block->endMagic);
-		printf("	previous =   %x\n", (Size)block->previous);
-		printf("	next =       %x\n", (Size)block->next);
-
-		block = block->next;
-	} while (block);
 }

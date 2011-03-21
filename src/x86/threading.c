@@ -162,6 +162,7 @@ void schedule()
                     printf("\n\nNo threads left! Idling.\n");
                     ThreadFunc idle() { while (true) asm("hlt"); };
                     spawn("Idle thread", idle);
+                    ticksUntilSwitch = 0;
                 }
                 assert(ticksUntilSwitch == 0, "Threading error");
             }

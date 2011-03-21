@@ -1,4 +1,4 @@
-/*  Copyright (C) 2010 Xander Vedejas <xvedejas@gmail.com>
+ /*  Copyright (C) 2010 Xander Vedejas <xvedejas@gmail.com>
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -12,37 +12,15 @@
  *
  *  You should have received a copy of the GNU General Public License
  *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ *
+ *  Maintained by:
+ *      Xander Vedėjas <xvedejas@gmail.com>
  */
-#ifndef __parser_h__
-#define __parser_h__
+#ifndef __vm_h__
+#define __vm_h__
 #include <main.h>
-#include <lexer.h>
-/*
-typedef enum
-{
-    parseNodeTypeExpression,
-    parseNodeTypeStatement,
-    parseNodeTypeReturn,
-    parseNodeTypeEqual,
-    parseNodeTypeArgument,
-    parseNodeTypeMessage,
-    parseNodeTypeListItem,
-    parseNodeTypeArgdef,
-    parseNodeTypeBlock,
-} ParseNodeType;
 
-typedef struct parseNode
-{
-    bool isTerminal;
-    union
-    {
-        String data; // Terminal
-        ParseNodeType type; // Nonterminal
-    };
-    struct parseNode *parent, *left, *right;
-    Size line, col;
-} ParseNode;*/
-
-String parse(Token *first);
+void vmInstall();
+void execute(String bytecode);
 
 #endif

@@ -12,3 +12,4 @@ build/image_root/boot/kernel.elf
 */*.DS_Store
 */*/._*.*
 halinit.*
+buildlog.txt

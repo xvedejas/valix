@@ -225,8 +225,7 @@ Token *lex(String source)
         column++;
     }
 
-    Size length = strlen(source);
-    for (i = 0; i < length;)
+    for (i = 0;;)
     {
         switch(source[i])
         {

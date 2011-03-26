@@ -18,3 +18,47 @@ Size strlcpy(String dest, String src, Size count)
     *dest++ = 0;
     return i;
 }
+
+Size chrcount(String s, char c)
+{
+    int i = 0;
+    while (*s++)
+       	if (*s == c)
+            i++;
+    return i;
+}
+
+String strchr(String s, char c)
+{
+    for(; *s != c; s++)
+        if (*s == '\0')
+            return NULL;
+    return (String)s;
+}
+
+String strncpy(String dest, String src, Size count)
+{
+    String tmp = dest;
+    while (count-- && (*dest++ = *src++) != '\0');
+    return tmp;
+}
+
+String strncat(String dest, String src, Size count)
+{
+    String tmp = dest;
+    if (count)
+    {
+     	while (*dest)
+            dest++;
+        while ((*dest++ = *src++))
+        {
+            if (--count == 0)
+            {
+             	*dest = '\0';
+                break;
+            }
+        }
+    }
+
+    return tmp;
+}

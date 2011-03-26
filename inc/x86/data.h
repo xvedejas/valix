@@ -85,8 +85,8 @@ Association *associationNew(void *key, void *value);
 
 #define mapNew()                   genericSetNew()
 #define mapDel(set)                genericSetDel(set)
-#define mapAdd(set, key, value)    genericSetAdd(set, associationNew(key, value), hashedValueAssociation)
-#define mapGet(set, key)           genericSetGet(set, value, hashedValueAssociation)
+#define mapAdd(set, key, value)    genericSetAdd(set, associationNew(key, value), hashedValueAssociation);
+#define mapGet(set, key)           genericSetGet(set, key, hashedValueAssociation);
 #define mapSet(set, key, value)    { genericSetGet(set, key, hashedValueAssociation)->value = value; }
 #define mapHas(set, key)           genericSetHas(set, key, hashedValueAssociation)
 #define mapRemove(set, key)        genericSetRemove(set, key, hashedValueAssociation)

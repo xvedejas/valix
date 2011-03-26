@@ -17,31 +17,6 @@
 #define __parser_h__
 #include <main.h>
 #include <lexer.h>
-/*
-typedef enum
-{
-    parseNodeTypeExpression,
-    parseNodeTypeStatement,
-    parseNodeTypeReturn,
-    parseNodeTypeEqual,
-    parseNodeTypeArgument,
-    parseNodeTypeMessage,
-    parseNodeTypeListItem,
-    parseNodeTypeArgdef,
-    parseNodeTypeBlock,
-} ParseNodeType;
-
-typedef struct parseNode
-{
-    bool isTerminal;
-    union
-    {
-        String data; // Terminal
-        ParseNodeType type; // Nonterminal
-    };
-    struct parseNode *parent, *left, *right;
-    Size line, col;
-} ParseNode;*/
 
 String parse(Token *first);
 

@@ -19,8 +19,31 @@
 #ifndef __vm_h__
 #define __vm_h__
 #include <main.h>
+#include <threading.h>
 
 void vmInstall();
-void execute(String bytecode);
+ThreadFunc execute(String bytecode);
+
+typedef struct object
+{
+    /* If an object (class) is abstract, it can be subclassed but cannot be
+     * instantiated. Otherwise it is like a normal class. */
+    bool isAbstract;
+    /* An instant object is not a class object. Instances cannot define fields
+     * (instead hold values) and cannot be instantiated */
+    bool isInstance;
+    union
+    {
+        Map *values; /* if isInstance. Values are mutable and protected. */
+        Map *fields; /* if not isInstance. Fields are immutable and public. */
+    };
+} Object;
+
+typedef struct scope
+{
+    Map *locals;
+    Object **argStack;
+    Size argStackTop;
+} Scope;
 
 #endif

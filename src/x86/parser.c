@@ -43,6 +43,24 @@ stmt  :: expr '.'
       :: keyword '=' expr '.'
 */
 
+/* Bytecode format:
+ * 
+ * byte meaning         stack args                    end directive with \0?
+ *  80  import          none                          yes
+ *  81  push string     none (pushes)                 yes
+ *  82  push number     "                             yes
+ *  83  push keyword    "                             yes
+ *  84  call method     as many args as method takes  yes
+ *  85  begin list      none                          no
+ *  86  begin block     none                          no
+ *  87  end list        none                          no
+ *  88  end block       none                          no
+ *  89  end statement   all                           no
+ *  8A  return          [pop return value]            no
+ *  8B  set equal       [pop value] [pop symbol]      no
+ *  8C  binary message  two                           yes
+ */
+
 /* Note that most function are defined as nested functions, that is they are
  * declared entirely within the scope of parse(). This allows us to use
  * variables in parse() that are either on the stack or maybe in registers
@@ -50,7 +68,9 @@ stmt  :: expr '.'
  * be passed as parameters to use those variables in a thread-safe way. */
 String parse(Token *first)
 {
-    StringBuilder *output = stringBuilderNew("");
+    Size outputSize = 16;
+    u8 *output = malloc(sizeof(char) * outputSize);
+    Size outputIndex = 0;
     Token *curToken;
     
     auto void parseStmt();
@@ -70,9 +90,12 @@ String parse(Token *first)
         }
     }
     
-    void out(String val)
+    void out(String val, Size len)
     {
-        stringBuilderAppend(output, val);
+        if (outputIndex + len >= outputSize)
+            output = realloc(output, outputIndex + len * 2);
+        strncat((String)output + outputIndex, val, len);
+        printf("OUT: %s\n", val);
     }
     
     void nextToken()
@@ -102,41 +125,54 @@ String parse(Token *first)
     
     void parseStmt()
     {
-        out("STMT\n");
         if (unlikely(curToken->type == returnToken))
         {
             nextToken();
             parseExpr();
-            out("RET\n");
+            out("\x8A", 1); /* Return directive */
+        }
+        else if (unlikely(curToken->type == importToken))
+        {
+            out("\x80", 1); /* Import directive */
+            nextToken();
+            parserRequire(curToken->type == keywordToken, "Expected keyword.");
+            out(curToken->data, strlen(curToken->data));
+            out("\0", 1);
+            nextToken();
         }
         else if (unlikely(lookahead(1)->type == eqToken))
         {
-            parseValue();
-            parserRequire(curToken->type == eqToken, "Expected '=' token");
+            parserRequire(curToken->type == keywordToken, "Expected keyword.");
+            String lefthandKeyword = curToken->data;
+            nextToken();
+            //parseValue();
+            parserRequire(curToken->type == eqToken, "Expected '=' token.");
             nextToken();
             parseExpr();
-            out("EQ\n");
+            out("\x8B", 1); /* Equal directive */
+            out(lefthandKeyword, strlen(lefthandKeyword));
+            out("\0", 1);
         }
         else
             parseExpr();
-        return;
+        out("\x89", 1); /* Statement directive */
     }
     
     void parseMsg()
     {
         String keywords[8];
         u32 i = 0;
-        parserRequire(curToken->type == keywordToken, "Expected keyword");
+        parserRequire(curToken->type == keywordToken, "Expected keyword.");
         while (curToken->type == keywordToken)
         {
             parserRequire(i < 8, "More than eight keywords in one message");
             keywords[i++] = curToken->data;
             nextToken();
-            if (curToken->type != colonToken) /* Binary message */
+            if (curToken->type != colonToken) /* Unary message */
             {
                 parserRequire(i == 1, "Expected keyword, not binary message. Maybe use parentheses to show you want to use a binary message?");
-                out(keywords[0]);
-                out("\n");
+                out(keywords[0], strlen(keywords[0]));
+                out("\0", 1);
                 return;
             }
             nextToken();
@@ -145,10 +181,10 @@ String parse(Token *first)
         u32 j;
         for (j = 0; j < i; j++)
         {
-            out(keywords[j]);
-            out(":");
+            out(keywords[j], strlen(keywords[j]));
+            out(":", 1);
         }
-        out("\n");
+        out("\0", 1);
         return;
     }
     
@@ -158,13 +194,14 @@ String parse(Token *first)
         {
             if (curToken->type == keywordToken)
                 parseMsg();
-            else /* specialCharToken */
+            else /* specialCharToken, binary message */
             {
                 String data = curToken->data;
                 nextToken();
                 parseValue();
-                out(data);
-                out("\n");
+                out("\x8C", 1); /* binary message directive */
+                out(data, strlen(data));
+                out("\0", 1);
             }
         }
         return;
@@ -176,23 +213,24 @@ String parse(Token *first)
         {
             case stringToken:
             {
-                out("\"");
-                out(curToken->data);
-                out("\"\n");
+                out("\x81", 1); /* String directive */
+                out(curToken->data, strlen(curToken->data));
+                out("\0", 1);
                 nextToken();
                 return;
             } break;
             case numToken:
             case keywordToken:
             {
-                out(curToken->data);
-                out("\n");
+                out("\x83", 1); /* Keyword directive */
+                out(curToken->data, strlen(curToken->data));
+                out("\0", 1);
                 nextToken();
                 return;
             } break;
             case openBracketToken: /* '[' denotes a list  */
             {
-                out("beginList\n");
+                out("\x85", 1); /* Begin list directive */
                 nextToken();
                 while (curToken->type == commaToken)
                 {
@@ -202,32 +240,37 @@ String parse(Token *first)
                 }
                 parserRequire(curToken->type == closeBracketToken, "Expected ']' token");
                 nextToken();
-                out("endList\n");
+                out("\x87", 1); /* End list directive */
                 return;
             } break;
             case openBraceToken: /* '{' denotes a block */
             {
-                out("beginBlock\n");
+                out("\x86", 1); /* Begin block directive */
                 nextToken();
-                parserRequire(curToken->type == keywordToken, "Expected keyword token");
-                out(curToken->data);
-                out("\n");
-                nextToken();
-                while (curToken->type != colonToken)
+                
+                if (lookahead(1)->type == commaToken || lookahead(1)->type == colonToken)
                 {
-                    parserRequire(curToken->type == commaToken, "Expected ',' token");
-                    nextToken();
+                    // If we have arguments...
                     parserRequire(curToken->type == keywordToken, "Expected keyword token");
-                    out(curToken->data);
-                    out("\n");
+                    out(curToken->data, strlen(curToken->data));
+                    out("\0", 1);
                     nextToken();
+                    while (curToken->type != colonToken)
+                    {
+                        parserRequire(curToken->type == commaToken, "Expected ',' token");
+                        nextToken();
+                        parserRequire(curToken->type == keywordToken, "Expected keyword token");
+                        out(curToken->data, strlen(curToken->data));
+                        out("\0", 1);
+                        nextToken();
+                    }
                 }
-                out("endArgDef\n");
+                out("\x86", 1); /* Second begin block directive: means argument list done */
                 nextToken();
                 parseProcedure();
                 parserRequire(curToken->type == closeBraceToken, "Expected ',' token");
                 nextToken();
-                out("endBlock\n");
+                out("\x88", 1); /* End block directive */
                 return;
             } break;
             case openParenToken:
@@ -251,6 +294,7 @@ String parse(Token *first)
     }
     curToken = first;
     parseProcedure();
+    out("\xFF", 1); // EOS
     Token *next;
     do
     {
@@ -259,5 +303,5 @@ String parse(Token *first)
         if (first->data != NULL)
             free(first->data);
     } while ((first = next) != NULL);
-    return stringBuilderToString(output);
+    return (String)output;
 }

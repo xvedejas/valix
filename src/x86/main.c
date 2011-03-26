@@ -82,17 +82,16 @@ void debugInstall()
 void putch(u8 c)
 {   
     while ((inportb(0x3f8 + 5) & 0x20) == 0);
+    if (c < 0x80)
         outportb(0x3f8, c);
+    else
+        printf("[%x]", c);
 }
 
 void put(String str)
 {   
     int i = 0;
-    while (*(str + i))
-    {   
-        while ((inportb(0x3f8 + 5) & 0x20) == 0);
-        outportb(0x3f8, *(str + i++));
-    }
+    while (str[i]) putch(str[i++]);
 }
 
 void printf(const char *format, ...)
@@ -200,8 +199,8 @@ void timerInstall()
 
 ThreadFunc myThread()
 {
-    String bytecode = parse(lex("a = MyClass new. a define: \"method\" as: { x, y : x * y }."));
-    printf(bytecode);
+    String bytecode = parse(lex("import test. a = b with: c."));
+    execute(bytecode);
     free(bytecode);
 }
 

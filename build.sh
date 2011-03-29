@@ -87,8 +87,7 @@ for FILE in ${ASMFILES}; do
     # Compile only if modified since last build
     if [[ ${FILE} -nt ${OUTPUT} ]]; then
         notice "ASM" "${FILE}"
-        ${ASM} ${ASMARGS} ${FILE} ${OUTPUT} >> \
-            $BUILDLOG || error "Assembly failed"
+        ${ASM} ${ASMARGS} ${FILE} ${OUTPUT} || error "Assembly failed"
     fi
 done
 
@@ -102,7 +101,7 @@ for FILE in ${CFILES}; do
         notice "CC" "${FILE}"
         ${CC} ${AUTODEFINES} -nostdlib -nodefaultlibs -fno-stack-protector -fno-builtin \
             -nostdinc -Werror -g ${CCARGS} ${ARCHARGS} -Wall ${INCLUDE} -c \
-            -o $OUTPUT $FILE >> $BUILDLOG || error "C compilation failed"
+            -o $OUTPUT $FILE || error "C compilation failed"
     fi
 done
 

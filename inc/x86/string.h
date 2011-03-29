@@ -21,6 +21,7 @@ void *memset(void *memory, u8 value, Size number);
 void *memsetd(void *memory, u32 value, Size number);
 void *memcpy(void *dest, void *src, Size count);
 void *memcpyd(void *dest, void *src, Size count);
+void *memmove(void *dest, const void *src, Size count);
 String strcpy(String dest, const String source);
 String strcat(String dest, const String source);
 Size strlen(String s);

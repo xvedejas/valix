@@ -62,3 +62,32 @@ String strncat(String dest, String src, Size count)
 
     return tmp;
 }
+
+Size strlen(String s)
+{
+    String sc;
+    for (sc = s; *sc != '\0'; ++sc);
+    return sc - s;
+}
+
+void *memmove(void * dest, const void *src, Size count)
+{
+    char *tmp, *s;
+
+    if (dest <= src)
+    {
+     	tmp = (char *) dest;
+        s = (char *) src;
+        while (count--)
+            *tmp++ = *s++;
+    }
+    else
+    {
+     	tmp = (char *) dest + count;
+        s = (char *) src + count;
+        while (count--)
+            *--tmp = *--s;
+    }
+
+    return dest;
+}

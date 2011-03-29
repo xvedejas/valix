@@ -19,6 +19,7 @@
 #include <threading.h>
 #include <mm.h>
 #include <string.h>
+#include <types.h>
 
 /*
  * This is a tail-recursive parser, which means it is designed to work with
@@ -45,33 +46,98 @@ stmt  :: expr '.'
 
 /* Bytecode format:
  * 
- * byte meaning         stack args                    end directive with \0?
- *  80  import          none                          yes
- *  81  push string     none (pushes)                 yes
- *  82  push number     "                             yes
- *  83  push keyword    "                             yes
- *  84  call method     as many args as method takes  yes
- *  85  begin list      none                          no
- *  86  begin block     none                          no
- *  87  end list        none                          no
- *  88  end block       none                          no
- *  89  end statement   all                           no
- *  8A  return          [pop return value]            no
- *  8B  set equal       [pop value] [pop symbol]      no
- *  8C  binary message  two                           yes
+ * [next in bytecode] (pop from stack)
+ * {single byte (set size)}
+ * 
+ * byte meaning
+ *  80  import                [name of module] {\0}
+ *  81  push string           [stringval] {\0}
+ *  82  push number
+ *  83  variable              {index}
+ *  84  call method           [method name] {\0} (args)*
+ *  85  begin list            {num entries}
+ *  86  begin procedure       {num vars}
+ *  87  end list
+ *  89  end statement
+ *  8A  return, end procedure (arg)
+ *  8B  set equal             [varname] {\0}
+ *  8C  binary message        [method name] {\0} (args)*
+ *  8D  internal function     [function name] {\0} (args*)
+ *  
  */
+
+typedef struct internedVarsTable
+{
+    struct internedVarsTable *previous;
+    Size distinctVarsCount,
+         scopeVarsCount, /* Number of variables declared in this scope, including in child scopes */
+         startIndex; /* Number of variables declared previously */
+    Size tableAllocatedSize;
+    String *names; /* The index at which the names are will go into the bytecode */
+} InternedVarsTable;
+
+InternedVarsTable *internedVarsTableNew(InternedVarsTable *previous)
+{
+    InternedVarsTable *table = malloc(sizeof(InternedVarsTable));
+    table->distinctVarsCount = 0;
+    table->tableAllocatedSize = 4;
+    table->names = malloc(sizeof(String) * table->tableAllocatedSize);
+    table->previous = previous;
+    table->scopeVarsCount = 0;
+    if (previous != NULL) table->startIndex = previous->scopeVarsCount;
+    else table->startIndex = 0;
+    return table;
+}
+
+void internedVarsTableDel(InternedVarsTable *table)
+{
+    if (table->previous)
+        table->previous->scopeVarsCount += table->scopeVarsCount;
+    free(table->names);
+    free(table);
+}
+
+Size addVarToTable(InternedVarsTable *table, String varname)
+{
+    /* See if already there */
+    int i;
+    for (i = 0; i < table->distinctVarsCount; i++)
+        if (strcmp(varname, table->names[i]) == 0)
+            return i + table->startIndex;
+    /* If not, add it */
+    if (++table->distinctVarsCount > table->tableAllocatedSize)
+        table->names = realloc(table->names, (table->tableAllocatedSize *= 1.5));
+    table->names[i] = varname;
+    table->scopeVarsCount++;
+    return i + table->startIndex;
+}
+
+bool varInTable(InternedVarsTable *table, String varname)
+{
+    int i;
+    for (i = 0; i < table->distinctVarsCount; i++)
+        if (strcmp(varname, table->names[i]) == 0)
+            return true;
+    return false;
+}
 
 /* Note that most function are defined as nested functions, that is they are
  * declared entirely within the scope of parse(). This allows us to use
  * variables in parse() that are either on the stack or maybe in registers
  * between all the functions. This means no lock is needed and no values must
  * be passed as parameters to use those variables in a thread-safe way. */
-String parse(Token *first)
+u8 *parse(Token *first)
 {
-    Size outputSize = 16;
-    u8 *output = malloc(sizeof(char) * outputSize);
-    Size outputIndex = 0;
+    StringBuilder *output = stringBuilderNew(NULL);
     Token *curToken;
+    InternedVarsTable *currentVarTable; /* Per scope */
+    /* Per file, when loaded is compared with global method table */
+    InternedVarsTable *methodTable = internedVarsTableNew(NULL);
+    /* The method table must be saved */
+    StringBuilder *methodTableBytecode = stringBuilderNew(" ");
+    /* The very first byte tells the size of the method table. For now the
+     * limit is 255 but it may very well change. that byte is reserved by
+     * starting with a single character in the string builder. */
     
     auto void parseStmt();
     auto void parseExpr();
@@ -90,12 +156,29 @@ String parse(Token *first)
         }
     }
     
+    Size getInternedIndex(InternedVarsTable *table, String varname)
+    {
+        int i;
+        while (true)
+        {
+            for (i = 0; i < table->distinctVarsCount; i++)
+                if (strcmp(varname, table->names[i]) == 0)
+                    return i + table->startIndex;
+            // look at previous tables to see if already declared in previous scope
+            parserRequire(table->previous != NULL, "Undefined symbol referenced.");
+            table = table->previous;
+        }
+        return -1;
+    }
+    
     void out(String val, Size len)
     {
-        if (outputIndex + len >= outputSize)
-            output = realloc(output, outputIndex + len * 2);
-        strncat((String)output + outputIndex, val, len);
-        printf("OUT: %s\n", val);
+        stringBuilderAppendN(output, val, len);
+    }
+    
+    void outchr(char val)
+    {
+        stringBuilderAppendChar(output, val);
     }
     
     void nextToken()
@@ -120,7 +203,6 @@ String parse(Token *first)
                 return;
             parseStmt();
         }
-        return;
     }
     
     void parseStmt()
@@ -129,15 +211,15 @@ String parse(Token *first)
         {
             nextToken();
             parseExpr();
-            out("\x8A", 1); /* Return directive */
+            outchr('\x8A'); /* Return directive */
         }
         else if (unlikely(curToken->type == importToken))
         {
-            out("\x80", 1); /* Import directive */
+            outchr('\x80'); /* Import directive */
             nextToken();
-            parserRequire(curToken->type == keywordToken, "Expected keyword.");
+            parserRequire(curToken->type == keywordToken, "Expected module name.");
             out(curToken->data, strlen(curToken->data));
-            out("\0", 1);
+            outchr('\0');
             nextToken();
         }
         else if (unlikely(lookahead(1)->type == eqToken))
@@ -145,17 +227,15 @@ String parse(Token *first)
             parserRequire(curToken->type == keywordToken, "Expected keyword.");
             String lefthandKeyword = curToken->data;
             nextToken();
-            //parseValue();
             parserRequire(curToken->type == eqToken, "Expected '=' token.");
             nextToken();
             parseExpr();
-            out("\x8B", 1); /* Equal directive */
-            out(lefthandKeyword, strlen(lefthandKeyword));
-            out("\0", 1);
+            outchr('\x8B'); /* Equal directive */
+            outchr(addVarToTable(currentVarTable, lefthandKeyword));
         }
         else
             parseExpr();
-        out("\x89", 1); /* Statement directive */
+        outchr('\x89'); /* End Statement directive */
     }
     
     void parseMsg()
@@ -172,24 +252,38 @@ String parse(Token *first)
             {
                 parserRequire(i == 1, "Expected keyword, not binary message. Maybe use parentheses to show you want to use a binary message?");
                 out(keywords[0], strlen(keywords[0]));
-                out("\0", 1);
+                out('\0', 1);
                 return;
             }
             nextToken();
             parseValue();
-        }        
+        }
         u32 j;
+        outchr('\x84'); /* Message directive */
+        Size length = 0;
+        for (j = 0; j < i; j++)
+            length += strlen(keywords[j]) + 1;
+        String methodName = calloc(length + 1, sizeof(char));        
         for (j = 0; j < i; j++)
         {
-            out(keywords[j], strlen(keywords[j]));
-            out(":", 1);
+            strcat(methodName, keywords[j]);
+            strcat(methodName, ":");
         }
-        out("\0", 1);
+        
+        bool alreadyInTable = varInTable(methodTable, methodName);
+        Size index = addVarToTable(methodTable, methodName);
+        if (!alreadyInTable)
+        {
+            stringBuilderAppend(methodTableBytecode, methodName);
+            stringBuilderAppendChar(methodTableBytecode, '\0');
+        }
+        outchr((u8)index);
         return;
     }
     
     void parseExpr()
     {
+		parseValue();
         while (curToken->type == specialCharToken || curToken->type == keywordToken)
         {
             if (curToken->type == keywordToken)
@@ -199,12 +293,17 @@ String parse(Token *first)
                 String data = curToken->data;
                 nextToken();
                 parseValue();
-                out("\x8C", 1); /* binary message directive */
-                out(data, strlen(data));
-                out("\0", 1);
+                outchr('\x8C'); /* binary message directive */
+                bool alreadyInTable = varInTable(methodTable, data);
+                Size index = addVarToTable(methodTable, data);
+                if (!alreadyInTable)
+                {
+                    stringBuilderAppend(methodTableBytecode, data);
+                    stringBuilderAppendChar(methodTableBytecode, '\0');
+                }
+                outchr((u8)index);
             }
         }
-        return;
     }
     
     void parseValue()
@@ -213,24 +312,30 @@ String parse(Token *first)
         {
             case stringToken:
             {
-                out("\x81", 1); /* String directive */
+                outchr('\x81'); /* String directive */
                 out(curToken->data, strlen(curToken->data));
-                out("\0", 1);
+                outchr('\0');
                 nextToken();
                 return;
             } break;
             case numToken:
+            {
+                outchr('\x82'); /* Number directive */
+                out(curToken->data, strlen(curToken->data));
+                outchr('\0');
+                nextToken();
+                return;
+            } break;
             case keywordToken:
             {
-                out("\x83", 1); /* Keyword directive */
-                out(curToken->data, strlen(curToken->data));
-                out("\0", 1);
+                outchr('\x83'); /* Keyword directive */
+                outchr((char)getInternedIndex(currentVarTable, curToken->data));
                 nextToken();
                 return;
             } break;
             case openBracketToken: /* '[' denotes a list  */
             {
-                out("\x85", 1); /* Begin list directive */
+                outchr('\x85'); /* Begin list directive */
                 nextToken();
                 while (curToken->type == commaToken)
                 {
@@ -240,20 +345,26 @@ String parse(Token *first)
                 }
                 parserRequire(curToken->type == closeBracketToken, "Expected ']' token");
                 nextToken();
-                out("\x87", 1); /* End list directive */
+                outchr('\x87'); /* End list directive */
                 return;
             } break;
             case openBraceToken: /* '{' denotes a block */
             {
-                out("\x86", 1); /* Begin block directive */
+                outchr('\x86'); /* Begin block directive */
                 nextToken();
+                
+                currentVarTable = internedVarsTableNew(currentVarTable);
+                /* Let's remember where the procedure began so that we can say here
+                 * how many variables have been defined for this procedure */
+                Size i = output->size;
+                outchr('\0');
                 
                 if (lookahead(1)->type == commaToken || lookahead(1)->type == colonToken)
                 {
                     // If we have arguments...
                     parserRequire(curToken->type == keywordToken, "Expected keyword token");
-                    out(curToken->data, strlen(curToken->data));
-                    out("\0", 1);
+                    outchr((char)getInternedIndex(currentVarTable, curToken->data));
+                    outchr('\0');
                     nextToken();
                     while (curToken->type != colonToken)
                     {
@@ -261,16 +372,23 @@ String parse(Token *first)
                         nextToken();
                         parserRequire(curToken->type == keywordToken, "Expected keyword token");
                         out(curToken->data, strlen(curToken->data));
-                        out("\0", 1);
+                        outchr('\0');
                         nextToken();
                     }
                 }
-                out("\x86", 1); /* Second begin block directive: means argument list done */
+                outchr('\x86'); /* Second begin block directive: means argument list done */
                 nextToken();
                 parseProcedure();
                 parserRequire(curToken->type == closeBraceToken, "Expected ',' token");
                 nextToken();
-                out("\x88", 1); /* End block directive */
+                
+                // say how many variables
+                output->s[i] = (char)currentVarTable->distinctVarsCount;
+                InternedVarsTable *previous = currentVarTable->previous;
+                internedVarsTableDel(currentVarTable);
+                currentVarTable = previous;
+                
+                outchr('\x88'); /* End block directive */
                 return;
             } break;
             case openParenToken:
@@ -293,8 +411,20 @@ String parse(Token *first)
         return;
     }
     curToken = first;
+    currentVarTable = internedVarsTableNew(NULL);
+    outchr('\x86');
+    /* Let's remember where the procedure began so that we can say here
+     * how many variables have been defined for this procedure */
+    Size i = output->size;
+    outchr('\0');
+    
     parseProcedure();
-    out("\xFF", 1); // EOS
+    
+    // say how many variables
+    output->s[i] = (char)currentVarTable->distinctVarsCount;
+    internedVarsTableDel(currentVarTable);
+    
+    outchr('\xFF'); // EOS
     Token *next;
     do
     {
@@ -303,5 +433,22 @@ String parse(Token *first)
         if (first->data != NULL)
             free(first->data);
     } while ((first = next) != NULL);
-    return (String)output;
+    
+    sleep(1000);
+    
+    /* We want our method table at the beginning of the bytecode */
+    Size outputSize = output->size;
+    String bodyCode = stringBuilderToString(output);
+    stringBuilderAppendN(methodTableBytecode, bodyCode, outputSize);
+    free(bodyCode);
+    outputSize = methodTableBytecode->size;
+    u8 *finalBytecode = (u8*)stringBuilderToString(methodTableBytecode);
+    
+    finalBytecode[0] = (u8)methodTable->distinctVarsCount;
+    internedVarsTableDel(methodTable);
+    
+    for (i = 0; i < outputSize; i++)
+        printf("%x %c\n", finalBytecode[i], finalBytecode[i]);
+    
+    return (u8*)finalBytecode;
 }

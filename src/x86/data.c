@@ -191,6 +191,7 @@ void *genericSetGet(GenericSet *set, void *value, HashType type)
     GenericSetItem *item = &set->table[getHash(set, value, type)];
     if (item->type == hashedNull)
         return NULL;
+    
     do
     {
         if (_valuesAreEquivalent(value, type, item->value, item->type))
@@ -373,10 +374,19 @@ void genericSetDebug(GenericSet *set)
 StringBuilder *stringBuilderNew(String initial)
 {
     StringBuilder *sb = malloc(sizeof(StringBuilder));
-    sb->size = strlen(initial);
-    sb->capacity = sb->size * 2;
+    if (initial == NULL)
+    {
+        sb->size = 0;
+        sb->capacity = 4;
+    }
+    else
+    {
+        sb->size = strlen(initial);
+        sb->capacity = sb->size * 2;
+    }
     sb->s = malloc(sb->capacity * sizeof(char));
-    strcpy(sb->s, initial);
+    if (initial != NULL)
+        memcpy(sb->s, initial, sb->size);
     return sb;
 }
 
@@ -389,27 +399,87 @@ void stringBuilderDel(StringBuilder *sb)
 void stringBuilderAppend(StringBuilder *sb, String s)
 {
     Size len = strlen(s);
-    if (sb->size + len > sb->capacity)
+    if (sb->size + len >= sb->capacity)
     {
         sb->capacity = (sb->size + len) * 2;
         sb->s = realloc(sb->s, sizeof(char) * sb->capacity);
     }
-    strcat(sb->s, s);
+    memcpy(sb->s + sb->size, s, len);
     sb->size += len;
 }
 
-void stringBuilderMerge(StringBuilder *sb1, StringBuilder *sb2)
+void stringBuilderAppendChar(StringBuilder *sb, char c)
 {
-    stringBuilderAppend(sb2, "\0");
-    stringBuilderAppend(sb1, sb2->s);
-    stringBuilderDel(sb2);
+    if (sb->size + 1 >= sb->capacity)
+    {
+        sb->capacity = (sb->size + 1) * 2;
+        sb->s = realloc(sb->s, sizeof(char) * sb->capacity);
+    }
+    sb->s[sb->size++] = c;
+}
+
+void stringBuilderAppendN(StringBuilder *sb, String s, Size len)
+{
+    if (sb->size + len >= sb->capacity)
+    {
+        sb->capacity = (sb->size + len) * 2;
+        sb->s = realloc(sb->s, sizeof(char) * sb->capacity);
+    }
+    memcpy(sb->s + sb->size, s, len);
+    sb->size += len;
 }
 
 /* Delete the string builder; get a string result */
 String stringBuilderToString(StringBuilder *sb)
 {
-    stringBuilderAppend(sb, "\0");
+    sb->s[sb->size++] = '\0';
     String s = sb->s;
     free(sb);
     return s;
+}
+
+//////////////////////////
+// Stack Implementation //
+//////////////////////////
+
+Stack *stackNew()
+{
+    Stack *stack = malloc(sizeof(Stack));
+    stack->topIndex = 0;
+    stack->capacity = 4; /* Magic starting value */
+    stack->array = malloc(sizeof(void*) * stack->capacity);
+    return stack;
+}
+
+void stackPush(Stack *stack, void *value)
+{
+    if (stack->topIndex >= stack->capacity)
+        stack->array = realloc(stack->array, (stack->capacity *= 1.5));
+    stack->array[stack->topIndex++] = value;
+}
+
+void *stackPop(Stack *stack)
+{
+    if (stack->topIndex == 0)
+        panic("Stack underflow");
+    void *value = stack->array[--stack->topIndex];
+    return value;
+}
+
+Size stackSize(Stack *stack)
+{
+    return stack->topIndex;
+}
+
+void *stackTop(Stack *stack)
+{
+    if (stack->topIndex == 0)
+        panic("Stack underflow");
+    return stack->array[stack->topIndex - 1];
+}
+
+void stackDel(Stack *stack)
+{
+    free(stack->array);
+    free(stack);
 }

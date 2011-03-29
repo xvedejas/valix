@@ -22,7 +22,15 @@
 #include <threading.h>
 
 void vmInstall();
-ThreadFunc execute(String bytecode);
+ThreadFunc execute(u8 *bytecode);
+
+typedef enum
+{
+    nullData,
+    stringData,
+    integerData,
+    objectData,
+} ObjectDataType;
 
 typedef struct object
 {
@@ -32,18 +40,19 @@ typedef struct object
     /* An instant object is not a class object. Instances cannot define fields
      * (instead hold values) and cannot be instantiated */
     bool isInstance;
+    ObjectDataType type;
     union
     {
-        Map *values; /* if isInstance. Values are mutable and protected. */
-        Map *fields; /* if not isInstance. Fields are immutable and public. */
+        Map *fields;
+        String string;
+        umax integer;
     };
 } Object;
 
 typedef struct scope
 {
-    Map *locals;
-    Object **argStack;
-    Size argStackTop;
+    Object **variables;
+    Size variableCount;
 } Scope;
 
 #endif

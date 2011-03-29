@@ -199,7 +199,7 @@ void timerInstall()
 
 ThreadFunc myThread()
 {
-    String bytecode = parse(lex("import test. a = b with: c."));
+    u8 *bytecode = parse(lex("import test. a = 2. b = a * 3. a = a raisedTo: 7."));
     execute(bytecode);
     free(bytecode);
 }

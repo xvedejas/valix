@@ -18,6 +18,6 @@
 #include <main.h>
 #include <lexer.h>
 
-String parse(Token *first);
+u8 *parse(Token *first);
 
 #endif

@@ -223,14 +223,14 @@ double strtod(const char *String, char **endPtr)
         return fraction;
 }
 
-unsigned long int strtoul(char *String, char **endPtr, int base)
+unsigned long int strtoul(String string, char **endPtr, int base)
 {
     register char *p;
     register unsigned long int result = 0;
     register unsigned digit;
     int anyDigits = 0;
 
-    p = String;
+    p = string;
     while (isspace(*p))
         p += 1;
 
@@ -310,7 +310,7 @@ unsigned long int strtoul(char *String, char **endPtr, int base)
     }
 
     if (!anyDigits)
-        p = String;
+        p = string;
 
     if (endPtr != 0)
         *endPtr = p;
@@ -324,52 +324,16 @@ double atof(const char *nptr)
 }
 
 
-void itoa(int input, char *buffer, int radix)
+void itoa(Size input, char *buffer, Size radix)
 {
-    int t = input;
-    int i = 0;
-    
-    switch (radix)
-    {   
-        case 2:
-        {
-            do i++; while ((t /= 2) > 0);
-            buffer[i] = 0;
-            do
-            {
-                i--;
-                buffer[i] = numerals[input % 2];
-            } while((input /= 2) > 0 && i);
-        } break;
-        case 8:
-        {
-            do i++; while ((t /= 8) > 0);
-            buffer[i] = 0;
-            do
-            {
-                i--;
-                buffer[i] = numerals[input % 8];
-            } while((input /= 8) > 0 && i);
-        } break;
-        case 10:
-        {
-            do i++; while ((t /= 10) > 0);
-            buffer[i] = 0;
-            do
-            {
-                i--;
-                buffer[i] = numerals[input % 10];
-            } while((input /= 10) > 0 && i);
-        } break;
-        case 16:
-        {
-            do i++; while ((t /= 16) > 0);
-            buffer[i] = 0;
-            do
-            {
-                i--;
-                buffer[i] = numerals[input % 16];
-            } while ((input /= 16) > 0 && i);
-        } break;
-    }
+    Size t = input;
+    Size i = 1;
+    while ((t /= radix) > 0) i++;
+    buffer[i] = 0;
+    do
+    {
+		i--;
+		buffer[i] = numerals[input % radix];
+		input /= radix;
+	} while (i);
 }

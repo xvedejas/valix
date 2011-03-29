@@ -84,13 +84,3 @@ func strcat
     
     mov eax, [ebp+8]
 endfunc
-
-func strlen
-    mov esi, [ebp + 8]
-    mov ebx, esi
-@@: lodsb
-    cmp al, 0
-    jne @b
-    mov eax, esi
-    sub eax, ebx
-endfunc

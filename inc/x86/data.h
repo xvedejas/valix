@@ -85,8 +85,8 @@ Association *associationNew(void *key, void *value);
 
 #define mapNew()                   genericSetNew()
 #define mapDel(set)                genericSetDel(set)
-#define mapAdd(set, key, value)    genericSetAdd(set, associationNew(key, value), hashedValueAssociation);
-#define mapGet(set, key)           genericSetGet(set, key, hashedValueAssociation);
+#define mapAdd(set, key, value)    genericSetAdd(set, associationNew(key, (void*)value), hashedValueAssociation)
+#define mapGet(set, key)           genericSetGet(set, key, hashedValueAssociation)
 #define mapSet(set, key, value)    { genericSetGet(set, key, hashedValueAssociation)->value = value; }
 #define mapHas(set, key)           genericSetHas(set, key, hashedValueAssociation)
 #define mapRemove(set, key)        genericSetRemove(set, key, hashedValueAssociation)
@@ -167,8 +167,27 @@ extern StringBuilder *stringBuilderNew(String initial);
 /* note: Del will destroy both the string builder and its contents */
 extern void stringBuilderDel(StringBuilder *sb);
 extern void stringBuilderAppend(StringBuilder *sb, String s);
-extern void stringBuilderMerge(StringBuilder *sb1, StringBuilder *sb2);
+void stringBuilderAppendN(StringBuilder *sb, String s, Size len);
+void stringBuilderAppendChar(StringBuilder *sb, char c);
 /* note: ToString will destroy the string builder! */
 extern String stringBuilderToString(StringBuilder *sb);
+
+/////////////////////
+// Stack Interface //
+/////////////////////
+
+typedef struct
+{
+    Size topIndex;
+    Size capacity;
+    void **array;
+} Stack;
+
+Stack *stackNew();
+void stackPush(Stack *stack, void *value);
+void *stackPop(Stack *stack);
+Size stackSize(Stack *stack);
+void *stackTop(Stack *stack);
+void stackDel(Stack *stack);
 
 #endif

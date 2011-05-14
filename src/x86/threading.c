@@ -272,6 +272,12 @@ void mutexReleaseLock(Mutex *mutex)
     }
 }
 
+void mutexDel(Mutex *mutex)
+{
+	mutexAcquireLock(mutex);
+	free(mutex);
+}
+
 void threadsDebug()
 {
     threadingLock();

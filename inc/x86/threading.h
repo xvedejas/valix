@@ -18,7 +18,6 @@
 #ifndef __threading_h__
 #define __threading_h__
 #include <main.h>
-#include <data.h>
 
 /* threading.h deals with threads, which are in this case simultaneous
  * executions of the kernel binary. Valix "processes" only exist from a
@@ -132,5 +131,6 @@ typedef struct
 Mutex *mutexNew();
 MutexReply mutexAcquireLock(Mutex *mutex);
 void mutexReleaseLock(Mutex *mutex);
+void mutexDel(Mutex *mutex);
 
 #endif

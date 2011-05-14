@@ -11,6 +11,18 @@ u32 strcmp(String cs, String ct)
     return __res;
 }
 
+u32 strncmp(String cs, String ct, Size n)
+{
+	register signed char __res;
+	Size i = 0;
+    while (i++ < n)
+    {
+        if ((__res = *cs - *ct++) != 0 || !*cs++)
+            break;
+    }
+    return __res;
+}
+
 Size strlcpy(String dest, String src, Size count)
 {
 	register u32 i = 0;

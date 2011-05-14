@@ -26,6 +26,7 @@ String strcpy(String dest, const String source);
 String strcat(String dest, const String source);
 Size strlen(String s);
 u32 strcmp(String cs, String ct);
+u32 strncmp(String cs, String ct, Size n);
 Size strlcpy(String dest, String src, Size count);
 Size chrcount(String s, char c);
 String strchr(const String s, char c);

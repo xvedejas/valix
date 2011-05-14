@@ -38,7 +38,7 @@
 #define NULL ((void*)0)
 
 #define panic(message, args...) { printf("\nPANIC\n"); printf(message, ## args); _panic(__FILE__, __LINE__); }
-#define assert(boolean, message) { if (unlikely(!(boolean))) {panic(message);} }
+#define assert(boolean, message, args...) { if (unlikely(!(boolean))) {panic(message, ## args);} }
 
 typedef unsigned char  u8;
 typedef          char  s8;
@@ -57,6 +57,7 @@ typedef s8 *String;
 
 volatile umax timerTicks;
 const Size systemStackSize;
+void timerWait(int ticks);
 
 extern u8 inportb(u16 port);
 extern void outportb(u16 port, u8 data);

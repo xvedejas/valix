@@ -20,6 +20,7 @@
 #include <mm.h>
 #include <string.h>
 #include <types.h>
+#include <data.h>
 
 /*
  * This is a tail-recursive parser, which means it is designed to work with
@@ -66,61 +67,6 @@ stmt  :: expr '.'
  *  
  */
 
-typedef struct internedVarsTable
-{
-    struct internedVarsTable *previous;
-    Size distinctVarsCount,
-         scopeVarsCount, /* Number of variables declared in this scope, including in child scopes */
-         startIndex; /* Number of variables declared previously */
-    Size tableAllocatedSize;
-    String *names; /* The index at which the names are will go into the bytecode */
-} InternedVarsTable;
-
-InternedVarsTable *internedVarsTableNew(InternedVarsTable *previous)
-{
-    InternedVarsTable *table = malloc(sizeof(InternedVarsTable));
-    table->distinctVarsCount = 0;
-    table->tableAllocatedSize = 4;
-    table->names = malloc(sizeof(String) * table->tableAllocatedSize);
-    table->previous = previous;
-    table->scopeVarsCount = 0;
-    if (previous != NULL) table->startIndex = previous->scopeVarsCount;
-    else table->startIndex = 0;
-    return table;
-}
-
-void internedVarsTableDel(InternedVarsTable *table)
-{
-    if (table->previous)
-        table->previous->scopeVarsCount += table->scopeVarsCount;
-    free(table->names);
-    free(table);
-}
-
-Size addVarToTable(InternedVarsTable *table, String varname)
-{
-    /* See if already there */
-    int i;
-    for (i = 0; i < table->distinctVarsCount; i++)
-        if (strcmp(varname, table->names[i]) == 0)
-            return i + table->startIndex;
-    /* If not, add it */
-    if (++table->distinctVarsCount > table->tableAllocatedSize)
-        table->names = realloc(table->names, (table->tableAllocatedSize *= 1.5));
-    table->names[i] = varname;
-    table->scopeVarsCount++;
-    return i + table->startIndex;
-}
-
-bool varInTable(InternedVarsTable *table, String varname)
-{
-    int i;
-    for (i = 0; i < table->distinctVarsCount; i++)
-        if (strcmp(varname, table->names[i]) == 0)
-            return true;
-    return false;
-}
-
 /* Note that most function are defined as nested functions, that is they are
  * declared entirely within the scope of parse(). This allows us to use
  * variables in parse() that are either on the stack or maybe in registers
@@ -130,9 +76,10 @@ u8 *parse(Token *first)
 {
     StringBuilder *output = stringBuilderNew(NULL);
     Token *curToken;
-    InternedVarsTable *currentVarTable; /* Per scope */
+    Stack *varTables = stackNew();
+    InternTable *currentVarTable; /* Per scope */
     /* Per file, when loaded is compared with global method table */
-    InternedVarsTable *methodTable = internedVarsTableNew(NULL);
+    InternTable *methodTable = internTableNew();
     /* The method table must be saved */
     StringBuilder *methodTableBytecode = stringBuilderNew(" ");
     /* The very first byte tells the size of the method table. For now the
@@ -154,21 +101,6 @@ u8 *parse(Token *first)
             printf(error);
             endThread();
         }
-    }
-    
-    Size getInternedIndex(InternedVarsTable *table, String varname)
-    {
-        int i;
-        while (true)
-        {
-            for (i = 0; i < table->distinctVarsCount; i++)
-                if (strcmp(varname, table->names[i]) == 0)
-                    return i + table->startIndex;
-            // look at previous tables to see if already declared in previous scope
-            parserRequire(table->previous != NULL, "Undefined symbol referenced.");
-            table = table->previous;
-        }
-        return -1;
     }
     
     void out(String val, Size len)
@@ -231,7 +163,7 @@ u8 *parse(Token *first)
             nextToken();
             parseExpr();
             outchr('\x8B'); /* Equal directive */
-            outchr(addVarToTable(currentVarTable, lefthandKeyword));
+            outchr(internString(currentVarTable, lefthandKeyword));
         }
         else
             parseExpr();
@@ -270,8 +202,8 @@ u8 *parse(Token *first)
             strcat(methodName, ":");
         }
         
-        bool alreadyInTable = varInTable(methodTable, methodName);
-        Size index = addVarToTable(methodTable, methodName);
+        bool alreadyInTable = isStringInterned(methodTable, methodName);
+        Size index = internString(methodTable, methodName);
         if (!alreadyInTable)
         {
             stringBuilderAppend(methodTableBytecode, methodName);
@@ -294,8 +226,8 @@ u8 *parse(Token *first)
                 nextToken();
                 parseValue();
                 outchr('\x8C'); /* binary message directive */
-                bool alreadyInTable = varInTable(methodTable, data);
-                Size index = addVarToTable(methodTable, data);
+                bool alreadyInTable = isStringInterned(methodTable, data);
+                Size index = internString(methodTable, data);
                 if (!alreadyInTable)
                 {
                     stringBuilderAppend(methodTableBytecode, data);
@@ -329,7 +261,7 @@ u8 *parse(Token *first)
             case keywordToken:
             {
                 outchr('\x83'); /* Keyword directive */
-                outchr((char)getInternedIndex(currentVarTable, curToken->data));
+                outchr((char)internString(currentVarTable, curToken->data));
                 nextToken();
                 return;
             } break;
@@ -353,7 +285,8 @@ u8 *parse(Token *first)
                 outchr('\x86'); /* Begin block directive */
                 nextToken();
                 
-                currentVarTable = internedVarsTableNew(currentVarTable);
+                stackPush(varTables, currentVarTable);
+                currentVarTable = internTableNew();
                 /* Let's remember where the procedure began so that we can say here
                  * how many variables have been defined for this procedure */
                 Size i = output->size;
@@ -363,7 +296,7 @@ u8 *parse(Token *first)
                 {
                     // If we have arguments...
                     parserRequire(curToken->type == keywordToken, "Expected keyword token");
-                    outchr((char)getInternedIndex(currentVarTable, curToken->data));
+                    outchr((char)internString(currentVarTable, curToken->data));
                     outchr('\0');
                     nextToken();
                     while (curToken->type != colonToken)
@@ -383,9 +316,10 @@ u8 *parse(Token *first)
                 nextToken();
                 
                 // say how many variables
-                output->s[i] = (char)currentVarTable->distinctVarsCount;
-                InternedVarsTable *previous = currentVarTable->previous;
-                internedVarsTableDel(currentVarTable);
+                output->s[i] = (char)currentVarTable->count;
+                InternTable *previous = stackPop(varTables);
+                stackPush(varTables, currentVarTable);
+                internTableDel(currentVarTable);
                 currentVarTable = previous;
                 
                 outchr('\x88'); /* End block directive */
@@ -411,7 +345,7 @@ u8 *parse(Token *first)
         return;
     }
     curToken = first;
-    currentVarTable = internedVarsTableNew(NULL);
+    currentVarTable = internTableNew();
     outchr('\x86');
     /* Let's remember where the procedure began so that we can say here
      * how many variables have been defined for this procedure */
@@ -421,8 +355,9 @@ u8 *parse(Token *first)
     parseProcedure();
     
     // say how many variables
-    output->s[i] = (char)currentVarTable->distinctVarsCount;
-    internedVarsTableDel(currentVarTable);
+    output->s[i] = (char)currentVarTable->count;
+    internTableDel(currentVarTable);
+    stackDel(varTables);
     
     outchr('\xFF'); // EOS
     Token *next;
@@ -444,11 +379,13 @@ u8 *parse(Token *first)
     outputSize = methodTableBytecode->size;
     u8 *finalBytecode = (u8*)stringBuilderToString(methodTableBytecode);
     
-    finalBytecode[0] = (u8)methodTable->distinctVarsCount;
-    internedVarsTableDel(methodTable);
+    finalBytecode[0] = (u8)methodTable->count;
+    internTableDel(methodTable);
     
+    /* // see the output
     for (i = 0; i < outputSize; i++)
         printf("%x %c\n", finalBytecode[i], finalBytecode[i]);
+        */
     
     return (u8*)finalBytecode;
 }

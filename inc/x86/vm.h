@@ -24,35 +24,4 @@
 void vmInstall();
 ThreadFunc execute(u8 *bytecode);
 
-typedef enum
-{
-    nullData,
-    stringData,
-    integerData,
-    objectData,
-} ObjectDataType;
-
-typedef struct object
-{
-    /* If an object (class) is abstract, it can be subclassed but cannot be
-     * instantiated. Otherwise it is like a normal class. */
-    bool isAbstract;
-    /* An instant object is not a class object. Instances cannot define fields
-     * (instead hold values) and cannot be instantiated */
-    bool isInstance;
-    ObjectDataType type;
-    union
-    {
-        Map *fields;
-        String string;
-        umax integer;
-    };
-} Object;
-
-typedef struct scope
-{
-    Object **variables;
-    Size variableCount;
-} Scope;
-
 #endif

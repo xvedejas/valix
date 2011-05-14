@@ -19,352 +19,484 @@
 #include <data.h>
 #include <string.h>
 #include <mm.h>
+#include <threading.h>
 
-///////////////////////////////
-// GenericSet Implementation //
-///////////////////////////////
-
-/* The GenericSet Implementation forms the backbone of the unordered, hashed
- * abstract datatypes "map" and "set". Allowing both strings and pointers as
- * keys, associations are used to map the keys to values. */
-
-u32 getStringHash(GenericSet *set, String string)
+/* For computing hashes is this pre-randomized table... */
+u8 lookupTable[256] =
 {
-    // Algorithm is "Jenkins Hash"
+	0x78, 0x91, 0xBB, 0xD5, 0x53, 0xE2, 0x1D, 0x75,
+	0x15, 0x30, 0xA0, 0x58, 0xEA, 0x33, 0xFE, 0xC2,
+	0xA7, 0x6F, 0x7D, 0xB8, 0xEE, 0xD0, 0xFC, 0xF0,
+	0xAA, 0xD7, 0x8C, 0x82, 0xDF, 0xEF, 0xE7, 0x42,
+	0x5E, 0x4B, 0x77, 0x14, 0x0A, 0x7B, 0x9A, 0x68,
+	0x01, 0x5D, 0xCA, 0x20, 0xCD, 0x31, 0xC1, 0x12,
+	0x76, 0x7C, 0xFD, 0xA4, 0x83, 0x64, 0x8D, 0xC5,
+	0x5F, 0x93, 0xC8, 0x2D, 0x88, 0xF1, 0x60, 0x81,
+	0xD6, 0xC7, 0xB6, 0x84, 0x18, 0xA9, 0x10, 0x36,
+	0xF7, 0x65, 0xAF, 0xC0, 0x0D, 0x46, 0x89, 0x35,
+	0xA3, 0x9E, 0x09, 0xB9, 0xCC, 0xDA, 0x96, 0xF6,
+	0x8E, 0xB4, 0xFA, 0xE1, 0xE3, 0xFB, 0xB1, 0x16,
+	0xDD, 0x7F, 0x98, 0x79, 0x2C, 0x4D, 0x5A, 0x24,
+	0x7A, 0x4F, 0x38, 0xA6, 0x54, 0x70, 0x00, 0xF9,
+	0x56, 0xAB, 0xDE, 0x21, 0x32, 0x06, 0xE5, 0xAE,
+	0x08, 0x04, 0x7E, 0x3B, 0x4A, 0x3F, 0x2A, 0x6D,
+	0xB0, 0x71, 0xE0, 0x8A, 0x48, 0xAC, 0xB0, 0xCB,
+	0x4C, 0x27, 0x1F, 0x41, 0xC9, 0x6E, 0xD3, 0xBE,
+	0x44, 0xA5, 0x49, 0x22, 0x6C, 0x0E, 0x40, 0xDC,
+	0xF3, 0x17, 0x63, 0xDB, 0x3E, 0x86, 0x74, 0xE4,
+	0xAD, 0x34, 0x1B, 0x9D, 0x69, 0xE6, 0x52, 0xC4,
+	0x8F, 0x1C, 0x97, 0x99, 0x6A, 0x6B, 0x66, 0xF2,
+	0xBA, 0xED, 0x92, 0xE8, 0x87, 0x5C, 0x3D, 0x03,
+	0xD4, 0xF8, 0x19, 0xD9, 0x13, 0x26, 0xC6, 0x61,
+	0x67, 0x80, 0x59, 0xB7, 0x95, 0x2F, 0x50, 0x23,
+	0x45, 0x8B, 0xD8, 0x47, 0xFF, 0x5B, 0xCE, 0x51,
+	0x37, 0xF4, 0x0F, 0x07, 0xD2, 0x1A, 0x0C, 0xF5,
+	0xB5, 0x3C, 0x94, 0x2B, 0x11, 0x3A, 0x39, 0x1E,
+	0x85, 0xA2, 0x9F, 0xD1, 0x57, 0x9B, 0x29, 0x73,
+	0x02, 0xB3, 0xEB, 0xEC, 0x25, 0xE9, 0xC3, 0xBC,
+	0x9C, 0x28, 0xCF, 0x72, 0x55, 0xB2, 0xBD, 0x90,
+	0x4E, 0x43, 0x05, 0xBF, 0x2E, 0xA8, 0x62, 0xA1
+};
+
+u32 getStringHash(String string)
+{
     u32 hash, i;
     for (hash = i = 0; string[i]; i++)
+        hash ^= lookupTable[(Size)string[i]];
+    return hash;
+}
+
+////////////////////////
+// Map Implementation //
+////////////////////////
+
+void _mapExpand(Map *map);
+void _mapDelAssoc(Association *assoc, Association *previous);
+void _mapMoveAtoB(Map *map);
+bool _mapKeysEquivalent(void *key1, void *key2, MapKeyType type1, MapKeyType type2);
+Association *_mapFindBucket(Map *map, void *key, MapKeyType type, bool *inTableA, Association **previous);
+void _mapSet(Map *map, void *key, void *value, MapKeyType type, bool incrementallyResize);
+
+// The next size to choose when the map must grow
+#define newMapSize(oldSize) ((oldSize << 1) + 1)
+
+void _mapExpand(Map *map)
+{
+    mutexAcquireLock(map->lock);
+    if (map->B == NULL)
     {
-        hash += string[i];
-        hash += (hash << 10);
-        hash ^= (hash >> 6);
+        map->capacityB = newMapSize(map->capacityA);
+        map->B = calloc(map->capacityB, sizeof(Association));
+        map->entriesB = 0;
     }
-    hash += (hash << 3);
-    hash ^= (hash >> 11);
-    hash += (hash << 15);
-    return hash % set->tableSize;
+    else
+        panic("Old hashtable not destroyed fast enough, resize of map failed!");
+    mutexReleaseLock(map->lock);
 }
 
-u32 getValueHash(GenericSet *set, void *value)
+void _mapDelAssoc(Association *assoc, Association *previous)
 {
-    return ((Size)value) % set->tableSize;
-}
-
-u32 getHash(GenericSet *set, void *value, HashType type)
-{
-    switch (type)
+    assert(previous == NULL || previous->next == assoc, "Map error");
+    if (assoc->next != NULL)
     {
-        case hashedNull:
-            panic("Error, null type");
-        break;
-        case hashedValue:
-            return getValueHash(set, value);
-        break;
-        case hashedString:
-            return getStringHash(set, value);
-        break;
-        case hashedValueAssociation:
-            return getValueHash(set, ((Association*)value)->key);
-        break;
-        case hashedStringAssociation:
-            return getStringHash(set, ((Association*)value)->key);
-        break;
-        default:
-            panic("This should never be called");
-        break;
+        assoc->key = assoc->next->key;
+        assoc->value = assoc->next->value;
+        assoc->type = assoc->next->type;
+        Association *newNext = assoc->next->next;
+        free(assoc->next);
+        assoc->next = newNext;
+        return;
     }
-    return 0;
-}
-
-Association *associationNew(void *key, void *value)
-{
-    Association *assoc = malloc(sizeof(Association));
-    assoc->key = key;
-    assoc->value = value;
-    return assoc;
-}
-
-GenericSet *genericSetNewSize(Size size)
-{
-    assert(size > 2, "GenericSet hash table cannot be of size less than 3");
-    GenericSet *set = calloc(1, sizeof(GenericSet) + size * sizeof(GenericSetItem));
-    set->tableSize = size;
-    return set;
-}
-
-GenericSet *genericSetNew() /* Default size 11 */
-{
-    return genericSetNewSize(11);
-}
-
-void genericSetDel(GenericSet *set)
-{
-    inline void del(GenericSetItem *item)
+    if (previous == NULL)
     {
-        if (item->next != NULL) del(item->next);
-        if (item->type == hashedValueAssociation || item->type == hashedStringAssociation)
-            free(item->value); /* free the association */
-        free(item);
+        assoc->type = nullKey;
+        assoc->next = NULL;
+	}
+    else
+    {
+        previous->next = NULL;
+        free(assoc);
     }
-    
+}
+
+void _mapDeleteTable(Size capacity, Association *table)
+{
+	Association *assoc;
+	Size i;
+    for (i = 0; i < capacity; i++)
+    {
+		assoc = &table[i];
+		if (assoc->type == nullKey)
+			continue;
+		while (assoc->next != NULL)
+			_mapDelAssoc(assoc->next, assoc);
+	}
+	free(table);
+}
+
+void _mapMoveAtoB(Map *map)
+{
+    assert(map->B != NULL, "Map error");
+    /* move any one item from hashtable A to hashtable B by finding the first
+     * assocation in the table and iterating */
+    Association *assoc;
     int i;
-    for (i = 0; i < set->tableSize; i++)
+    for (i = 0; i < map->capacityA; i++)
     {
-        GenericSetItem *item = &set->table[i];
-        if (item->type == hashedValueAssociation || item->type == hashedStringAssociation)
-        {
-            free(item->value); /* free the association */
-            printf("freed assoc\n");
-        }
-        if (item->next != NULL)
-            del(item->next);
+		assoc = &map->A[i];
+		if (assoc->type != nullKey)
+			break;
     }
-    free(set);
+    if (i == map->capacityA)
+    {
+        // Here, we are done moving items from A to B. Swap B for A, and delete A.
+        assert(map->entriesA == 0, "Map error");
+        _mapDeleteTable(map->capacityA, map->A);
+        map->A = map->B;
+        map->entriesA = map->entriesB;
+        map->capacityA = map->capacityB;
+        map->entriesB = 0;
+        map->capacityB = 0;
+        map->B = NULL;
+        return;
+    }
+    void *key = assoc->key,
+         *value = assoc->value;
+    MapKeyType type = assoc->type;
+    // remove the association (from A)
+    _mapDelAssoc(assoc, NULL);
+    map->entriesA--;
+    // re-add the association (to B)
+    _mapSet(map, key, value, type, false);
 }
 
-bool _valuesAreEquivalent(void *value1, HashType type1, void *value2, HashType type2)
+bool _mapKeysEquivalent(void *key1, void *key2, MapKeyType type1, MapKeyType type2)
 {
-    if (type1 != type2)
-        return false;
-    
     switch (type1)
     {
-        case hashedNull:
-            panic("GenericSet Error: Null value");
+        case nullKey:
+            panic("Map error: null key");
         break;
-        case hashedValue:
-            return value1 == value2;
+        case stringKey:
+            if (type2 == stringKey && strcmp(key1, key2) == 0)
+                return true;
         break;
-        case hashedString:
-            return strcmp(value1, value2) == 0;
-        break;
-        case hashedValueAssociation:
-            return ((Association*)value1)->key == ((Association*)value2)->key;
-        break;
-        case hashedStringAssociation:
-            return strcmp(((Association*)value1)->key, ((Association*)value2)->key) == 0;
-        break;
-        default:
-            panic("This should never be called");
+        case valueKey:
+            if (type2 == valueKey && type1 == type2)
+                return true;
         break;
     }
     return false;
 }
 
-// value is a value, start of string, or pointer to Association struct
-void genericSetAdd(GenericSet *set, void *value, HashType type)
+/* Return the exact association whose key matches. "hashtable" should be a reference argument */
+Association *_mapFindBucket(Map *map, void *key, MapKeyType type, bool *inTableA, Association **previous)
 {
-    GenericSetItem *item = &set->table[getHash(set, value, type)];
-    if (item->type == hashedNull)
+	Size hash;
+    switch (type)
     {
-        item->type = type;
-        item->value = value;
-        return;
-    }
-    if (unlikely(_valuesAreEquivalent(value, type, item->value, item->type)))
-    {
-        // If we are given an association and this association is not used,
-        // then we should discard the association.
-        if (type == hashedValueAssociation || type == hashedStringAssociation)
-            free(value);
-        return; /* Silently reject duplicates */
-    }
-    while (item->next != NULL)
-    {
-        item = item->next;
-        if (unlikely(_valuesAreEquivalent(value, type, item->value, item->type)))
+        case nullKey:
+            panic("Map error: null key");
+        break;
+        case stringKey:
         {
-            // If we are given an association and this association is not used,
-            // then we should discard the association.
-            if (type == hashedValueAssociation || type == hashedStringAssociation)
-                free(value);
-            return; /* Silently reject duplicates */
-        }
-    } 
-    item->next = malloc(sizeof(GenericSetItem));
-    item->next->value = value;
-    item->next->type = type;
-    item->next->next = NULL;
-}
-
-void *genericSetGet(GenericSet *set, void *value, HashType type)
-{
-    GenericSetItem *item = &set->table[getHash(set, value, type)];
-    if (item->type == hashedNull)
-        return NULL;
-    
+            hash = getStringHash(key);
+		} break;
+        case valueKey:
+        {
+            hash = (Size)key;
+		} break;
+    }
+    Size hashA = hash % map->capacityA;
+    Association *assoc = &map->A[hashA];
+    *previous = NULL;
     do
     {
-        if (_valuesAreEquivalent(value, type, item->value, item->type))
+        if (_mapKeysEquivalent(key, assoc->key, type, assoc->type))
         {
-            if (type == hashedValueAssociation || type == hashedStringAssociation)
-                return ((Association*)item->value)->value;
-            else
-                return item->value;
-        }
-    } while ((item = item->next) != NULL);
+			*inTableA = true;
+			if (*previous != NULL) assert((*previous)->next == assoc, "Map error");
+            return assoc;
+		}
+		*previous = assoc;
+        assoc = assoc->next;
+    } while (assoc != NULL);
+    /* Look again, this time in table B if it exists */
+    if (map->B != NULL)
+    {
+        Size hashB = hash % map->capacityB;
+        Association *assoc = &map->B[hashB];
+        do
+        {
+            if (_mapKeysEquivalent(key, assoc->key, type, assoc->type))
+            {
+				*inTableA = false;
+				if (*previous != NULL) assert((*previous)->next == assoc, "Map error");
+                return assoc;
+			}
+			*previous = assoc;
+            assoc = assoc->next;
+        } while (assoc != NULL);
+    }
     return NULL;
 }
 
-bool genericSetHas(GenericSet *set, void *value, HashType type)
+/* Returns NULL if the key is not found, otherwise returns the value */
+void *mapGet(Map *map, void *key, MapKeyType type)
 {
-    return (bool)genericSetGet(set, value, type);
+    mutexAcquireLock(map->lock);
+    // Find the key
+    bool inTableA;
+    Association *previous;
+    Association *assoc = _mapFindBucket(map, key, type, &inTableA, &previous);
+    if (assoc == NULL) return NULL;
+    mutexReleaseLock(map->lock);
+    return assoc->value;
 }
 
-/* In an association, returns value only */
-void *genericSetRemove(GenericSet *set, void *value, HashType type)
+/* The incrementally resize variable is needed to avoid resizing all at
+ * once due to recursion from calling _mapSet from _mapMoveAtoB */
+void _mapSet(Map *map, void *key, void *value, MapKeyType type, bool incrementallyResize)
 {
-    GenericSetItem *item = &set->table[getHash(set, value, type)];
-    GenericSetItem *previous = NULL;
-    if (item->type == hashedNull)
-        return NULL;
-    do
+    mutexAcquireLock(map->lock);
+    /* Gives the first bucket in the hashtable according to the hash of the key.
+     * We want to choose table B if it exists to add to, since it is the larger
+     * table available. */
+    Size hash;
+    switch (type)
     {
-        if (_valuesAreEquivalent(value, type, item->value, item->type))
+        case nullKey:
+            panic("Map error: null key");
+        break;
+        case stringKey:
         {
-            void *returnValue;
-            if (type == hashedValueAssociation || type == hashedStringAssociation)
-            {
-                returnValue = ((Association*)item->value)->value;
-                free((Association*)item->value);
-            }
-            else
-                returnValue = item->value;
-            
-            if (item->next != NULL)
-            {
-                item->value = item->next->value;
-                item->type = item->next->type;
-                GenericSetItem *toFree = item->next;
-                item->next = item->next->next;
-                free(toFree);
-            }
-            else
-            {
-                if (previous == NULL)
-                {
-                    // Not in chain, in table
-                    item->type = hashedNull;
-                }
-                else
-                {
-                    free(item);
-                    previous->next = NULL;
-                }
-            }
-            return returnValue;
-        }
-        previous = item;
-    } while ((item = item->next) != NULL);
-    return NULL;
-}
-
-/* Alter the size of the set copy */
-GenericSet *genericSetCopySize(GenericSet *set, Size size)
-{
-    GenericSet *setNew = genericSetNewSize(size);
-    int i;
-    for (i = 0; i < set->tableSize; i++)
-    {
-        GenericSetItem *item = &set->table[i];
-        do
+            hash = getStringHash(key);
+        } break;
+        case valueKey:
         {
-            if (item->type != hashedNull)
-                genericSetAdd(setNew, item->value, item->type);
-        }
-        while ((item = item->next) != NULL);
+            hash = (Size)key;
+        } break;
     }
-    return setNew;
-}
-
-/* Shallow copy of the set */
-GenericSet *genericSetCopy(GenericSet *set)
-{
-    return genericSetCopySize(set, set->tableSize);
-}
-
-
-void genericSetUnion(GenericSet *dest, GenericSet *src)
-{
-    int i;
-    for (i = 0; i < src->tableSize; i++)
+    Association *assoc;
+    if (map->B == NULL)
     {
-        GenericSetItem *item = &src->table[i];
-        do
+        hash = hash % map->capacityA;
+        assoc = &map->A[hash];
+    }
+    else
+    {
+        hash = hash % map->capacityB;
+        assoc = &map->B[hash];
+    }
+    // Find the key
+    for (; true; assoc = assoc->next)
+    {
+        // key already in map
+        if (_mapKeysEquivalent(key, assoc->key, type, assoc->type))
         {
-            if (item->type != hashedNull)
-                genericSetAdd(dest, item->value, item->type);
+            assoc->value = value;
+            break;
         }
-        while ((item = item->next) != NULL);
+		// key not in map, add
+		if (assoc->type == nullKey)
+		{
+			assoc->key = key;
+			assoc->value = value;
+			assoc->type = type;
+		}
+		else if (assoc->next == NULL)
+		{
+			assoc->next = malloc(sizeof(Association));
+			assoc->next->key = key;
+			assoc->next->value = value;
+			assoc->next->type = type;
+			assoc->next->next = NULL;
+		}
+		else
+			continue;
+		// See if we added to A or B
+		if (map->B == NULL)
+		{
+			map->entriesA++;
+			// Expand when hashtable A is full
+			if (map->entriesA >= map->capacityA)
+				_mapExpand(map);
+		}
+		else
+		{
+			map->entriesB++;
+			if (incrementallyResize)
+				_mapMoveAtoB(map);
+		}
+		mutexReleaseLock(map->lock);
+		return;
     }
+    mutexReleaseLock(map->lock);
 }
 
-void genericSetIntersection(GenericSet *dest, GenericSet *src)
+/* Use this function to both add keys to the map or change their value */
+void mapSet(Map *map, void *key, void *value, MapKeyType type)
 {
-    int i;
-    for (i = 0; i < dest->tableSize; i++)
-    {
-        GenericSetItem *item = &dest->table[i];
-        do
-        {
-            if (item->type != hashedNull)
-            {
-                if (!genericSetHas(src, item->value, item->type))
-                    genericSetRemove(dest, item->value, item->type);
-            }
-        }
-        while ((item = item->next) != NULL);
-    }
+	_mapSet(map, key, value, type, true);
 }
 
-void genericSetDifference(GenericSet *dest, GenericSet *src)
+/* Removes a key; Returns true or false depending on success */
+bool mapRemove(Map *map, void *key, MapKeyType type)
 {
-    int i;
-    for (i = 0; i < src->tableSize; i++)
+    mutexAcquireLock(map->lock);
+    bool inTableA;
+    Association *previous;
+    Association *assoc = _mapFindBucket(map, key, type, &inTableA, &previous);
+    if (inTableA)
+		map->entriesA--;
+	else
+		map->entriesB--;
+    if (assoc == NULL)
     {
-        GenericSetItem *item = &src->table[i];
-        do
-        {
-            if (item->type != hashedNull)
-                genericSetRemove(dest, item->value, item->type);
-        }
-        while ((item = item->next) != NULL);
+        mutexReleaseLock(map->lock);
+        return false;
     }
+    // delete!
+    _mapDelAssoc(assoc, previous);
+    mutexReleaseLock(map->lock);
+    return true;
 }
 
-void genericSetDebug(GenericSet *set)
+Map *mapNew()
 {
-    int i;
-    for (i = 0; i < set->tableSize; i++)
-    {
-        GenericSetItem *item = &set->table[i];
-        
-        do
-        {
-            printf("%i. ", i);
-            switch (item->type)
-            {
-                case hashedNull:
-                    printf("Null");
-                break;
-                case hashedValue:
-                    printf("value: %i", item->value);
-                break;
-                case hashedString:
-                    printf("value: %s", item->value);
-                break;
-                case hashedValueAssociation:
-                    printf("key: %i value: %s", ((Association*)item->value)->key, ((Association*)item->value)->value);
-                break;
-                case hashedStringAssociation:
-                    printf("key: %s value: %s", ((Association*)item->value)->key, ((Association*)item->value)->value);
-                break;
-                default:
-                    panic("This should never be called");
-                break;
-            }
-            printf("\n");
-        } while ((item = item->next) != NULL);
-    }
+    Map *map = malloc(sizeof(Map));
+    map->entriesA = 0;
+    map->entriesB = 0;
+    map->capacityA = 5;
+    map->capacityB = 0;
+    map->A = calloc(map->capacityA, sizeof(Association));
+    map->B = NULL;
+    map->lock = mutexNew();
+    return map;
+}
+
+/* Deletes the map */
+void mapDel(Map *map)
+{
+	mutexAcquireLock(map->lock);
+    _mapDeleteTable(map->capacityA, map->A);
+	if (map->B != NULL)
+		_mapDeleteTable(map->capacityB, map->B);
+	mutexDel(map->lock);
+	free(map);
+}
+
+void mapDebug(Map *map)
+{
+	printf("Map debug status:\n");
+	printf("Total capacity: %i Total entries: %i\n", map->capacityA + map->capacityB, map->entriesA + map->entriesB);
+	printf("  == Hashtable A ==\n");
+	Size i;
+	for (i = 0; i < map->capacityA; i++)
+	{
+		Association *assoc = &map->A[i];
+		printf("    Bucket %i\n", i);
+		do
+		{
+			printf("       type %i key %s value %x\n", assoc->type, assoc->key, assoc->value);
+		}
+		while ((assoc = assoc->next) != NULL);
+	}
+	printf("  == Hashtable B ==\n");
+	for (i = 0; i < map->capacityB; i++)
+	{
+		Association *assoc = &map->B[i];
+		printf("    Bucket %i\n", i);
+		do
+		{
+			printf("       type %i key %s value %x\n", assoc->type, assoc->key, assoc->value);
+		}
+		while ((assoc = assoc->next) != NULL);
+	}
+}
+
+////////////////////////////////
+// InternTable Implementation //
+////////////////////////////////
+
+InternTable *internTableNew()
+{
+	InternTable *table = malloc(sizeof(InternTable));
+	table->count = 1;
+	table->entries = mapNew();
+	return table;
+}
+
+Size internString(InternTable *table, String string)
+{
+	Size value = (Size)mapGet(table->entries, string, stringKey);
+	if (value == 0)
+	{
+		mapSet(table->entries, string, (void*)table->count, stringKey);
+		value = table->count++;
+	}
+	return value - 1;
+}
+
+void internTableDel(InternTable *table)
+{
+	mapDel(table->entries);
+	free(table);
+}
+
+bool isStringInterned(InternTable *table, String string)
+{
+	return (bool)mapGet(table->entries, string, stringKey);
+}
+
+//////////////////////////
+// Stack Implementation //
+//////////////////////////
+
+// Grow by 50% each time
+#define stackNextSize(currentSize) (currentSize + (currentSize >> 1))
+#define stackEntryCount(stack) (((Size)stack->top - (Size)stack->bottom) / sizeof(void*))
+
+Stack *stackNew()
+{
+	Stack *stack = malloc(sizeof(Stack));
+	stack->capacity = 5;
+	stack->bottom = malloc(sizeof(void*) * stack->capacity);
+	stack->top = stack->bottom;
+	stack->lock = mutexNew();
+	return stack;
+}
+
+void stackPush(Stack *stack, void *element)
+{
+	mutexAcquireLock(stack->lock);
+	*stack->top++ = element;
+	Size stackTopOffset = stackEntryCount(stack);
+	if (stackTopOffset >= stack->capacity) // embiggen, it's full
+	{
+		stack->capacity = stackNextSize(stack->capacity);
+		stack->bottom = realloc(stack->bottom, stack->capacity);
+		stack->top = stack->bottom + stackTopOffset;
+	}
+	mutexReleaseLock(stack->lock);
+}
+
+void *stackPop(Stack *stack)
+{
+	mutexAcquireLock(stack->lock);
+	if (stack->top == stack->bottom) // empty
+		return NULL;
+	void *value = --*stack->top;
+	mutexReleaseLock(stack->lock);
+	return value;
+}
+
+void stackDel(Stack *stack)
+{
+	mutexAcquireLock(stack->lock);
+	free(stack->bottom);
+	free(stack->lock);
+	free(stack);
 }
 
 //////////////////////////////////
@@ -436,50 +568,4 @@ String stringBuilderToString(StringBuilder *sb)
     String s = sb->s;
     free(sb);
     return s;
-}
-
-//////////////////////////
-// Stack Implementation //
-//////////////////////////
-
-Stack *stackNew()
-{
-    Stack *stack = malloc(sizeof(Stack));
-    stack->topIndex = 0;
-    stack->capacity = 4; /* Magic starting value */
-    stack->array = malloc(sizeof(void*) * stack->capacity);
-    return stack;
-}
-
-void stackPush(Stack *stack, void *value)
-{
-    if (stack->topIndex >= stack->capacity)
-        stack->array = realloc(stack->array, (stack->capacity *= 1.5));
-    stack->array[stack->topIndex++] = value;
-}
-
-void *stackPop(Stack *stack)
-{
-    if (stack->topIndex == 0)
-        panic("Stack underflow");
-    void *value = stack->array[--stack->topIndex];
-    return value;
-}
-
-Size stackSize(Stack *stack)
-{
-    return stack->topIndex;
-}
-
-void *stackTop(Stack *stack)
-{
-    if (stack->topIndex == 0)
-        panic("Stack underflow");
-    return stack->array[stack->topIndex - 1];
-}
-
-void stackDel(Stack *stack)
-{
-    free(stack->array);
-    free(stack);
 }

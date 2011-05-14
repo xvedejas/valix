@@ -29,6 +29,7 @@
 #include <pci.h>
 #include <lexer.h>
 #include <vm.h>
+#include <acpi.h>
 
 const Size systemStackSize = 0x1000;
 
@@ -199,7 +200,7 @@ void timerInstall()
 
 ThreadFunc myThread()
 {
-    u8 *bytecode = parse(lex("import test. a = 2. b = a * 3. a = a raisedTo: 7."));
+    u8 *bytecode = parse(lex("import test. a = 2. b = a * 3."));
     execute(bytecode);
     free(bytecode);
 }
@@ -264,6 +265,7 @@ void kmain(u32 magic, MultibootStructure *multiboot, void *stackPointer)
     debugInstall();
     printf("Valix OS Alpha - Built on " __DATE__ " " __TIME__
         "\nCompiled with gcc " __VERSION__ "...\n");
+    acpiInstall();
     mmInstall(multiboot);
     threadingInstall(stackPointer);
     videoInstall(multiboot);
@@ -272,7 +274,9 @@ void kmain(u32 magic, MultibootStructure *multiboot, void *stackPointer)
     asm volatile("sti;");
     //FileCoreInit();
     
-    spawn("parser", myThread);
+    
+    
+    //spawn("parser", myThread);
     //pciinfo();
     
     return; /* kills kernel thread */

@@ -19,138 +19,79 @@
 #ifndef __data_h__
 #define __data_h__
 #include <main.h>
+#include <threading.h>
 
-//////////////////////////
-// GenericSet Interface //
-//////////////////////////
+///////////////////
+// Map Interface //
+///////////////////
 
-typedef struct
+typedef enum
+{
+    nullKey = 0,
+    stringKey,
+    valueKey
+} MapKeyType;
+
+typedef struct assoc
 {
     void *key;
     void *value;
+    MapKeyType type;
+    struct assoc *next;
 } Association;
 
-typedef enum hashType
+typedef struct
 {
-    hashedNull = 0, /* 0 so that a calloc defaults to these null values */
-    hashedValue,
-    hashedString,
-    hashedValueAssociation,
-    hashedStringAssociation
-} HashType;
+    Association *A; // hashtable A, pointer to first item in array
+    Association *B; // hashtable B, pointer to first item in array
+    Size entriesA;
+    Size entriesB;
+    Size capacityA;
+    Size capacityB;
+    Mutex *lock;
+} Map;
 
-typedef struct setItem
-{
-    void *value;
-    HashType type;
-    struct setItem *next;
-} GenericSetItem;
+void *mapGet(Map *map, void *key, MapKeyType type);
+void mapSet(Map *map, void *key, void *value, MapKeyType type);
+bool mapRemove(Map *map, void *key, MapKeyType type);
+Map *mapNew();
+void mapDel(Map *map);
+void mapDebug(Map *map);
+
+///////////////////////////
+// InternTable Interface //
+///////////////////////////
+
+/* The internal interned value is one more than actual, so that a 0
+ * may represent undefined value. */
 
 typedef struct
 {
-    Size tableSize;
-    GenericSetItem table[0];
-} GenericSet;
+	Map *entries;
+	Size count;
+} InternTable;
 
-typedef GenericSet Set;
-typedef GenericSet StrSet; // values are strings
-typedef GenericSet Map;
-typedef GenericSet StrMap; // Keys are strings; probably want to use this
+InternTable *internTableNew();
+Size internString(InternTable *table, String string);
+void internTableDel(InternTable *table);
+bool isStringInterned(InternTable *table, String string);
 
-Association *associationNew(void *key, void *value);
-
-#define setNew()                   genericSetNew()
-#define setDel(set)                genericSetDel(set)
-#define setAdd(set, value)         genericSetAdd(set, value, hashedValue)
-#define setGet(set, value)         genericSetGet(set, value, hashedValue)
-#define setHas(set, value)         genericSetHas(set, value, hashedValue)
-#define setRemove(set, value)      genericSetRemove(set, value, hashedValue)
-#define setCopy(set)               genericSetCopy(set)
-#define setUnion(dest, src)        genericSetUnion(dest, src)
-#define setIntersection(dest, src) genericSetIntersection(dest, src)
-#define setDifference(dest, src)   genericSetDifference(dest, src)
-#define setForEach(set) { int _i; for (_i = 0; _i < set->tableSize; _i++) { GenericSetItem *_item = &set->table[_i]; do { void *value = _item->value; {
-#define setForEachEnd() }} while ((_item = _item->next) != NULL); } }
-
-#define strSetNew()                   genericSetNew()
-#define strSetDel(set)                genericSetDel(set)
-#define strSetAdd(set, value)         genericSetAdd(set, value, hashedString)
-#define strSetGet(set, value)         genericSetGet(set, value, hashedString)
-#define strSetHas(set, value)         genericSetHas(set, value, hashedString)
-#define strSetRemove(set, value)      genericSetRemove(set, value, hashedString)
-#define strSetCopy(set)               genericSetCopy(set)
-#define strSetUnion(dest, src)        genericSetUnion(dest, src)
-#define strSetIntersection(dest, src) genericSetIntersection(dest, src)
-#define strSetDifference(dest, src)   genericSetDifference(dest, src)
-
-#define mapNew()                   genericSetNew()
-#define mapDel(set)                genericSetDel(set)
-#define mapAdd(set, key, value)    genericSetAdd(set, associationNew(key, (void*)value), hashedValueAssociation)
-#define mapGet(set, key)           genericSetGet(set, key, hashedValueAssociation)
-#define mapSet(set, key, value)    { genericSetGet(set, key, hashedValueAssociation)->value = value; }
-#define mapHas(set, key)           genericSetHas(set, key, hashedValueAssociation)
-#define mapRemove(set, key)        genericSetRemove(set, key, hashedValueAssociation)
-#define mapCopy(set)               genericSetCopy(set)
-#define mapUnion(dest, src)        genericSetUnion(dest, src)
-#define mapIntersection(dest, src) genericSetIntersection(dest, src)
-#define mapDifference(dest, src)   genericSetDifference(dest, src)
-
-#define strMapNew()                   genericSetNew()
-#define strMapDel(set)                genericSetDel(set)
-#define strMapAdd(set, key, value)    genericSetAdd(set, associationNew(key, value), hashedStringAssociation)
-#define strMapGet(set, key)           genericSetGet(set, key, hashedStringAssociation)
-#define strMapSet(set, key, value)    { genericSetGet(set, key, hashedStringAssociation)->value = value; }
-#define strMapHas(set, key)           genericSetHas(set, key, hashedStringAssociation)
-#define strMapRemove(set, key)        genericSetRemove(set, key, hashedStringAssociation)
-#define strMapCopy(set)               genericSetCopy(set)
-#define strMapUnion(dest, src)        genericSetUnion(dest, src)
-#define strMapIntersection(dest, src) genericSetIntersection(dest, src)
-#define strMapDifference(dest, src)   genericSetDifference(dest, src)
-
-GenericSet *genericSetNewSize(Size size);
-GenericSet *genericSetNew(); /* Default size 11, does not change */
-void genericSetDel(GenericSet *set);
-bool _valuesAreEquivalent(void *value1, HashType type1, void *value2, HashType type2);
-// value is a value, start of string, or pointer to Association struct
-void genericSetAdd(GenericSet *set, void *value, HashType type);
-void *genericSetGet(GenericSet *set, void *value, HashType type);
-bool genericSetHas(GenericSet *set, void *value, HashType type);
-void *genericSetRemove(GenericSet *set, void *value, HashType type);
-/* Alter the size of the set copy */
-GenericSet *genericSetCopySize(GenericSet *set, Size size);
-/* Shallow copy of the set */
-GenericSet *genericSetCopy(GenericSet *set);
-void genericSetUnion(GenericSet *dest, GenericSet *src);
-void genericSetIntersection(GenericSet *dest, GenericSet *src);
-void genericSetDifference(GenericSet *dest, GenericSet *src);
-void genericSetDump(GenericSet *set);
-
-///////////////////////// **********************************
-// ArrayList Interface // ** WARNING: NOT YET IMPLEMENTED **
-///////////////////////// **********************************
-
-/* Use for data that ought to keep order or be indexable. */
+/////////////////////
+// Stack Interface //
+/////////////////////
 
 typedef struct
 {
-	Size size,
-	     capacity;
-	void *buckets[0];
-} ArrayList;
+	void **bottom,  // pointer to first element in the stack array
+	     **top;     // pointer to right after the last element in the array
+	Size capacity;  // size of the array
+	Mutex *lock;
+} Stack;
 
-ArrayList *arrayListNew(); /* Default capacity 4, does expand */
-void arrayListAdd(ArrayList *list, void *value);
-void arrayListInsert(ArrayList *list, void *value, Size index);
-void *arrayListAt(ArrayList *list, Size index);
-void *arrayListPop(ArrayList *list, Size index);
-
-/* Note that when searching for items in the ArrayList, whether using Remove or
- * Has, this is an "is-a" relationship, not an equivalence relationship. That
- * means that two identical strings are not the same string if they reside in
- * different places in memory. */
-
-void *arrayListRemove(ArrayList *list, void *value);
-bool arrayListHas(ArrayList *list, void *value);
+Stack *stackNew();
+void stackPush(Stack *stack, void *element);
+void *stackPop(Stack *stack);
+void stackDel(Stack *stack);
 
 /////////////////////////////
 // StringBuilder Interface //
@@ -171,23 +112,5 @@ void stringBuilderAppendN(StringBuilder *sb, String s, Size len);
 void stringBuilderAppendChar(StringBuilder *sb, char c);
 /* note: ToString will destroy the string builder! */
 extern String stringBuilderToString(StringBuilder *sb);
-
-/////////////////////
-// Stack Interface //
-/////////////////////
-
-typedef struct
-{
-    Size topIndex;
-    Size capacity;
-    void **array;
-} Stack;
-
-Stack *stackNew();
-void stackPush(Stack *stack, void *value);
-void *stackPop(Stack *stack);
-Size stackSize(Stack *stack);
-void *stackTop(Stack *stack);
-void stackDel(Stack *stack);
 
 #endif

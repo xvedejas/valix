@@ -198,11 +198,13 @@ void timerInstall()
     timerPhase(systemClockFreq); /* set to milisecond precision */
 }
 
-ThreadFunc myThread()
+ThreadFunc parserThread()
 {
-    u8 *bytecode = parse(lex("import test. a = 2. b = a * 3."));
-    execute(bytecode);
+	printf("Used %i\n", memUsed());
+    u8 *bytecode = parse(lex("a = 2. b = a * 3."));
+    //execute(bytecode);
     free(bytecode);
+    printf("Used %i\n", memUsed());
 }
 
 void pciinfo()
@@ -274,10 +276,10 @@ void kmain(u32 magic, MultibootStructure *multiboot, void *stackPointer)
     asm volatile("sti;");
     //FileCoreInit();
     
+    spawn("parser", parserThread);
+    pciinfo();
     
-    
-    //spawn("parser", myThread);
-    //pciinfo();
+    sleep(1000);
     
     return; /* kills kernel thread */
 }

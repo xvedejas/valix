@@ -51,10 +51,11 @@ typedef struct
     Mutex *lock;
 } Map;
 
+Map *mapNew();
+Map *mapNewSize(Size startingSize);
 void *mapGet(Map *map, void *key, MapKeyType type);
 void mapSet(Map *map, void *key, void *value, MapKeyType type);
 bool mapRemove(Map *map, void *key, MapKeyType type);
-Map *mapNew();
 void mapDel(Map *map);
 void mapDebug(Map *map);
 

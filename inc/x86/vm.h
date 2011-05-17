@@ -20,6 +20,30 @@
 #define __vm_h__
 #include <main.h>
 #include <threading.h>
+#include <data.h>
+
+/// todo; read more about metaobject protocols
+
+typedef enum
+{
+	nullObject,
+	integerObject,
+	stringObject,
+	internalFunctionObject,
+	userDefinedObject
+} ObjectDataType;
+
+typedef struct
+{
+	ObjectDataType type;
+	union
+	{
+		Map *fields;
+		String string;
+		Size integer;
+		void *data;
+	};
+} Object;
 
 void vmInstall();
 ThreadFunc execute(u8 *bytecode);

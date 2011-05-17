@@ -147,26 +147,24 @@ void _mapMoveAtoB(Map *map)
 		if (assoc->type != nullKey)
 			break;
     }
-    if (i == map->capacityA)
-    {
-        // Here, we are done moving items from A to B. Swap B for A, and delete A.
-        assert(map->entriesA == 0, "Map error");
-        _mapDeleteTable(map->capacityA, map->A);
-        map->A = map->B;
-        map->entriesA = map->entriesB;
-        map->capacityA = map->capacityB;
-        map->entriesB = 0;
-        map->capacityB = 0;
-        map->B = NULL;
-        return;
-    }
     void *key = assoc->key,
          *value = assoc->value;
     MapKeyType type = assoc->type;
     // remove the association (from A)
     _mapDelAssoc(assoc, NULL);
     map->entriesA--;
-    // re-add the association (to B)
+    if (map->entriesA == 0)
+    {
+        // Here, we are done moving items from A to B. Swap B for A, and delete A.
+        free(map->A);
+        map->A = map->B;
+        map->entriesA = map->entriesB;
+        map->capacityA = map->capacityB;
+        map->entriesB = 0;
+        map->capacityB = 0;
+        map->B = NULL;
+    }
+    // re-add the association
     _mapSet(map, key, value, type, false);
 }
 
@@ -222,6 +220,7 @@ Association *_mapFindBucket(Map *map, void *key, MapKeyType type, bool *inTableA
         assoc = assoc->next;
     } while (assoc != NULL);
     /* Look again, this time in table B if it exists */
+    *previous = NULL;
     if (map->B != NULL)
     {
         Size hashB = hash % map->capacityB;
@@ -364,10 +363,15 @@ bool mapRemove(Map *map, void *key, MapKeyType type)
 
 Map *mapNew()
 {
+    return mapNewSize(5);
+}
+
+Map *mapNewSize(Size startingSize)
+{
     Map *map = malloc(sizeof(Map));
     map->entriesA = 0;
     map->entriesB = 0;
-    map->capacityA = 5;
+    map->capacityA = startingSize;
     map->capacityB = 0;
     map->A = calloc(map->capacityA, sizeof(Association));
     map->B = NULL;
@@ -398,7 +402,10 @@ void mapDebug(Map *map)
 		printf("    Bucket %i\n", i);
 		do
 		{
-			printf("       type %i key %s value %x\n", assoc->type, assoc->key, assoc->value);
+			if (assoc->type == stringKey)
+				printf("       type %i key %s value %x\n", assoc->type, assoc->key, assoc->value);
+			else if (assoc->type == valueKey)
+				printf("       type %i key %x value %x\n", assoc->type, assoc->key, assoc->value);
 		}
 		while ((assoc = assoc->next) != NULL);
 	}
@@ -409,7 +416,10 @@ void mapDebug(Map *map)
 		printf("    Bucket %i\n", i);
 		do
 		{
-			printf("       type %i key %s value %x\n", assoc->type, assoc->key, assoc->value);
+			if (assoc->type == stringKey)
+				printf("       type %i key %s value %x\n", assoc->type, assoc->key, assoc->value);
+			else if (assoc->type == valueKey)
+				printf("       type %i key %x value %x\n", assoc->type, assoc->key, assoc->value);
 		}
 		while ((assoc = assoc->next) != NULL);
 	}
@@ -422,7 +432,7 @@ void mapDebug(Map *map)
 InternTable *internTableNew()
 {
 	InternTable *table = malloc(sizeof(InternTable));
-	table->count = 1;
+	table->count = 0;
 	table->entries = mapNew();
 	return table;
 }
@@ -432,8 +442,9 @@ Size internString(InternTable *table, String string)
 	Size value = (Size)mapGet(table->entries, string, stringKey);
 	if (value == 0)
 	{
+		table->count++;
 		mapSet(table->entries, string, (void*)table->count, stringKey);
-		value = table->count++;
+		value = table->count;
 	}
 	return value - 1;
 }

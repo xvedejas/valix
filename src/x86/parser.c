@@ -62,7 +62,7 @@ stmt  :: expr '.'
  *  89  end statement
  *  8A  return, end procedure (arg)
  *  8B  set equal             [varname] {\0}
- *  8C  binary message        [method name] {\0} (args)*
+ *  8C  binary message        [method name] {\0} (arg)
  *  8D  internal function     [function name] {\0} (args*)
  *  
  */
@@ -369,8 +369,6 @@ u8 *parse(Token *first)
             free(first->data);
     } while ((first = next) != NULL);
     
-    sleep(1000);
-    
     /* We want our method table at the beginning of the bytecode */
     Size outputSize = output->size;
     String bodyCode = stringBuilderToString(output);
@@ -379,7 +377,7 @@ u8 *parse(Token *first)
     outputSize = methodTableBytecode->size;
     u8 *finalBytecode = (u8*)stringBuilderToString(methodTableBytecode);
     
-    finalBytecode[0] = (u8)methodTable->count;
+    finalBytecode[0] = (u8)methodTable->count; // method count
     internTableDel(methodTable);
     
     /* // see the output

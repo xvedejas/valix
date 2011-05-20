@@ -318,8 +318,11 @@ void _mapSet(Map *map, void *key, void *value, MapKeyType type, bool incremental
 		{
 			map->entriesA++;
 			// Expand when hashtable A is full
-			if (map->entriesA >= map->capacityA)
+			if (map->entriesA > map->capacityA)
+            {
 				_mapExpand(map);
+                _mapMoveAtoB(map);
+            }
 		}
 		else
 		{

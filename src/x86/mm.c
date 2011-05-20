@@ -146,7 +146,8 @@ void addToFreeList(MemoryHeader *block)
 
 void removeFromUsedList(MemoryHeader *block)
 {
-    /* This assert tends to fire if modifying mm structures while looping through them */
+    /* This assert tends to fire if modifying mm structures while
+     * looping through them. Don't do this, it is bad! */
     assert(!block->free, "MM Fatal Error");
 
     if (block->previous == NULL)
@@ -228,8 +229,8 @@ void *kalloc(Size size, Thread *thread)
             addToUsedList(currentBlock);
 
             sweep();
-            mutexReleaseLock(&mmLockMutex);
             currentBlock->thread = thread;
+            mutexReleaseLock(&mmLockMutex);
             return (void*)&currentBlock->start;
         }
         else // Block not large enough. Next.

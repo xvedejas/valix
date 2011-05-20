@@ -22,28 +22,33 @@
 #include <threading.h>
 #include <data.h>
 
-/// todo; read more about metaobject protocols
+typedef struct object
+{
+    /* Instead of having a tag, each object's underlying type is
+     * determined by its lookup function, which is ultimately
+     * responsable for all access to its members. */
+    struct object *(*lookup)(struct object *self, struct object *symbol);
+    struct object *vtable; /* methods */
+    struct object *parent;
+    void *data;     /* any associated data */
+} Object;
 
 typedef enum
 {
-	nullObject,
-	integerObject,
-	stringObject,
-	internalFunctionObject,
-	userDefinedObject
-} ObjectDataType;
+    internalFunction,
+    userDefinedClosure
+} ClosureType;
 
-typedef struct
+typedef struct method
 {
-	ObjectDataType type;
-	union
-	{
-		Map *fields;
-		String string;
-		Size integer;
-		void *data;
-	};
-} Object;
+    ClosureType type;
+    Size argc;
+    union
+    {
+        void *funcptr;
+        u8 *bytecode;
+    };
+} Method;
 
 void vmInstall();
 ThreadFunc execute(u8 *bytecode);

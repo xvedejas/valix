@@ -48,6 +48,7 @@ typedef enum
     colonToken,        // :
     semiToken,         // ;
 	/* symbols */
+	symbolToken,  // #symbolName
     keywordToken,
     specialCharToken,
 } TokenType;

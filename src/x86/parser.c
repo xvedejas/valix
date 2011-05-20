@@ -62,7 +62,7 @@ stmt  :: expr '.'
  *  89  end statement
  *  8A  return, end procedure (arg)
  *  8B  set equal             [varname] {\0}
- *  8C  binary message        [method name] {\0} (arg)
+ *  8C  push symbol
  *  8D  internal function     [function name] {\0} (args*)
  *  
  */
@@ -79,9 +79,9 @@ u8 *parse(Token *first)
     Stack *varTables = stackNew();
     InternTable *currentVarTable; /* Per scope */
     /* Per file, when loaded is compared with global method table */
-    InternTable *methodTable = internTableNew();
+    InternTable *symbolTable = internTableNew();
     /* The method table must be saved */
-    StringBuilder *methodTableBytecode = stringBuilderNew(" ");
+    StringBuilder *symbolTableBytecode = stringBuilderNew(" ");
     /* The very first byte tells the size of the method table. For now the
      * limit is 255 but it may very well change. that byte is reserved by
      * starting with a single character in the string builder. */
@@ -202,12 +202,12 @@ u8 *parse(Token *first)
             strcat(methodName, ":");
         }
         
-        bool alreadyInTable = isStringInterned(methodTable, methodName);
-        Size index = internString(methodTable, methodName);
+        bool alreadyInTable = isStringInterned(symbolTable, methodName);
+        Size index = internString(symbolTable, methodName);
         if (!alreadyInTable)
         {
-            stringBuilderAppend(methodTableBytecode, methodName);
-            stringBuilderAppendChar(methodTableBytecode, '\0');
+            stringBuilderAppend(symbolTableBytecode, methodName);
+            stringBuilderAppendChar(symbolTableBytecode, '\0');
         }
         outchr((u8)index);
         return;
@@ -225,15 +225,15 @@ u8 *parse(Token *first)
                 String data = curToken->data;
                 nextToken();
                 parseValue();
-                outchr('\x8C'); /* binary message directive */
-                bool alreadyInTable = isStringInterned(methodTable, data);
-                Size index = internString(methodTable, data);
+                outchr('\x84'); /* (binary) message directive */
+                bool alreadyInTable = isStringInterned(symbolTable, data);
+                Size index = internString(symbolTable, data);
                 if (!alreadyInTable)
                 {
-                    stringBuilderAppend(methodTableBytecode, data);
-                    stringBuilderAppendChar(methodTableBytecode, '\0');
+                    stringBuilderAppend(symbolTableBytecode, data);
+                    stringBuilderAppendChar(symbolTableBytecode, '\0');
                 }
-                outchr((u8)index);
+                outchr((u8)index); /* method name */
             }
         }
     }
@@ -258,6 +258,20 @@ u8 *parse(Token *first)
                 nextToken();
                 return;
             } break;
+            case symbolToken:
+            {
+				outchr('\x8C'); /* Symbol directive */
+				bool alreadyInTable = isStringInterned(symbolTable, curToken->data);
+				Size index = internString(symbolTable, curToken->data);
+				if (!alreadyInTable)
+				{
+					stringBuilderAppend(symbolTableBytecode, curToken->data);
+					stringBuilderAppendChar(symbolTableBytecode, '\0');
+				}
+				outchr((u8)index);
+				nextToken();
+				return;
+			} break;
             case keywordToken:
             {
                 outchr('\x83'); /* Keyword directive */
@@ -372,18 +386,17 @@ u8 *parse(Token *first)
     /* We want our method table at the beginning of the bytecode */
     Size outputSize = output->size;
     String bodyCode = stringBuilderToString(output);
-    stringBuilderAppendN(methodTableBytecode, bodyCode, outputSize);
+    stringBuilderAppendN(symbolTableBytecode, bodyCode, outputSize);
     free(bodyCode);
-    outputSize = methodTableBytecode->size;
-    u8 *finalBytecode = (u8*)stringBuilderToString(methodTableBytecode);
+    outputSize = symbolTableBytecode->size;
+    u8 *finalBytecode = (u8*)stringBuilderToString(symbolTableBytecode);
     
-    finalBytecode[0] = (u8)methodTable->count; // method count
-    internTableDel(methodTable);
+    finalBytecode[0] = (u8)symbolTable->count; // method count
+    internTableDel(symbolTable);
     
-    /* // see the output
+    // see the output
     for (i = 0; i < outputSize; i++)
         printf("%x %c\n", finalBytecode[i], finalBytecode[i]);
-        */
     
     return (u8*)finalBytecode;
 }

@@ -48,6 +48,7 @@ String tokenTypeNames[] =
     "colonToken",        // :
     "semiToken",         // ;
 	/* symbols */
+	"symbolToken",
     "keywordToken",
     "specialCharToken",
 };
@@ -229,6 +230,19 @@ Token *lex(String source)
     {
         switch(source[i])
         {
+			case '#': // #symbol
+			{
+				i++;
+				Size length = matchSymbol(source, i);
+                String data = malloc(sizeof(char) * (length + 1));
+                strlcpy(data, source + i, length);
+                Token *token = tokenNew(line, column);
+				token->data = data;
+				token->type = symbolToken;
+				addToken(token);
+                i += length;
+                column += length;
+			} break;
             case '/':
             {
                 Size length = matchComment(source, i);
@@ -246,10 +260,10 @@ Token *lex(String source)
                     break;
                 }
             } /* Do not break here, fall through */
-            case 'a' ... 'z': case 'A' ... 'Z':
-            case '~': case '`': case '!': case '@': case '#': case '$':
-            case '%': case '^': case '&': case '*': case '-': case '+':
-            case '_': case '?': case '<': case '>': case '\\':
+            case 'a' ... 'z': case 'A' ... 'Z': case '~': case '`':
+            case '!': case '@': case '$': case '%': case '^': case '&':
+            case '*': case '-': case '+': case '_': case '?': case '<':
+            case '>': case '\\':
             {
                 Size length = matchSymbol(source, i);
                 String data = malloc(sizeof(char) * (length + 1));
@@ -291,7 +305,8 @@ Token *lex(String source)
                         break;
                     }
                 }
-                if (token->type == keywordToken || token->type == specialCharToken)
+                if (token->type == keywordToken ||
+                    token->type == specialCharToken)
                 {
                     token->data = data;
                 } else /* token->type is some keyword type, don't need data */

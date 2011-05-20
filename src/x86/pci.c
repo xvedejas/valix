@@ -58,18 +58,18 @@ bool pciCheckDeviceExists(u8 bus, u8 slot, u8 func)
 PciConfigHeaderBasic pciGetBasicConfigHeader(u8 bus, u8 slot, u8 func)
 {
     PciConfigHeaderBasic pciHeader;
-    pciHeader.bus                        = bus;
-    pciHeader.dev                        = slot;
-    pciHeader.func                       = func;
-    pciHeader.vendorId                   = pciConfigReadWord(bus, slot, func, 0x00);
-    pciHeader.deviceId                   = pciConfigReadWord(bus, slot, func, 0x02);
-    pciHeader.command                    = pciConfigReadWord(bus, slot, func, 0x04);
-    pciHeader.status                     = pciConfigReadWord(bus, slot, func, 0x06);
-    pciHeader.revisionId                 = pciConfigReadByte(bus, slot, func, 0x08);
-    pciHeader.classProgrammingInterface  = pciConfigReadByte(bus, slot, func, 0x09);
-    pciHeader.classSubclass              = pciConfigReadByte(bus, slot, func, 0x0A);
-    pciHeader.classBase                  = pciConfigReadByte(bus, slot, func, 0x0B);
-    pciHeader.headerType                 = pciConfigReadByte(bus, slot, func, 0x0E);
+    pciHeader.bus                       = bus;
+    pciHeader.dev                       = slot;
+    pciHeader.func                      = func;
+    pciHeader.vendorId                  = pciConfigReadWord(bus, slot, func, 0x00);
+    pciHeader.deviceId                  = pciConfigReadWord(bus, slot, func, 0x02);
+    pciHeader.command                   = pciConfigReadWord(bus, slot, func, 0x04);
+    pciHeader.status                    = pciConfigReadWord(bus, slot, func, 0x06);
+    pciHeader.revisionId                = pciConfigReadByte(bus, slot, func, 0x08);
+    pciHeader.classProgrammingInterface = pciConfigReadByte(bus, slot, func, 0x09);
+    pciHeader.classSubclass             = pciConfigReadByte(bus, slot, func, 0x0A);
+    pciHeader.classBase                 = pciConfigReadByte(bus, slot, func, 0x0B);
+    pciHeader.headerType                = pciConfigReadByte(bus, slot, func, 0x0E);
     
     return pciHeader;
 }

@@ -200,11 +200,9 @@ void timerInstall()
 
 ThreadFunc parserThread()
 {
-	printf("Used %i\n", memUsed());
-    u8 *bytecode = parse(lex("a = 2. b = a * 3."));
-    //execute(bytecode);
+    u8 *bytecode = parse(lex("a = 2. b = a * 3. c = #symb."));
+    execute(bytecode);
     free(bytecode);
-    printf("Used %i\n", memUsed());
 }
 
 void pciinfo()
@@ -277,7 +275,7 @@ void kmain(u32 magic, MultibootStructure *multiboot, void *stackPointer)
     //FileCoreInit();
     
     spawn("parser", parserThread);
-    pciinfo();
+    //pciinfo();
     
     sleep(1000);
     

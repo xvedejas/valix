@@ -54,8 +54,11 @@ typedef struct
 Map *mapNew();
 Map *mapNewSize(Size startingSize);
 void *mapGet(Map *map, void *key, MapKeyType type);
+#define mapGetVal(map, key) mapGet(map, (void*)key, valueKey)
 void mapSet(Map *map, void *key, void *value, MapKeyType type);
+#define mapSetVal(map, key, value) mapSet(map, (void*)key, (void*)value, valueKey)
 bool mapRemove(Map *map, void *key, MapKeyType type);
+#define mapRemoveVal(map, key) mapRemove(map, (void*)key, valueKey)
 void mapDel(Map *map);
 void mapDebug(Map *map);
 

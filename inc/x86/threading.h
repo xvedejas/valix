@@ -47,36 +47,36 @@ volatile Size pidCount;
 
 typedef enum
 {
-	/* Ready threads have not yet begun. Once they do, they will be running */
-	ready,
-	/* Running regularly */
-	running,
-	/* Sleeping for a certain amount of time */
-	sleeping,
-	/* Paused until some other thread resumes it. Possibly waiting for a mutex
+    /* Ready threads have not yet begun. Once they do, they will be running */
+    ready,
+    /* Running regularly */
+    running,
+    /* Sleeping for a certain amount of time */
+    sleeping,
+    /* Paused until some other thread resumes it. Possibly waiting for a mutex
      * lock. */
-	paused,
+    paused,
     /* Kill the zombies! */
     zombie,
 } ThreadStatus;
 
 typedef struct thread
 {
-	String name;
-	ThreadStatus status;
-	u32 pid;
-	/* member "stack" is the lowest memory address of the stack, that is, the
-	 * beginning of memory allocated for stack use */
-	void *stack;
-	void *esp, *ebp;
-	/* Any mutex that this thread is waiting for to acquire a lock */
-	struct mutex *mutexWaitLock;
-	umax sleepOverTime;
-	/* The function that this thread begins execution in, specified by spawn */
-	ThreadFunc (*func)();
-	/* The previous and next threads in the doubly-linked chain */
-	struct thread *previous,
-		          *next;
+    String name;
+    ThreadStatus status;
+    u32 pid;
+    /* member "stack" is the lowest memory address of the stack, that is, the
+     * beginning of memory allocated for stack use */
+    void *stack;
+    void *esp, *ebp;
+    /* Any mutex that this thread is waiting for to acquire a lock */
+    struct mutex *mutexWaitLock;
+    umax sleepOverTime;
+    /* The function that this thread begins execution in, specified by spawn */
+    ThreadFunc (*func)();
+    /* The previous and next threads in the doubly-linked chain */
+    struct thread *previous,
+                  *next;
     /* If this thread is waiting on a mutex, any other threads in line for the
      * same mutex */
     struct thread *waitingNext;
@@ -100,13 +100,13 @@ void threadsDebug();
 
 typedef struct mutex
 {
-	bool locked;
+    bool locked;
     /* How many times it is locked */
     u32 multiplicity;
-	/* Thread under control of this mutex */
-	Thread *thread;
-	/* Linked list of threads waiting on this mutex */
-	Thread *threadsWaiting;
+    /* Thread under control of this mutex */
+    Thread *thread;
+    /* Linked list of threads waiting on this mutex */
+    Thread *threadsWaiting;
 } Mutex;
 
 /* A deadlock occurs when a thread that holds a mutex is waiting on a mutex
@@ -116,11 +116,11 @@ typedef struct mutex
 
 typedef struct
 {
-	bool accepted;
-	/* If accepted, "mutex" is the mutex the process obtained a lock on.
-	 * If not accepted, it's the mutex the process must release before
+    bool accepted;
+    /* If accepted, "mutex" is the mutex the process obtained a lock on.
+     * If not accepted, it's the mutex the process must release before
      * obtaining the originally desired lock */
-	Mutex *mutex;
+    Mutex *mutex;
 } MutexReply;
 
 /* When attempting to gain a lock on a mutex, if accepted, either the thread

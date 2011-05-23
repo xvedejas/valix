@@ -302,8 +302,8 @@ void free(void *memory)
     {
         printf("Attempted to free NULL pointer...ignoring.\n");
         mutexReleaseLock(&mmLockMutex);
-		return;
-	}
+        return;
+    }
     
     if (!mmInstalled)
         panic("MM Fatal Error, MM not installed");
@@ -446,7 +446,7 @@ void _sweep() // quick tests
     {
         assert(currentBlock->free, "Sweep failed");
         assert(currentBlock->startMagic == mmMagic, "Sweep failed");
-		assert(currentBlock->endMagic == mmMagic, "Sweep failed");
+        assert(currentBlock->endMagic == mmMagic, "Sweep failed");
         assert((Size)&currentBlock->start ==
             (Size)currentBlock + sizeof(MemoryHeader), "Sweep failed");
     } while ((currentBlock = currentBlock->next) >= (MemoryHeader*)0x100000);
@@ -459,7 +459,7 @@ void _sweep() // quick tests
     {
         assert(!currentBlock->free, "Sweep failed");
         assert(currentBlock->startMagic == mmMagic, "Sweep failed");
-		assert(currentBlock->endMagic == mmMagic, "Sweep failed");
+        assert(currentBlock->endMagic == mmMagic, "Sweep failed");
         assert((Size)&currentBlock->start ==
             (Size)currentBlock + sizeof(MemoryHeader), "Sweep failed");
     } while ((currentBlock = currentBlock->next) >= (MemoryHeader*)0x100000);

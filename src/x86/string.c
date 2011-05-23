@@ -1,8 +1,16 @@
 #include <string.h>
+#include <mm.h>
+
+String strdup(String s)
+{
+    String new = malloc(sizeof(char) * strlen(s));
+    strcpy(new, s);
+    return new;
+}
 
 u32 strcmp(String cs, String ct)
 {
-	register signed char __res;
+    register signed char __res;
     while (true)
     {
         if ((__res = *cs - *ct++) != 0 || !*cs++)
@@ -13,8 +21,8 @@ u32 strcmp(String cs, String ct)
 
 u32 strncmp(String cs, String ct, Size n)
 {
-	register signed char __res;
-	Size i = 0;
+    register signed char __res;
+    Size i = 0;
     while (i++ < n)
     {
         if ((__res = *cs - *ct++) != 0 || !*cs++)
@@ -25,7 +33,7 @@ u32 strncmp(String cs, String ct, Size n)
 
 Size strlcpy(String dest, String src, Size count)
 {
-	register u32 i = 0;
+    register u32 i = 0;
     while (*src && i++ < count) *dest++ = *src++;
     *dest++ = 0;
     return i;
@@ -35,7 +43,7 @@ Size chrcount(String s, char c)
 {
     int i = 0;
     while (*s++)
-       	if (*s == c)
+           if (*s == c)
             i++;
     return i;
 }
@@ -60,13 +68,13 @@ String strncat(String dest, String src, Size count)
     String tmp = dest;
     if (count)
     {
-     	while (*dest)
+         while (*dest)
             dest++;
         while ((*dest++ = *src++))
         {
             if (--count == 0)
             {
-             	*dest = '\0';
+                 *dest = '\0';
                 break;
             }
         }
@@ -88,14 +96,14 @@ void *memmove(void * dest, const void *src, Size count)
 
     if (dest <= src)
     {
-     	tmp = (char *) dest;
+         tmp = (char *) dest;
         s = (char *) src;
         while (count--)
             *tmp++ = *s++;
     }
     else
     {
-     	tmp = (char *) dest + count;
+         tmp = (char *) dest + count;
         s = (char *) src + count;
         while (count--)
             *--tmp = *--s;

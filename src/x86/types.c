@@ -215,7 +215,7 @@ double strtod(const char *String, char **endPtr)
     }
     
     if (endPtr != NULL)
-	*endPtr = (char *) p;
+    *endPtr = (char *) p;
 
     if (sign)
         return -fraction;
@@ -324,7 +324,7 @@ double atof(const char *nptr)
 }
 
 
-void itoa(Size input, char *buffer, Size radix)
+char *itoa(Size input, char *buffer, Size radix)
 {
     Size t = input;
     Size i = 1;
@@ -332,8 +332,9 @@ void itoa(Size input, char *buffer, Size radix)
     buffer[i] = 0;
     do
     {
-		i--;
-		buffer[i] = numerals[input % radix];
-		input /= radix;
-	} while (i);
+        i--;
+        buffer[i] = numerals[input % radix];
+        input /= radix;
+    } while (i);
+    return buffer;
 }

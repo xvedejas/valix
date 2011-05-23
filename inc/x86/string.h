@@ -24,6 +24,7 @@ void *memcpyd(void *dest, void *src, Size count);
 void *memmove(void *dest, const void *src, Size count);
 String strcpy(String dest, const String source);
 String strcat(String dest, const String source);
+String strdup(String s);
 Size strlen(String s);
 u32 strcmp(String cs, String ct);
 u32 strncmp(String cs, String ct, Size n);

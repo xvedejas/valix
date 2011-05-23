@@ -24,13 +24,9 @@
 
 typedef struct object
 {
-    /* Instead of having a tag, each object's underlying type is
-     * determined by its lookup function, which is ultimately
-     * responsable for all access to its members. */
-    struct object *(*lookup)(struct object *self, struct object *symbol);
     struct object *vtable; /* methods */
     struct object *parent;
-    void *data;     /* any associated data */
+    void *data; /* any associated data. In vtables, it's a Map<symbol,method> */
 } Object;
 
 typedef enum
@@ -39,16 +35,42 @@ typedef enum
     userDefinedClosure
 } ClosureType;
 
+typedef enum
+{
+    kernelPermissions,
+    rootPermissions,
+    userPermissions
+} Permissions;
+
+/* The method struct is the payload for a closure object */
 typedef struct method
 {
     ClosureType type;
     Size argc;
     union
     {
-        void *funcptr;
-        u8 *bytecode;
+        /* For internal functions only */
+        struct
+        {
+            void *funcptr;
+            Permissions permissions;
+        };
+        /* For user-defined closures only */
+        struct
+        {
+            Object *bytearray;
+        };
     };
 } Method;
+
+/* This is the payload for a scope object, which should be useful in
+ * error handling and stack trace stuff. */
+typedef struct scope
+{
+    Object *parent;
+    Object *closure;
+    Map *vars; /* <symbol,object> */
+} Scope;
 
 void vmInstall();
 ThreadFunc execute(u8 *bytecode);

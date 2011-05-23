@@ -71,8 +71,8 @@ void mapDebug(Map *map);
 
 typedef struct
 {
-	Map *entries;
-	Size count;
+    Map *entries;
+    Size count;
 } InternTable;
 
 InternTable *internTableNew();
@@ -86,10 +86,10 @@ bool isStringInterned(InternTable *table, String string);
 
 typedef struct
 {
-	void **bottom,  // pointer to first element in the stack array
-	     **top;     // pointer to right after the last element in the array
-	Size capacity;  // size of the array
-	Mutex *lock;
+    void **bottom;  // pointer to first element in the stack array
+    Size entries;
+    Size capacity;  // size of the array
+    Mutex *lock;
 } Stack;
 
 Stack *stackNew();

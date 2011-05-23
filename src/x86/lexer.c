@@ -25,7 +25,7 @@
 String tokenTypeNames[] =
 {   "undefToken",
     "EOFToken",
-	/* keywords */
+    /* keywords */
     "returnToken",
     "yieldToken",
     "importToken",
@@ -47,8 +47,8 @@ String tokenTypeNames[] =
     "commaToken",        // ,
     "colonToken",        // :
     "semiToken",         // ;
-	/* symbols */
-	"symbolToken",
+    /* symbols */
+    "symbolToken",
     "keywordToken",
     "specialCharToken",
 };
@@ -230,19 +230,19 @@ Token *lex(String source)
     {
         switch(source[i])
         {
-			case '#': // #symbol
-			{
-				i++;
-				Size length = matchSymbol(source, i);
+            case '#': // #symbol
+            {
+                i++;
+                Size length = matchSymbol(source, i);
                 String data = malloc(sizeof(char) * (length + 1));
                 strlcpy(data, source + i, length);
                 Token *token = tokenNew(line, column);
-				token->data = data;
-				token->type = symbolToken;
-				addToken(token);
+                token->data = data;
+                token->type = symbolToken;
+                addToken(token);
                 i += length;
                 column += length;
-			} break;
+            } break;
             case '/':
             {
                 Size length = matchComment(source, i);

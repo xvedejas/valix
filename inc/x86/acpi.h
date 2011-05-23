@@ -25,15 +25,15 @@
 
 typedef struct
 {
-	char signature[4];
-	u32  length;
-	u8   revision;
-	u8   checksum;
-	char oemID[6];
-	char oemTableID[8];
-	u32  oemRevision;
-	u32  creatorID;
-	u32  creatorRevision;
+    char signature[4];
+    u32  length;
+    u8   revision;
+    u8   checksum;
+    char oemID[6];
+    char oemTableID[8];
+    u32  oemRevision;
+    u32  creatorID;
+    u32  creatorRevision;
 } ACPISDTHeader;
 
 typedef struct
@@ -115,22 +115,22 @@ typedef struct
 
 typedef struct
 {
-	ACPISDTHeader header;
-	void *otherHeaders[];
+    ACPISDTHeader header;
+    void *otherHeaders[];
 } RSDT;
 
 typedef struct
 {
-	char signature[8];
-	u8   checksum;
-	char oemID[6];
-	u8   revision;
-	RSDT *rsdt;
-	/* 2.0 Only below */
-	u32  length;
-	u64  xsdtAddress; // used for 64-bit systems
-	u8   extendedChecksum;
-	u8   reserved[3];
+    char signature[8];
+    u8   checksum;
+    char oemID[6];
+    u8   revision;
+    RSDT *rsdt;
+    /* 2.0 Only below */
+    u32  length;
+    u64  xsdtAddress; // used for 64-bit systems
+    u8   extendedChecksum;
+    u8   reserved[3];
 } RSDP;
 
 RSDP *rsdp;

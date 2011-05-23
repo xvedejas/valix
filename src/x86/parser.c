@@ -55,15 +55,17 @@ stmt  :: expr '.'
  *  81  push string           [stringval] {\0}
  *  82  push number
  *  83  variable              {index}
- *  84  call method           [method name] {\0} (args)*
+ *  84  call method           [methodsymbol] [argc] (args)*
  *  85  begin list            {num entries}
  *  86  begin procedure       {num vars}
  *  87  end list
+ *  88  [available]
  *  89  end statement
  *  8A  return, end procedure (arg)
- *  8B  set equal             [varname] {\0}
+ *  8B  set equal             [varsymbol]
  *  8C  push symbol
- *  8D  internal function     [function name] {\0} (args*)
+ *  8D  [available]
+ *  8E  set var to block arg  [varsymbol]
  *  
  */
 
@@ -76,8 +78,8 @@ u8 *parse(Token *first)
 {
     StringBuilder *output = stringBuilderNew(NULL);
     Token *curToken;
-    Stack *varTables = stackNew();
-    InternTable *currentVarTable; /* Per scope */
+    Stack *varCounts = stackNew();
+    Size currentVarCount = 0;
     /* Per file, when loaded is compared with global method table */
     InternTable *symbolTable = internTableNew();
     /* The method table must be saved */
@@ -116,6 +118,18 @@ u8 *parse(Token *first)
     void nextToken()
     {
         curToken = curToken->next;
+    }
+    
+    Size intern(String string)
+    {
+        bool alreadyInTable = isStringInterned(symbolTable, string);
+        Size index = internString(symbolTable, string);
+        if (!alreadyInTable)
+        {
+            stringBuilderAppend(symbolTableBytecode, string);
+            stringBuilderAppendChar(symbolTableBytecode, '\0');
+        }
+        return index;
     }
     
     Token *lookahead(u32 n)
@@ -163,7 +177,9 @@ u8 *parse(Token *first)
             nextToken();
             parseExpr();
             outchr('\x8B'); /* Equal directive */
-            outchr(internString(currentVarTable, lefthandKeyword));
+            if (!isStringInterned(symbolTable, lefthandKeyword))
+                currentVarCount++;
+            outchr(intern(lefthandKeyword));
         }
         else
             parseExpr();
@@ -183,8 +199,8 @@ u8 *parse(Token *first)
             if (curToken->type != colonToken) /* Unary message */
             {
                 parserRequire(i == 1, "Expected keyword, not binary message. Maybe use parentheses to show you want to use a binary message?");
-                out(keywords[0], strlen(keywords[0]));
-                out('\0', 1);
+                outchr(intern(keywords[0]));
+                outchr((char)0); // argc
                 return;
             }
             nextToken();
@@ -201,21 +217,14 @@ u8 *parse(Token *first)
             strcat(methodName, keywords[j]);
             strcat(methodName, ":");
         }
-        
-        bool alreadyInTable = isStringInterned(symbolTable, methodName);
-        Size index = internString(symbolTable, methodName);
-        if (!alreadyInTable)
-        {
-            stringBuilderAppend(symbolTableBytecode, methodName);
-            stringBuilderAppendChar(symbolTableBytecode, '\0');
-        }
-        outchr((u8)index);
+        outchr(intern(methodName));
+        outchr((char)i); // argc
         return;
     }
     
     void parseExpr()
     {
-		parseValue();
+        parseValue();
         while (curToken->type == specialCharToken || curToken->type == keywordToken)
         {
             if (curToken->type == keywordToken)
@@ -226,14 +235,8 @@ u8 *parse(Token *first)
                 nextToken();
                 parseValue();
                 outchr('\x84'); /* (binary) message directive */
-                bool alreadyInTable = isStringInterned(symbolTable, data);
-                Size index = internString(symbolTable, data);
-                if (!alreadyInTable)
-                {
-                    stringBuilderAppend(symbolTableBytecode, data);
-                    stringBuilderAppendChar(symbolTableBytecode, '\0');
-                }
-                outchr((u8)index); /* method name */
+                outchr((u8)intern(data)); /* method name */
+                outchr((char)1); // argc
             }
         }
     }
@@ -260,22 +263,17 @@ u8 *parse(Token *first)
             } break;
             case symbolToken:
             {
-				outchr('\x8C'); /* Symbol directive */
-				bool alreadyInTable = isStringInterned(symbolTable, curToken->data);
-				Size index = internString(symbolTable, curToken->data);
-				if (!alreadyInTable)
-				{
-					stringBuilderAppend(symbolTableBytecode, curToken->data);
-					stringBuilderAppendChar(symbolTableBytecode, '\0');
-				}
-				outchr((u8)index);
-				nextToken();
-				return;
-			} break;
+                outchr('\x8C'); /* Symbol directive */
+                outchr((u8)intern(curToken->data));
+                nextToken();
+                return;
+            } break;
             case keywordToken:
             {
                 outchr('\x83'); /* Keyword directive */
-                outchr((char)internString(currentVarTable, curToken->data));
+                if (!isStringInterned(symbolTable, curToken->data))
+                    currentVarCount++;
+                outchr((char)intern(curToken->data));
                 nextToken();
                 return;
             } break;
@@ -296,11 +294,13 @@ u8 *parse(Token *first)
             } break;
             case openBraceToken: /* '{' denotes a block */
             {
+                /// todo:
+                /// 8E opcode to load each argument
                 outchr('\x86'); /* Begin block directive */
                 nextToken();
                 
-                stackPush(varTables, currentVarTable);
-                currentVarTable = internTableNew();
+                stackPush(varCounts, (void*)currentVarCount);
+                currentVarCount = 0;
                 /* Let's remember where the procedure began so that we can say here
                  * how many variables have been defined for this procedure */
                 Size i = output->size;
@@ -310,7 +310,7 @@ u8 *parse(Token *first)
                 {
                     // If we have arguments...
                     parserRequire(curToken->type == keywordToken, "Expected keyword token");
-                    outchr((char)internString(currentVarTable, curToken->data));
+                    outchr((char)intern(curToken->data));
                     outchr('\0');
                     nextToken();
                     while (curToken->type != colonToken)
@@ -330,11 +330,10 @@ u8 *parse(Token *first)
                 nextToken();
                 
                 // say how many variables
-                output->s[i] = (char)currentVarTable->count;
-                InternTable *previous = stackPop(varTables);
-                stackPush(varTables, currentVarTable);
-                internTableDel(currentVarTable);
-                currentVarTable = previous;
+                output->s[i] = (char)currentVarCount;
+                Size previous = (Size)stackPop(varCounts);
+                stackPush(varCounts, (void*)currentVarCount);
+                currentVarCount = previous;
                 
                 outchr('\x88'); /* End block directive */
                 return;
@@ -359,7 +358,7 @@ u8 *parse(Token *first)
         return;
     }
     curToken = first;
-    currentVarTable = internTableNew();
+    currentVarCount = 0;
     outchr('\x86');
     /* Let's remember where the procedure began so that we can say here
      * how many variables have been defined for this procedure */
@@ -369,9 +368,8 @@ u8 *parse(Token *first)
     parseProcedure();
     
     // say how many variables
-    output->s[i] = (char)currentVarTable->count;
-    internTableDel(currentVarTable);
-    stackDel(varTables);
+    output->s[i] = (char)currentVarCount;
+    stackDel(varCounts);
     
     outchr('\xFF'); // EOS
     Token *next;
@@ -395,8 +393,9 @@ u8 *parse(Token *first)
     internTableDel(symbolTable);
     
     // see the output
-    for (i = 0; i < outputSize; i++)
-        printf("%x %c\n", finalBytecode[i], finalBytecode[i]);
+    //for (i = 0; i < outputSize; i++)
+    //    printf("%x %c\n", finalBytecode[i], finalBytecode[i]);
+    //printf("Parser done\n");
     
     return (u8*)finalBytecode;
 }

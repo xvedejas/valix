@@ -36,7 +36,7 @@
 #define toupper(c)  ({ typeof(c) _c = c; (islower(_c) ? (_c - 'a' + 'A') : (_c)); })
 
 
-void itoa(Size input, char *buffer, Size radix);
+char *itoa(Size input, char *buffer, Size radix);
 // atoi
 // atol
 double strtod(const char *String, char **endPtr);

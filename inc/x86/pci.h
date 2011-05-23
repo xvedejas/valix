@@ -28,24 +28,24 @@ const u16 pciInvalidVendorId;
 
 typedef enum
 {
-	classcodeObsolete =                                   0x00,
-	classcodeMassStorageController =                      0x01,
-	classcodeNetworkController =                          0x02,
-	classcodeDisplayController =                          0x03,
-	classcodeMultimediaDevice =                           0x04,
-	classcodeMemoryController =                           0x05,
-	classcodeBridgeDevice =                               0x06,
-	classcodeSimpleCommunicationControllers =             0x07,
-	classcodeBaseSystemPeripherals =                      0x08,
-	classcodeInputDevices =                               0x09,
-	classcodeDockingStations =                            0x0A,
-	classcodeProcessors =                                 0x0B,
-	classcodeSerialBusControllers =                       0x0C,
-	classcodeWirelessController =                         0x0D,
-	classcodeIntelligentIoControllers =                   0x0E,
-	classcodeSatelliteCommunicationControllers =          0x0F,
-	classcodeEncryptionDecryptionControllers =            0X10,
-	classcodeDataAcquisitionSignalProcessingControllers = 0x11
+    classcodeObsolete =                                   0x00,
+    classcodeMassStorageController =                      0x01,
+    classcodeNetworkController =                          0x02,
+    classcodeDisplayController =                          0x03,
+    classcodeMultimediaDevice =                           0x04,
+    classcodeMemoryController =                           0x05,
+    classcodeBridgeDevice =                               0x06,
+    classcodeSimpleCommunicationControllers =             0x07,
+    classcodeBaseSystemPeripherals =                      0x08,
+    classcodeInputDevices =                               0x09,
+    classcodeDockingStations =                            0x0A,
+    classcodeProcessors =                                 0x0B,
+    classcodeSerialBusControllers =                       0x0C,
+    classcodeWirelessController =                         0x0D,
+    classcodeIntelligentIoControllers =                   0x0E,
+    classcodeSatelliteCommunicationControllers =          0x0F,
+    classcodeEncryptionDecryptionControllers =            0X10,
+    classcodeDataAcquisitionSignalProcessingControllers = 0x11
 } pci_classcodes;
 
 typedef enum

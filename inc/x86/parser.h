@@ -20,4 +20,21 @@
 
 u8 *parse(Token *first);
 
+typedef enum
+{
+    importByteCode         = 0x80,
+    newStringByteCode      = 0x81,
+    newNumberByteCode      = 0x82,
+    variableByteCode       = 0x83,
+    callMethodByteCode     = 0x84,
+    beginListByteCode      = 0x85,
+    beginProcedureByteCode = 0x86,
+    endListByteCode        = 0x87,
+    endStatementByteCode   = 0x89,
+    returnByteCode         = 0x8A,
+    setEqualByteCode       = 0x8B,
+    newSymbolByteCode      = 0x8C,
+    setArgByteCode         = 0x8E
+} bytecodeCommand;
+
 #endif

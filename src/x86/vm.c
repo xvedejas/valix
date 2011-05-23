@@ -4,27 +4,46 @@
 #include <data.h>
 #include <string.h>
 #include <types.h>
+#include <parser.h>
 #include <stdarg.h>
 
 /* The basic object model is based on the object model described in
  * the paper "Open, extensible object models" by Piumarta and Warth. */
 
+/* The following are some useful globals */
+
 /* Basic objects */
-Object *symbolObject,
-       *objectObject,
-       *vtableObject;
+Object *objectClass,
+       *scopeClass,
+       *symbolClass,
+       *numberClass,
+       *stringClass,
+       *closureClass,
+       *bytearrayClass,
+       *consoleClass;
 
 /* Symbols */
-Object *lookupSymbol,
+Object *newSymbol,
+       *lengthSymbol,
+       *newSymbolZArgs,
+       *lookupSymbol,
        *addMethodSymbol,
        *allocateSymbol,
        *delegatedSymbol,
-       *internSymbol;
+       *internSymbol,
+       *doesNotUnderstandSymbol,
+       *consoleSymbol,
+       *printSymbol,
+       *asStringSymbol;
 
 /* Vtables, whose data field is a Map<symbol, method> */
 Object *vtablevt,
        *symbolvt,
-       *objectvt;
+       *objectvt,
+       *closurevt,
+       *bytearrayvt;
+       
+Object *globalScope; // where all global classes should be as "local" variables
 
 Map *globalSymbolTable; // <string, symbol>
 
@@ -39,64 +58,60 @@ Object *vtableAllocate(Object *self)
 /* Given a vtable, returns a newly allocated child vtable */
 Object *vtableDelegated(Object *self)
 {
-    Object *child;
+    Object *child = vtableAllocate(self);
     if (self != NULL)
-        child = vtableAllocate(self->vtable);
+        child->vtable = self->vtable;
     else
-        child = vtableAllocate(NULL);
+        child->vtable = NULL;
     child->parent = self;
     child->data = mapNew();
     return child;
 }
 
-Object *symbolNew(String string)
-{
-    Object *symbol = malloc(sizeof(Object));
-    symbol->vtable = symbolvt;
-    symbol->data = string;
-    return symbol;
-}
-
 /* The receiver here is irrelevent, use to create/obtain a symbol from a string */
 Object *symbolIntern(Object *symbol, String string)
 {
-    void *value;
-    if ((value = mapGet(globalSymbolTable, string, stringKey)) != NULL)
+    void *value = mapGet(globalSymbolTable, string, stringKey);
+    if (value != NULL)
         return value;
-    Object *newSymbol = symbolNew(string);
+    Object *newSymbol = malloc(sizeof(Object));
+    newSymbol->vtable = symbolvt;
+    newSymbol->data = strdup(string);
     mapSet(globalSymbolTable, string, newSymbol, stringKey);
     return newSymbol;
 }
 
-void vtableAddMethod(Object *vtable, Object *symbol, Method *method)
+Object *symbolNew(Object *self, Object *string)
 {
-    mapSetVal(vtable->data, symbol, method);
+    return symbolIntern(self, string->data);
 }
 
-Method *vtableLookup(Object *vtable, Object *symbol)
+void vtableAddMethod(Object *vtable, Object *symbol, Object *methodClosure)
 {
-    Method *method;
+    mapSetVal(vtable->data, symbol, methodClosure);
+}
+
+Object *vtableLookup(Object *vtable, Object *symbol)
+{
     do
     {
-        if ((method = mapGetVal(vtable->data, symbol)) != NULL)
-            return method;
+        assert(vtable->data != NULL, "VM Error");
+        Object *methodClosure = mapGetVal(vtable->data, symbol);
+        if (methodClosure != NULL)
+            return methodClosure;
     } while ((vtable = vtable->parent) != NULL);
     return NULL;
 }
 
-Method *bind(Object *self, Object *messageName);
+Object *bind(Object *self, Object *messageName);
 
-/* Given an object and the symbol representing a message, send the
- * message with some number of arguments */
-Object *send(Object *self, Object *messageName, ...)
+Object *doMethod(Object *self, Object *methodClosure, ...)
 {
-    Method *method = bind(self, messageName);
-    assert(method->argc == chrcount(messageName->data, ':'), "Internal VM Error");
-    /* execute the given method, which is NOT an object */
+    Method *method = methodClosure->data;
     if (method->type == internalFunction)
     {
         va_list argptr;
-        va_start(argptr, messageName);
+        va_start(argptr, methodClosure);
         switch (method->argc)
         {
             case 0:
@@ -124,167 +139,424 @@ Object *send(Object *self, Object *messageName, ...)
     return NULL;
 }
 
+/* Given an object and the symbol representing a message, send the
+ * message with some number of arguments */
+#define send(self, messageName, args...) \
+    ({\
+        Object *_self = self;\
+        doMethod(_self, bind(_self, messageName), ## args);\
+    })\
+
 /* Find a method on an object by sending the lookup message */
-Method *bind(Object *self, Object *messageName)
+Object *bind(Object *self, Object *messageName)
 {
-    Method *method;
+    Object *methodClosure;
     if (messageName == lookupSymbol && self == vtablevt)
-        method = vtableLookup(self->vtable, lookupSymbol);
+        methodClosure = vtableLookup(self->vtable, lookupSymbol);
     else
-        method = (Method*)send(self->vtable, lookupSymbol, messageName);
-    if (method == NULL)
-        panic("Method not found");
-        //send(self, doesNotUnderstandSymbol, messageName);
-    return method;
+        methodClosure = send(self->vtable, lookupSymbol, messageName);
+    if (methodClosure == NULL)
+        send(self, doesNotUnderstandSymbol, messageName);
+    return methodClosure;
 }
 
-/* Creates an internal function method */
-Method *methodNew(void *funcptr, Size argc)
+/* A basic constructor/instantiator */
+Object *new(Object *self)
+{
+    if (self == objectClass)
+        panic("VM error, you can't instantiate class Object");
+    Object *new = vtableAllocate(self->vtable);
+    new->parent = self;
+    return new;
+}
+
+Object *subclass(Object *self)
+{
+    Object *vtable = vtableDelegated(self->vtable);
+    Object *subclass = vtableAllocate(vtable);
+    return subclass;
+}
+
+void doesNotUnderstand(Object *self, Object *symbol)
+{
+    panic("Object at %x does not understand message \"%s\"", self, symbol->data);
+}
+
+/* Creates an internal function method closure */
+Object *methodNew(void *funcptr, Size argc)
 {
     Method *method = malloc(sizeof(Method));
     method->type = internalFunction;
     method->argc = argc;
     method->funcptr = funcptr;
-    return method;
+    Object *closure = new(closureClass);
+    closure->data = method;
+    return closure;
 }
 
-void initialize()
+Object *closureNew(Object *self, Object *bytearray)
 {
-    globalSymbolTable = mapNew();
-    
+    Object *closure = new(self);
+    Method *payload = malloc(sizeof(Method));
+    payload->bytearray = bytearray;
+    closure->data = payload;
+    return closure;
+}
+
+void symbolSetup()
+{
+    lengthSymbol            = symbolIntern(NULL, "length");
+    newSymbol               = symbolIntern(NULL, "new:");
+    lookupSymbol            = symbolIntern(NULL, "lookup:");
+    addMethodSymbol         = symbolIntern(NULL, "addMethod:def:");
+    allocateSymbol          = symbolIntern(NULL, "allocate");
+    internSymbol            = symbolIntern(NULL, "intern:");
+    delegatedSymbol         = symbolIntern(NULL, "delegated");
+    newSymbolZArgs          = symbolIntern(NULL, "new");
+    doesNotUnderstandSymbol = symbolIntern(NULL, "doesNotUnderstand:");
+    printSymbol             = symbolIntern(NULL, "print:");
+    asStringSymbol          = symbolIntern(NULL, "asString");
+}
+
+void bootstrap()
+{
+    /* Initialize vtablevt, objectvt, and objectClass */
     vtablevt = vtableDelegated(NULL);
     vtablevt->vtable = vtablevt;
 
     objectvt = vtableDelegated(NULL);
     objectvt->vtable = vtablevt;
     vtablevt->parent = objectvt;
+    objectClass = vtableAllocate(objectvt);
 
+    /* Setup symbolClass, closureClass, and lookup/addmethod methods */
     symbolvt = vtableDelegated(objectvt);
+    symbolClass = vtableAllocate(symbolvt);
+    globalSymbolTable = mapNew();
+    symbolSetup();
 
-    lookupSymbol = symbolIntern(NULL, "lookup:");
+    closurevt = vtableDelegated(objectvt);
+    closureClass = vtableAllocate(closurevt);
+    vtableAddMethod(closurevt, newSymbol, methodNew(closureNew, 1));
+
     vtableAddMethod(vtablevt, lookupSymbol, methodNew(vtableLookup, 1));
-    
-    addMethodSymbol = symbolIntern(NULL, "addMethod:def:");
+
     vtableAddMethod(vtablevt, addMethodSymbol, methodNew(vtableAddMethod, 2));
-    
-    allocateSymbol = symbolIntern(NULL, "allocate");
+
     send(vtablevt, addMethodSymbol, allocateSymbol, methodNew(vtableAllocate, 0));
-    
-    symbolObject = send(symbolvt, allocateSymbol);
-    
-    internSymbol = symbolIntern(NULL, "intern:");
+
     send(symbolvt, addMethodSymbol, internSymbol, methodNew(symbolIntern, 1));
 
-    delegatedSymbol = send(symbolObject, internSymbol, "delegated");
-    printf("delegated: %s\n", delegatedSymbol->data);
     send(vtablevt, addMethodSymbol, delegatedSymbol, methodNew(vtableDelegated, 0));
+
+    Object *subclassSymbol = send(symbolClass, internSymbol, "subclass");
+    send(objectClass->vtable, addMethodSymbol, subclassSymbol, methodNew(subclass, 0));
+
+    send(objectClass->vtable, addMethodSymbol, doesNotUnderstandSymbol, methodNew(doesNotUnderstand, 1));
+}
+
+Object *numberNew(Object *self, Size value)
+{
+    Object *number = new(self);
+    number->data = (void*)value;
+    return number;
+}
+
+Object *stringNew(Object *self, String value)
+{
+    Object *string = new(self);
+    string->data = value;
+    return string;
+}
+
+Object *stringLength(Object *self)
+{
+    return numberNew(numberClass, strlen(self->data));
+}
+
+Object *bytearrayNew(Object *self, u8 *bytecode)
+{
+    Object *bytearray = new(self);
+    bytearray->data = bytecode;
+    return bytearray;
+}
+
+/* Not to be added as a message */
+Object *scopeNew(Object *parent, Object *closure, Size locals)
+{
+    Object *scope = new(scopeClass);
+    scope->data = malloc(sizeof(Scope));
+    ((Scope*)scope->data)->parent = parent;
+    ((Scope*)scope->data)->closure = closure;
+    ((Scope*)scope->data)->vars = mapNewSize(locals + 1);
+    return scope;
+}
+
+Object *multiply(Object *self, Object *factor)
+{
+    self->data = (void*)(((Size)self->data) * ((Size)factor->data));
+    return self;
+}
+
+void print(Object *console, Object *argument)
+{
+    Object *string = send(argument, asStringSymbol);
+    printf(string->data);
+}
+
+Object *numberAsString(Object *self)
+{
+    /// this allocation is naive...
+    String string = malloc(sizeof(char) * 9);
+    return send(stringClass, newSymbol, itoa((Size)self->data, string, 10));
+}
+
+void initialize()
+{
+    scopeClass = subclass(objectClass);
+    consoleClass = subclass(objectClass);
+    
+    numberClass = subclass(objectClass);
+    stringClass = subclass(objectClass);
+    
+    send(numberClass->vtable, addMethodSymbol, newSymbol, methodNew(numberNew, 1));
+    send(numberClass->vtable, addMethodSymbol, asStringSymbol, methodNew(numberAsString, 0));
+    send(stringClass->vtable, addMethodSymbol, newSymbol, methodNew(stringNew, 1));
+    send(symbolvt, addMethodSymbol, newSymbol, methodNew(symbolNew, 1));
+    
+    send(consoleClass->vtable, addMethodSymbol, printSymbol, methodNew(print, 1));
+    
+    printf("consoleClass at %x\n", consoleClass);
+    
+    send(stringClass->vtable, addMethodSymbol, lengthSymbol, methodNew(stringLength, 0));
+    send(symbolvt, addMethodSymbol, lengthSymbol, methodNew(stringLength, 0));
+    
+    Object *multiplySymbol = send(symbolClass, internSymbol, "*");
+    send(numberClass->vtable, addMethodSymbol, multiplySymbol, methodNew(multiply, 1));
+    
+    numberClass = send(numberClass->vtable, allocateSymbol);
+    stringClass = send(stringClass->vtable, allocateSymbol);
+    
+    /* ByteArray */
+    
+    bytearrayvt = send(objectvt, delegatedSymbol);
+    send(bytearrayvt, addMethodSymbol, newSymbol, methodNew(bytearrayNew, 1));
+    bytearrayClass = send(bytearrayvt, allocateSymbol);
+}
+
+Object *lookupVar(Object *scope, Object *symbol)
+{
+    Object *value;
+    do
+    {
+        value =
+            mapGetVal(((Scope*)scope->data)->vars, symbol->data);
+    } while (value == NULL &&
+        (scope = ((Scope*)scope->data)->parent) != NULL);
+    if (value == NULL)
+        panic("Undefined variable %s\n", symbol->data);
+    return value;
+}
+
+void setVar(Object *currentScope, Object *symbol, Object *value)
+{
+    /* Find if it's already defined */
+    Object *scope = currentScope;
+    do
+    {
+        Object *currentValue =
+            mapGetVal(((Scope*)scope->data)->vars, symbol->data);
+        if (currentValue != NULL)
+        {
+            mapSetVal(((Scope*)scope->data)->vars, symbol->data, value);
+            return;
+        }
+    } while ((scope = ((Scope*)scope->data)->parent) != NULL);
+    mapSetVal(((Scope*)currentScope->data)->vars, symbol->data, value);
 }
 
 void vmInstall()
 {
+    bootstrap();
+    /* After bootstrap, send() may now be used */
     initialize();
-    
-    for (;;);
+    globalScope = scopeNew(NULL, NULL, 20 /*globalVarCount*/);
+    /// setup the global scope
+    setVar(globalScope, symbolIntern(NULL, "Console"), consoleClass);
 }
 
 void runtimeRequire(bool value, String message)
 {
-	if (unlikely(value))
-		printf(message);
+    if (unlikely(value))
+    {
+        printf(message);
+        endThread();
+    }
 }
 
 /* Bytecode is not null-terminated! it is terminated with EOS and contains
- * multiple null characters */
+ * multiple null characters. The execute() function should be used to
+ * run an entire file of bytecode. */
 ThreadFunc execute(u8 *bytecode)
 {
-	u8 *IP = bytecode;
-	
-	/* The first section of the code is the method interned header.
-	 * We look at each entry, and create a dictionary (using the global
-	 * method table) which has keys that equal the local interned value,
-	 * and values that are the global interned value. */
-	
-	Size entries = (Size)*IP++;
-	Map *internedMethodTable = mapNewSize(entries + 1);
-	Size i;
-	
-	for (i = 0; i < entries; i++)
-	{
-		Size globalValue = (Size)mapGet(globalSymbolTable, (String)IP, stringKey);
-		mapSet(internedMethodTable, (void*)i, (void*)globalValue, valueKey);
-		while (*IP++);
-	}
-	
-	//mapDebug(internedMethodTable);
-	for (;;);
-	
-    while (true)
+    u8 *IP = bytecode;
+    
+    /* The first section of the code is the method interned header.
+     * We look at each entry, and create a dictionary (using the global
+     * method table) which has keys that equal the local interned value,
+     * and values that are the global interned value. */
+    
+    Size entries = (Size)*IP++;
+    Map *internTranslationTable = mapNewSize(entries + 1);
+    Size i;
+    for (i = 0; i < entries; i++)
     {
-		//printf("%x %c\n", *IP, *IP); // print the byte we're looking at
-        switch (*IP++)
+        Object *globalSymbol = symbolIntern(NULL, (String)IP);
+        mapSet(internTranslationTable, (void*)i, globalSymbol, valueKey);
+        while (*IP++);
+    }
+    
+    Object *translate(Size internedValue)
+    {
+        return mapGetVal(internTranslationTable, internedValue);
+    }
+    
+    auto Object *interpret(Object *closure, Object *scope, ...);
+    Object *bytearray = send(bytearrayClass, newSymbol, IP);
+    Object *fileClosureObject = send(closureClass, newSymbol, bytearray);    
+    interpret(fileClosureObject, globalScope);
+    
+    Object *interpret(Object *closure, Object *parentScope, ...)
+    {
+        Method *closurePayload = (Method*)closure->data;
+        //Size argc = closurePayload->argc;
+        u8 *IP = closurePayload->bytearray->data;
+        /// don't do anything with args... yet
+        
+        /* Okay, the first bytecode should "Begin Procedure" 0x86,
+         * double check that this is true */
+        
+        assert(*IP++ == 0x86, "Malformed bytecode error");
+        
+        /* The next byte tells us the number of local variables expected
+         * in this procedure. Create a map that is one greater than that
+         * number so that it doesn't resize */
+        
+        Object *scope = scopeNew(parentScope, closure, (Size)*IP++);
+        
+        /* Value stack */
+        
+        Stack *vStack = stackNew();
+        
+        while (*IP != 0xFF)
         {
-            case 0x80: /* Import */
+            //printf("%x %c\n", *IP, *IP); // print the byte we're looking at
+            switch (*IP++)
             {
-                panic("Not implemented!");
-            } break;
-            case 0x81: /* String */
-            {
-                panic("Not implemented!");
-            } break;
-            case 0x82: /* Number */
-            {
-                panic("Not implemented!");
-            } break;
-            case 0x83: /* Keyword */
-            {
-				panic("Not implemented!");
-            } break;
-            case 0x84: /* Call Method */
-            {
-                panic("Not implemented!");
-            } break;
-            case 0x85: /* Begin List */
-            {
-                panic("Not implemented!");
-            } break;
-            case 0x86: /* Begin Procedure */
-            {
-                panic("Not implemented!");
-            } break;
-            case 0x87:
-            {
-                panic("Not implemented!");
-            } break;
-            case 0x88:
-            {
-                panic("Not implemented!");
-            } break;
-            case 0x89: /* End Statement */
-            {
-				// todo: clear value stack
-				panic("Not implemented!");
-            } break;
-            case 0x8A:
-            {
-                panic("Not implemented!");
-            } break;
-            case 0x8B: /* Equality */
-            {
-				panic("Not implemented!");
-            } break;
-            case 0x8C: /* Binary method */
-            {
-				panic("Not implemented!");
-            } break;
-            case 0xFF: /* EOS */
-            {
-                printf("Execution done! Exiting thread.");
-                endThread();
-            } break;
-            default:
-            {
-				runtimeRequire(false, "Execution error: Malformed bytecode.");
-            } break;
+                case importByteCode:
+                {
+                    panic("Not implemented!");
+                    /// this should recur over execute()
+                } break;
+                case newStringByteCode:
+                {
+                    panic("Not implemented!");
+                } break;
+                case newNumberByteCode:
+                {
+                    Size len = strlen((String)IP);
+                    Size val = strtoul((String)IP, NULL, 10);
+                    Object *number = send(numberClass, newSymbol, val);
+                    IP += len + 1;
+                    stackPush(vStack, number);
+                } break;
+                case variableByteCode:
+                {
+                    Size index = (Size)*IP++;
+                    Object *symbol = translate(index);
+                    stackPush(vStack, lookupVar(scope, symbol));
+                } break;
+                case callMethodByteCode:
+                {
+                    Size index = (Size)*IP++;
+                    Size argc = (Size)*IP++;
+                    Object *methodSymbol = translate(index);
+                    /* The arguments are at the top of the stack, and
+                     * message receiver directly after that. */
+                    Object *args[8]; // argc limit is 8
+                    Size i;
+                    for (i = 0; i < argc; i++)
+                        args[i] = stackPop(vStack);
+                    // now we can get the receiver
+                    Object *receiver = stackPop(vStack);
+                    Object *methodClosure = bind(receiver, methodSymbol);
+                    assert(((Method*)methodClosure->data)->argc == argc, "VM Error");
+                    Object *returnValue;
+                    switch (((Method*)methodClosure->data)->argc)
+                    {
+                        case 0:
+                        {
+                            returnValue = doMethod(receiver, methodClosure);
+                        } break;
+                        case 1:
+                        {
+                            returnValue = doMethod(receiver, methodClosure, args[0]);
+                        } break;
+                        default:
+                        {
+                            returnValue = doMethod(receiver, methodClosure, args);
+                        } break;
+                    }
+                    if (returnValue != NULL)
+                        stackPush(vStack, returnValue);
+                } break;
+                case beginListByteCode:
+                {
+                    panic("Not implemented!");
+                } break;
+                case beginProcedureByteCode:
+                {
+                    panic("Not implemented!");
+                    /// recur over interpret()
+                } break;
+                case endListByteCode:
+                {
+                    panic("Not implemented!");
+                } break;
+                case endStatementByteCode:
+                {
+                    // clear out the value stack
+                    while (stackPop(vStack));
+                } break;
+                case returnByteCode:
+                {
+                    panic("Not implemented!");
+                } break;
+                case setEqualByteCode:
+                {
+                    Size index = (Size)*IP++;
+                    Object *symbol = translate(index);
+                    setVar(scope, symbol, stackPop(vStack));
+                } break;
+                case newSymbolByteCode:
+                {
+                    panic("Not implemented!");
+                } break;
+                case setArgByteCode:
+                {
+                    panic("Not implemented!");
+                } break;
+                case 0xFF: /* EOS */
+                {
+                    //printf("Execution done! Exiting thread.");
+                    //endThread();
+                } break;
+                default:
+                {
+                    runtimeRequire(false, "Execution error: Malformed bytecode.");
+                } break;
+            }
         }
+        return NULL;
     }
 }

@@ -25,9 +25,9 @@
 
 //typedef enum
 //{
-	//local,
-	//remote,
-	//device
+    //local,
+    //remote,
+    //device
 //} FileType;
 
 //typedef struct

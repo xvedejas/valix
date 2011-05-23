@@ -43,20 +43,20 @@ Thread *getCurrentThread()
 void threadingInstall(void *stackPointer)
 {
     pidCount = 0;
-	Thread *kernelThread = kalloc(sizeof(Thread), NULL);
-	kernelThread->stack = (void*)(stackPointer - systemStackSize);
-	kernelThread->pid = pidCount++;
-	kernelThread->name = "Kernel Init Thread";
-	kernelThread->status = running;
-	/* The kernel init thread gets highest priority (0). This is because the
-	 * thread exits as soon as it has initialized all other systems and it is
-	 * highest priority to finish the initialization stage. */
-	kernelThread->next = kernelThread;
-	kernelThread->previous = kernelThread;
+    Thread *kernelThread = kalloc(sizeof(Thread), NULL);
+    kernelThread->stack = (void*)(stackPointer - systemStackSize);
+    kernelThread->pid = pidCount++;
+    kernelThread->name = "Kernel Init Thread";
+    kernelThread->status = running;
+    /* The kernel init thread gets highest priority (0). This is because the
+     * thread exits as soon as it has initialized all other systems and it is
+     * highest priority to finish the initialization stage. */
+    kernelThread->next = kernelThread;
+    kernelThread->previous = kernelThread;
     kernelThread->waitingNext = NULL;
-	currentThread = kernelThread;
-	threadCount = 1;
-	threadingLockObj = 0;
+    currentThread = kernelThread;
+    threadCount = 1;
+    threadingLockObj = 0;
 }
 
 void threadPromote(Thread *thread)
@@ -184,15 +184,15 @@ void schedule()
 Thread *spawn(String name, ThreadFunc (*func)())
 {
     threadingLock();
-	Thread *thread = (Thread*)kalloc(sizeof(Thread), NULL);
-	thread->stack = kalloc(systemStackSize, thread);
-	thread->pid = pidCount++;
-	thread->name = name;
-	thread->status = ready;
+    Thread *thread = (Thread*)kalloc(sizeof(Thread), NULL);
+    thread->stack = kalloc(systemStackSize, thread);
+    thread->pid = pidCount++;
+    thread->name = name;
+    thread->status = ready;
     thread->func = func;
-	thread->next = currentThread->next;
+    thread->next = currentThread->next;
     thread->next->previous = thread;
-	thread->previous = currentThread;
+    thread->previous = currentThread;
     thread->waitingNext = NULL;
     currentThread->next = thread;
     threadingUnlock();
@@ -252,6 +252,9 @@ MutexReply mutexAcquireLock(Mutex *mutex)
     return (MutexReply){ .accepted = true, .mutex = mutex };
 }
 
+/* When a mutex lock is completely released (multiplicity 0) then we want
+ * to immediately jump to the thread that was waiting on the lock, to
+ * reduce system I/O latency. */
 void mutexReleaseLock(Mutex *mutex)
 {
     assert(mutex->locked && mutex->multiplicity, "Attempted to free mutex that was not locked");
@@ -274,8 +277,8 @@ void mutexReleaseLock(Mutex *mutex)
 
 void mutexDel(Mutex *mutex)
 {
-	mutexAcquireLock(mutex);
-	free(mutex);
+    mutexAcquireLock(mutex);
+    free(mutex);
 }
 
 void threadsDebug()

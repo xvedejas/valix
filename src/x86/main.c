@@ -198,11 +198,13 @@ void timerInstall()
     timerPhase(systemClockFreq); /* set to milisecond precision */
 }
 
-ThreadFunc parserThread()
+ThreadFunc langTest()
 {
-    u8 *bytecode = parse(lex("a = 2. b = a * 3. c = #symb."));
+    printf("Running langTest() in main.c:\n");
+    u8 *bytecode = parse(lex("a = 2. b = a * 3. Console print: b."));
     execute(bytecode);
     free(bytecode);
+    for (;;);
 }
 
 void pciinfo()
@@ -274,10 +276,8 @@ void kmain(u32 magic, MultibootStructure *multiboot, void *stackPointer)
     asm volatile("sti;");
     //FileCoreInit();
     
-    spawn("parser", parserThread);
+    spawn("langTest", langTest);
     //pciinfo();
-    
-    sleep(1000);
-    
+    for (;;);
     return; /* kills kernel thread */
 }

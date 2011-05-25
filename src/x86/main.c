@@ -87,6 +87,8 @@ void putch(u8 c)
         outportb(0x3f8, c);
     else
         printf("[%x]", c);
+    if (videoInstalled)
+        printChar(c);
 }
 
 void put(String str)
@@ -200,8 +202,13 @@ void timerInstall()
 
 ThreadFunc langTest()
 {
-    printf("Running langTest() in main.c:\n");
-    u8 *bytecode = parse(lex("a = 2. b = a * 3. Console print: b."));
+    printf("Running langTest in main.c\n\n");
+    u8 *bytecode = parse(lex(
+        "myMessage = \"Hello World!\n\".\n"
+        "Console print: myMessage.\n"
+        "Console print: \"Valix Pre-Pre-Alpha\n\".\n"
+        "Console print: \"3 x 4 x 5 x 6 equals \".\n"
+        "Console print: (3 * (4 * (5 * 6)))\n"));
     execute(bytecode);
     free(bytecode);
     for (;;);
@@ -259,6 +266,7 @@ void pciinfo()
  * parts of the system with *Install() functions. */
 void kmain(u32 magic, MultibootStructure *multiboot, void *stackPointer)
 {
+    videoInstalled = false;
     gdtInstall();
     idtInstall();
     isrsInstall();
@@ -268,9 +276,9 @@ void kmain(u32 magic, MultibootStructure *multiboot, void *stackPointer)
     printf("Valix OS Alpha - Built on " __DATE__ " " __TIME__
         "\nCompiled with gcc " __VERSION__ "...\n");
     acpiInstall();
+    videoInstall(multiboot);
     mmInstall(multiboot);
     threadingInstall(stackPointer);
-    videoInstall(multiboot);
     vmInstall();
     //keyboardInstall();
     asm volatile("sti;");

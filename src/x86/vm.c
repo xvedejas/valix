@@ -35,14 +35,9 @@ Object *newSymbol,
        *consoleSymbol,
        *printSymbol,
        *asStringSymbol;
-
-/* Vtables, whose data field is a Map<symbol, method> */
-Object *vtablevt,
-       *symbolvt,
-       *objectvt,
-       *closurevt,
-       *bytearrayvt;
        
+Object *vtablevt;
+
 Object *globalScope; // where all global classes should be as "local" variables
 
 Map *globalSymbolTable; // <string, symbol>
@@ -75,7 +70,7 @@ Object *symbolIntern(Object *symbol, String string)
     if (value != NULL)
         return value;
     Object *newSymbol = malloc(sizeof(Object));
-    newSymbol->vtable = symbolvt;
+    newSymbol->vtable = symbolClass->vtable;
     newSymbol->data = strdup(string);
     mapSet(globalSymbolTable, string, newSymbol, stringKey);
     return newSymbol;
@@ -134,6 +129,10 @@ Object *doMethod(Object *self, Object *methodClosure, ...)
                 panic("Not implemented");
             break;
         }
+    }
+    else // method->type == userDefined
+    {
+        /// recur over interpret()
     }
     panic("Not implemented");
     return NULL;
@@ -224,20 +223,18 @@ void bootstrap()
     vtablevt = vtableDelegated(NULL);
     vtablevt->vtable = vtablevt;
 
-    objectvt = vtableDelegated(NULL);
+    Object *objectvt = vtableDelegated(NULL);
     objectvt->vtable = vtablevt;
     vtablevt->parent = objectvt;
     objectClass = vtableAllocate(objectvt);
 
     /* Setup symbolClass, closureClass, and lookup/addmethod methods */
-    symbolvt = vtableDelegated(objectvt);
-    symbolClass = vtableAllocate(symbolvt);
+    symbolClass = subclass(objectClass);
     globalSymbolTable = mapNew();
     symbolSetup();
-
-    closurevt = vtableDelegated(objectvt);
-    closureClass = vtableAllocate(closurevt);
-    vtableAddMethod(closurevt, newSymbol, methodNew(closureNew, 1));
+    
+    closureClass = subclass(objectClass);
+    vtableAddMethod(closureClass->vtable, newSymbol, methodNew(closureNew, 1));
 
     vtableAddMethod(vtablevt, lookupSymbol, methodNew(vtableLookup, 1));
 
@@ -245,7 +242,7 @@ void bootstrap()
 
     send(vtablevt, addMethodSymbol, allocateSymbol, methodNew(vtableAllocate, 0));
 
-    send(symbolvt, addMethodSymbol, internSymbol, methodNew(symbolIntern, 1));
+    send(symbolClass->vtable, addMethodSymbol, internSymbol, methodNew(symbolIntern, 1));
 
     send(vtablevt, addMethodSymbol, delegatedSymbol, methodNew(vtableDelegated, 0));
 
@@ -311,6 +308,11 @@ Object *numberAsString(Object *self)
     return send(stringClass, newSymbol, itoa((Size)self->data, string, 10));
 }
 
+Object *stringAsString(Object *self)
+{
+    return self;
+}
+
 void initialize()
 {
     scopeClass = subclass(objectClass);
@@ -322,14 +324,13 @@ void initialize()
     send(numberClass->vtable, addMethodSymbol, newSymbol, methodNew(numberNew, 1));
     send(numberClass->vtable, addMethodSymbol, asStringSymbol, methodNew(numberAsString, 0));
     send(stringClass->vtable, addMethodSymbol, newSymbol, methodNew(stringNew, 1));
-    send(symbolvt, addMethodSymbol, newSymbol, methodNew(symbolNew, 1));
+    send(stringClass->vtable, addMethodSymbol, asStringSymbol, methodNew(stringAsString, 0));
+    send(symbolClass->vtable, addMethodSymbol, newSymbol, methodNew(symbolNew, 1));
     
     send(consoleClass->vtable, addMethodSymbol, printSymbol, methodNew(print, 1));
     
-    printf("consoleClass at %x\n", consoleClass);
-    
     send(stringClass->vtable, addMethodSymbol, lengthSymbol, methodNew(stringLength, 0));
-    send(symbolvt, addMethodSymbol, lengthSymbol, methodNew(stringLength, 0));
+    send(symbolClass->vtable, addMethodSymbol, lengthSymbol, methodNew(stringLength, 0));
     
     Object *multiplySymbol = send(symbolClass, internSymbol, "*");
     send(numberClass->vtable, addMethodSymbol, multiplySymbol, methodNew(multiply, 1));
@@ -339,22 +340,16 @@ void initialize()
     
     /* ByteArray */
     
-    bytearrayvt = send(objectvt, delegatedSymbol);
-    send(bytearrayvt, addMethodSymbol, newSymbol, methodNew(bytearrayNew, 1));
-    bytearrayClass = send(bytearrayvt, allocateSymbol);
+    bytearrayClass = subclass(objectClass);
+    send(bytearrayClass->vtable, addMethodSymbol, newSymbol, methodNew(bytearrayNew, 1));
 }
 
 Object *lookupVar(Object *scope, Object *symbol)
 {
     Object *value;
-    do
-    {
-        value =
-            mapGetVal(((Scope*)scope->data)->vars, symbol->data);
-    } while (value == NULL &&
-        (scope = ((Scope*)scope->data)->parent) != NULL);
-    if (value == NULL)
-        panic("Undefined variable %s\n", symbol->data);
+    do value = mapGetVal(((Scope*)scope->data)->vars, symbol->data);
+    while (value == NULL && (scope = ((Scope*)scope->data)->parent) != NULL);
+    assert(value != NULL, "Undefined variable %s\n", symbol->data);
     return value;
 }
 
@@ -383,15 +378,6 @@ void vmInstall()
     globalScope = scopeNew(NULL, NULL, 20 /*globalVarCount*/);
     /// setup the global scope
     setVar(globalScope, symbolIntern(NULL, "Console"), consoleClass);
-}
-
-void runtimeRequire(bool value, String message)
-{
-    if (unlikely(value))
-    {
-        printf(message);
-        endThread();
-    }
 }
 
 /* Bytecode is not null-terminated! it is terminated with EOS and contains
@@ -460,7 +446,10 @@ ThreadFunc execute(u8 *bytecode)
                 } break;
                 case newStringByteCode:
                 {
-                    panic("Not implemented!");
+                    Size len = strlen((String)IP);
+                    Object *string = send(stringClass, newSymbol, (String)IP);
+                    IP += len + 1;
+                    stackPush(vStack, string);
                 } break;
                 case newNumberByteCode:
                 {
@@ -491,24 +480,21 @@ ThreadFunc execute(u8 *bytecode)
                     Object *receiver = stackPop(vStack);
                     Object *methodClosure = bind(receiver, methodSymbol);
                     assert(((Method*)methodClosure->data)->argc == argc, "VM Error");
-                    Object *returnValue;
-                    switch (((Method*)methodClosure->data)->argc)
+                    Object *ret = NULL;
+                    switch (argc)
                     {
-                        case 0:
-                        {
-                            returnValue = doMethod(receiver, methodClosure);
-                        } break;
-                        case 1:
-                        {
-                            returnValue = doMethod(receiver, methodClosure, args[0]);
-                        } break;
-                        default:
-                        {
-                            returnValue = doMethod(receiver, methodClosure, args);
-                        } break;
+                        case 0: { ret = doMethod(receiver, methodClosure); } break;
+                        case 1: { ret = doMethod(receiver, methodClosure, args[0]); } break;
+                        case 2: { ret = doMethod(receiver, methodClosure, args[0], args[1]); } break;
+                        case 3: { ret = doMethod(receiver, methodClosure, args[0], args[1], args[2]); } break;
+                        case 4: { ret = doMethod(receiver, methodClosure, args[0], args[1], args[2], args[3]); } break;
+                        case 5: { ret = doMethod(receiver, methodClosure, args[0], args[1], args[2], args[3], args[4]); } break;
+                        case 6: { ret = doMethod(receiver, methodClosure, args[0], args[1], args[2], args[3], args[4], args[5]); } break;
+                        case 7: { ret = doMethod(receiver, methodClosure, args[0], args[1], args[2], args[3], args[4], args[5], args[6]); } break;
+                        case 8: { ret = doMethod(receiver, methodClosure, args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7]); } break;
                     }
-                    if (returnValue != NULL)
-                        stackPush(vStack, returnValue);
+                    if (ret != NULL)
+                        stackPush(vStack, ret);
                 } break;
                 case beginListByteCode:
                 {
@@ -517,7 +503,7 @@ ThreadFunc execute(u8 *bytecode)
                 case beginProcedureByteCode:
                 {
                     panic("Not implemented!");
-                    /// recur over interpret()
+                    
                 } break;
                 case endListByteCode:
                 {
@@ -553,7 +539,7 @@ ThreadFunc execute(u8 *bytecode)
                 } break;
                 default:
                 {
-                    runtimeRequire(false, "Execution error: Malformed bytecode.");
+                    panic("Execution error: Malformed bytecode.");
                 } break;
             }
         }

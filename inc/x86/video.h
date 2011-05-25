@@ -28,7 +28,7 @@
  * operations with 24-bit rgb buffers supported. */
 
 typedef struct buffer
-{   u32 *mem;
+{   u8 *mem;
     u32 bpp; /* bits per pixel */
     u32 width, height;
 } Buffer;
@@ -38,24 +38,24 @@ typedef struct rect
     u32 width, height;
 } Rect;
 
-typedef struct point
-{   double x, y;
-} Point;
-
 Buffer framebuffer;
+bool videoInstalled;
 
 #define copyBuffer(dest, src, xDest, yDest) \
     copyRect(dest, src, (Rect){0, 0, src.width, src.height}, xDest, yDest)
 #define clrBuffer(buffer) \
     memsetd(buffer.mem, 0xFFFFFFFF, buffer.width * buffer.height)
+#define xstep(buffer) (buffer.bpp / 8)
+#define ystep(buffer) (xstep(buffer) * buffer.width)
+#define buffersize(buffer) (xstep(buffer) * buffer.height * buffer.width)
 
 extern void videoInstall(MultibootStructure *multiboot);
 extern Buffer newBuffer(u32 width, u32 height);
 extern Buffer newBitmapBuffer(u32 *bitmap, u32 width, u32 height);
-extern void putPixel(Buffer buffer, Point point, u32 color);
+extern void putPixel(Buffer buffer, u32 x, u32 y, u32 color);
 extern void fillRect(Buffer buffer, Rect rect, u32 color);
 extern void copyRect(Buffer dest, Buffer src, Rect srcRect, u32 x, u32 y);
 extern u32 alphaBlend(u32 background, u32 color);
-extern void drawLine(Buffer buffer, Point start, Point end, u32 color);
+void printChar(char c);
 
 #endif

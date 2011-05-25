@@ -1,6 +1,6 @@
 ARCH="x86"
 OUTPUT_TYPE="iso"
-GRUB_PREFIX="/usr"
+GRUB_PREFIX="/usr/local/"
 ASM="build/fasm"
 CC="gcc"
 LD="ld"
@@ -8,4 +8,4 @@ ASMARGS=""
 CCARGS="-O0 -m32 -nostdlib -nostartfiles -nodefaultlibs"
 LDARGS=""
 BUILDLOG="buildlog.txt"
-GRUB_MKRESCUE="grub-mkrescue"
+GRUB_MKRESCUE=`which grub-mkrescue`

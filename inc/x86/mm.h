@@ -31,34 +31,50 @@ typedef struct
 
 typedef struct
 {
-    u32 flags;            // 0
-    u32 memLower;        // 4
-    u32 memUpper;        // 8
-    u32 bootDevice;      // 12
-    String cmdline;          // 16
-    u32 modsCount;       // 20
-    u32 *modsAddr;       // 24
-    u32 syms[4];          // 28, 32, 36, 40
-    u32 mmapLength;      // 44
-    MMapField *mmapAddr; // 48
-    u32 drivesLength;    // 52
-    u32 *drivesAddr;     // 56
-    u32 configTable;     // 60
-    String bootLoaderName; // 64
+    u32 flags;              // 0
+    u32 memLower;           // 4
+    u32 memUpper;           // 8
+    u32 bootDevice;         // 12
+    String cmdline;         // 16
+    u32 modsCount;          // 20
+    u32 *modsAddr;          // 24
+    u32 syms[4];            // 28, 32, 36, 40
+    u32 mmapLength;         // 44
+    MMapField *mmapAddr;    // 48
+    u32 drivesLength;       // 52
+    u32 *drivesAddr;        // 56
+    u32 configTable;        // 60
+    String bootLoaderName;  // 64
     u32 apmTable;           // 68
-    u32 vbeControlInfo;    // 72
-    u32 vbeModeInfo;       // 76
+    u32 vbeControlInfo;     // 72
+    u32 vbeModeInfo;        // 76
     u16 vbeMode;            // 80
-    u16 vbeInterfaceSeg;   // 82
-    u16 vbeInterfaceOff;   // 84
-    u16 vbeInterfaceLen;   // 86
+    u16 vbeInterfaceSeg;    // 82
+    u16 vbeInterfaceOff;    // 84
+    u16 vbeInterfaceLen;    // 86
     u64 framebufferAddr;    // 88
     u32 framebufferPitch;   // 96
     u32 framebufferWidth;   // 100
     u32 framebufferHeight;  // 104
     u8 framebufferBpp;      // 108
     u8 framebufferType;     // 109
-    u8 colorInfo[6];        // 110, 111, 112, 113, 114, 115
+    union
+    {
+        struct
+        {
+            u32 framebuffer_palette_addr;
+            u16 framebuffer_palette_num_colors;
+        };
+        struct
+        {
+            u8 framebuffer_red_field_position;
+            u8 framebuffer_red_mask_size;
+            u8 framebuffer_green_field_position;
+            u8 framebuffer_green_mask_size;
+            u8 framebuffer_blue_field_position;
+            u8 framebuffer_blue_mask_size;
+        };
+    } colorInfo;
 } MultibootStructure;
 
 typedef struct memoryHeader

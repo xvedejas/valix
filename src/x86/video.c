@@ -18,147 +18,162 @@
  */
 #include <video.h>
 #include <string.h>
+#include <fonts.h>
+
+#define red(color) (color & 0xFF)
+#define green(color) ((color >> 8) & 0xFF)
+#define blue(color) ((color >> 16) & 0xFF)
+#define alpha(color) ((color >> 24) & 0xFF)
+
+const u32 fontWidth = 5,
+          fontHeight = 9,
+          fontHSpace = 2,
+          fontVSpace = 1;
+
+u32 fontX,
+    fontY;
 
 void videoInstall(MultibootStructure *multiboot)
 {
     // assert the presence of vbe info
-    if (!(multiboot->flags & bit(12)))
-        panic("Grub provides no framebuffer info");
-
-    framebuffer.mem = (u32*)(u32)multiboot->framebufferAddr;
-    framebuffer.bpp = multiboot->framebufferBpp;
-    framebuffer.width = multiboot->framebufferWidth;
-    framebuffer.height = multiboot->framebufferHeight;
+    //assert(multiboot->flags & bit(12), "Grub provides no framebuffer info");
+    //assert(multiboot->framebufferType == 1, "Grub doesn't provide RGB video");
+    
+    /// this stuff is hard-coded until the grub reporting stuff works
+    /// correctly again...
+    
+    framebuffer.mem = (u8*)(u32)multiboot->framebufferAddr;
+    framebuffer.bpp = 24;//multiboot->framebufferBpp;
+    framebuffer.width = 800;//multiboot->framebufferWidth;
+    framebuffer.height = 600;//multiboot->framebufferHeight;
+    
+    /* Top-left corners of first character */
+    fontX = 1,
+    fontY = 1;
+    videoInstalled = true;
 }
 
-Buffer newBuffer(u32 width, u32 height)
+inline u32 getColor(Buffer buffer, u32 pos)
 {
-    Buffer buffer =
+    assert(pos < buffersize(buffer), "Index outside of range of video buffer");
+    
+	u32 color = 0x0;
+	pos *= xstep(buffer);
+    
+	switch (buffer.bpp)
     {
-        (u32*)malloc(sizeof(u32) * width * height), 32,
-        width, height
-    };
-    clrBuffer(buffer);
-    return buffer;
+		case 32:
+		
+		color |= buffer.mem[pos + 3] << 24;
+		
+		case 24:
+		
+		color |= buffer.mem[pos + 2] << 16;
+		color |= buffer.mem[pos + 1] << 8;
+		color |= buffer.mem[pos + 0];
+		
+		break;
+		default:
+		
+		panic("pixel size %i not supported\n", buffer.bpp);
+		
+		break;
+	}
+	
+    return color;
 }
 
-Buffer newBitmapBuffer(u32 *bitmap, u32 width, u32 height)
+inline void setColor(Buffer buffer, u32 pos, u32 color)
 {
-    return (Buffer)
-    {   bitmap,
-        32,
-        width, height
-    };
-}
-
-double ceil(double x)
-{
-    volatile register smax i;
-    i = (smax)x;
-    if (x == i) return x;
-    if (i > 0) return (double)(i+1);
-    else return (double)(i);
-}
-
-double floor(double x)
-{
-    volatile register smax i;
-    i = (smax)x;
-    if (x == i) return x;
-    if (i > 0) return (double)(i);
-    else return (double)(i-1);
-}
-
-double round(double x)
-{
-    if (x - floor(x) >= 0.5)
-        return ceil(x);
-    return floor(x);
-}
-
-u32 alphaBlendOld(u32 background, u32 color)
-{
-    u32 alpha = color >> 24;
-    u32 invbgalpha = 0xFF - (background >> 24); // inverse background alpha
-
-    if (alpha == 0x00) return color;
-    if (alpha == 0xFF) return background;
-
-    u32 rb = (((color & 0xFF00FF) * (0xFF - alpha)) +
-        ((background & 0xFF00FF) * alpha * (invbgalpha / 0xFF))) & 0xFF00FF00;
-    u32 g = (((color & 0x00FF00) * (0xFF - alpha)) +
-        ((background & 0x00FF00) * alpha * (invbgalpha / 0xFF))) & 0x00FF0000;
-
-    u32 a = min(color, background) & 0xFF000000;
-
-    return a | ((rb | g) >> 8);
-}
-
-void drawLine(Buffer buffer, Point a, Point b, u32 color)
-{
-    double x0 = a.x,
-        y0 = a.y,
-        x1 = b.x,
-        y1 = b.y;
+    assert(pos < buffersize(buffer), "Index outside of range of video buffer");
     
-    double slope = (y0 - y1) / (x0 - x1);
+    u32 oldColor = getColor(buffer, pos),
+        newColor;
     
-    // If our slope is between -1 and 1
-    if (slope < 1 && slope > -1)
-    {   
-        if (x0 > x1)
-        {
-            drawLine(buffer, b, a, color);
-            return;
-        }
-        int x;
-        for (x = x0; x <= x1; x++)
-        {
-            
-            double y = slope * delta( x, x0 ) + y0;
-            
-            u32 top = ceil(y),
-                bottom = floor(y);
-            
-            double alpha = (0xFF - (color >> 24));
-            
-            u8 topAlpha = round(alpha * (ceil(y) - y)),
-                bottomAlpha = round(alpha * (y - floor(y)));
-            
-            u32 topColor = (topAlpha << 24) | (color & 0xFFFFFF),
-                bottomColor = (bottomAlpha << 24) | (color & 0xFFFFFF);
-        
-            buffer.mem[x + top * buffer.width] = topColor;
-            buffer.mem[x + bottom * buffer.width] = bottomColor;
-        }
-    }
-    // Otherwise, switch x's and y's
+    if (oldColor & 0xFF000000)
+        newColor = color;
     else
+        newColor = alphaBlend(oldColor, color);
+    
+    //pos *= xstep(buffer);
+    
+    switch (buffer.bpp)
     {
-        slope = 1 / slope;
-        if (y0 > y1)
+		case 32:
+		
+		buffer.mem[pos + 3] = alpha(newColor);
+		
+		case 24:
+		
+		buffer.mem[pos + 2] = blue(newColor);
+		buffer.mem[pos + 1] = green(newColor);
+		buffer.mem[pos + 0] = red(newColor);
+		
+		break;
+		default:
+		
+		panic("pixel size not supported\n");
+		
+		break;
+	}
+}
+
+void putPixel(Buffer buffer, u32 x, u32 y, u32 color)
+{
+    assert(x < buffer.width, "Index outside of range of video buffer");
+    assert(y < buffer.height, "Index outside of range of video buffer");
+    
+    u32 index = x * xstep(buffer) + y * ystep(buffer);
+    setColor(buffer, index, color);
+}
+
+void drawChar(Buffer buffer, char c, u32 x, u32 y, u32 color)
+{
+    u8 *bitmap = (u8*)fontsIndex[(u32)c];
+    u32 i, j;
+    for (i = 0; i < fontHeight; i++)
+    {
+        for (j = 0; j < fontWidth; j++)
         {
-            drawLine(buffer, b, a, color);
-            return;
-        }
-        int y;
-        for (y = y0; y <= y1; y++)
-        {
-            double x = slope * delta( y, y0 ) + x0;
-            
-            u32 right = ceil(x),
-                left = floor(x);
-            
-            double alpha = (0xFF - (color >> 24));
-            
-            u8 rightAlpha = round(alpha * (ceil(x) - x)),
-                leftAlpha = round(alpha * (x - floor(x)));
-            
-            u32 rightColor = (rightAlpha << 24) | (color & 0xFFFFFF),
-                leftColor = (leftAlpha << 24) | (color & 0xFFFFFF);
-            
-            buffer.mem[left + y * buffer.width] = leftColor;
-            buffer.mem[right + y * buffer.width] = rightColor;
+            u32 alpha = bitmap[j + i * fontWidth] << 24;
+            putPixel(buffer, x + j, y + i, color | alpha);
         }
     }
+    
+}
+
+/* For printing directly to the framebuffer, for now... */
+void printChar(char c)
+{
+    if (fontX + fontWidth > framebuffer.width)
+    {
+        fontX = 1;
+        fontY += fontHeight + fontVSpace;
+    }
+    if (fontY + fontHeight > framebuffer.height)
+    {
+        /// todo
+        return;
+    }
+    switch (c)
+    {
+        case '\n':
+            fontX = 0;
+            fontY += fontHeight + fontVSpace;
+        break;
+        case '\t':
+            printChar(' ');
+            printChar(' ');
+            printChar(' ');
+            printChar(' ');
+        return;
+        case ' ':
+            fontX += fontWidth + fontHSpace;
+        break;
+        default:
+            drawChar(framebuffer, c, fontX, fontY, 0xFFFFFF);
+            fontX += fontWidth + fontHSpace;
+        break;
+    }
+    
 }

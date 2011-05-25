@@ -379,7 +379,7 @@ void freeThread(Thread *thread)
         MemoryHeader *next = currentBlock->next;
         if (currentBlock->thread == thread)
         {
-            printf("\nDying thread '%s' failed to free memory at %x, size %x, freeing.\n",
+            printf("Dying thread '%s' failed to free %x, size %x, freeing.\n",
                 thread->name, &currentBlock->start, currentBlock->size);
             free(&currentBlock->start);
         }

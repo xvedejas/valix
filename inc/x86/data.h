@@ -117,4 +117,19 @@ void stringBuilderAppendChar(StringBuilder *sb, char c);
 /* note: ToString will destroy the string builder! */
 extern String stringBuilderToString(StringBuilder *sb);
 
+/////////////////////
+// Queue Interface //
+/////////////////////
+
+typedef struct
+{
+    void **array;
+    Size start, end; // indexes
+    Size size; // static
+} Queue;
+
+extern Queue *queueNew(Size size);
+extern void enqueue(Queue *queue, void *value);
+extern void *dequeue(Queue *queue);
+
 #endif

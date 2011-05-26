@@ -46,7 +46,7 @@ void videoInstall(MultibootStructure *multiboot)
     framebuffer.bpp = 24;//multiboot->framebufferBpp;
     framebuffer.width = 800;//multiboot->framebufferWidth;
     framebuffer.height = 600;//multiboot->framebufferHeight;
-    
+
     /* Top-left corners of first character */
     fontX = 1,
     fontY = 1;
@@ -58,7 +58,6 @@ inline u32 getColor(Buffer buffer, u32 pos)
     assert(pos < buffersize(buffer), "Index outside of range of video buffer");
     
 	u32 color = 0x0;
-	pos *= xstep(buffer);
     
 	switch (buffer.bpp)
     {
@@ -87,15 +86,8 @@ inline void setColor(Buffer buffer, u32 pos, u32 color)
 {
     assert(pos < buffersize(buffer), "Index outside of range of video buffer");
     
-    u32 oldColor = getColor(buffer, pos),
-        newColor;
-    
-    if (oldColor & 0xFF000000)
-        newColor = color;
-    else
-        newColor = alphaBlend(oldColor, color);
-    
-    //pos *= xstep(buffer);
+    u32 oldColor  = getColor(buffer, pos);
+     u32 newColor = alphaBlend(oldColor, color);
     
     switch (buffer.bpp)
     {
@@ -127,6 +119,15 @@ void putPixel(Buffer buffer, u32 x, u32 y, u32 color)
     setColor(buffer, index, color);
 }
 
+u32 getPixel(Buffer buffer, u32 x, u32 y)
+{
+    assert(x < buffer.width, "Index outside of range of video buffer");
+    assert(y < buffer.height, "Index outside of range of video buffer");
+    
+    u32 index = x * xstep(buffer) + y * ystep(buffer);
+    return getColor(buffer, index);
+}
+
 void drawChar(Buffer buffer, char c, u32 x, u32 y, u32 color)
 {
     u8 *bitmap = (u8*)fontsIndex[(u32)c];
@@ -135,31 +136,52 @@ void drawChar(Buffer buffer, char c, u32 x, u32 y, u32 color)
     {
         for (j = 0; j < fontWidth; j++)
         {
-            u32 alpha = bitmap[j + i * fontWidth] << 24;
-            putPixel(buffer, x + j, y + i, color | alpha);
+            u8 alpha = bitmap[j + i * fontWidth];
+            putPixel(buffer, x + j, y + i, color | (alpha << 24));
         }
     }
-    
+}
+
+void scrollBufferUp(Buffer buffer, Size distance, u32 background)
+{
+    Size x, y;
+    for (y = 0; y < buffer.height - distance; y++)
+    {
+        for (x = 0; x < buffer.width; x++)
+        {
+            putPixel(buffer, x, y, getPixel(buffer, x, y + distance));
+        }
+    }
+    for ( ; y < buffer.height; y++)
+    {
+        for (x = 0; x < buffer.width; x++)
+        {
+            putPixel(buffer, x, y, background);
+        }
+    }
 }
 
 /* For printing directly to the framebuffer, for now... */
 void printChar(char c)
 {
+    Size width = (fontWidth + fontHSpace);
+    Size height = (fontHeight + fontVSpace);
     if (fontX + fontWidth > framebuffer.width)
     {
         fontX = 1;
-        fontY += fontHeight + fontVSpace;
+        fontY += height;
     }
     if (fontY + fontHeight > framebuffer.height)
     {
-        /// todo
-        return;
+        
+        scrollBufferUp(framebuffer, height, 0x0);
+        fontY -= height;
     }
     switch (c)
     {
         case '\n':
             fontX = 0;
-            fontY += fontHeight + fontVSpace;
+            fontY += height;
         break;
         case '\t':
             printChar(' ');
@@ -168,11 +190,24 @@ void printChar(char c)
             printChar(' ');
         return;
         case ' ':
-            fontX += fontWidth + fontHSpace;
+            fontX += width;
+        break;
+        case '\b':
+            if (fontX < fontWidth)
+            {
+                fontY -= height;
+                fontX = framebuffer.width - width - (framebuffer.width % width);
+                drawChar(framebuffer, c, fontX, fontY, 0x0);
+            }
+            else
+            {
+                fontX -= width;
+                drawChar(framebuffer, c, fontX, fontY, 0x0);
+            }
         break;
         default:
             drawChar(framebuffer, c, fontX, fontY, 0xFFFFFF);
-            fontX += fontWidth + fontHSpace;
+            fontX += width;
         break;
     }
     

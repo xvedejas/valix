@@ -199,6 +199,7 @@ u8 *parse(Token *first)
             if (curToken->type != colonToken) /* Unary message */
             {
                 parserRequire(i == 1, "Expected keyword, not binary message. Maybe use parentheses to show you want to use a binary message?");
+                outchr('\x84'); /* Message directive */
                 outchr(intern(keywords[0]));
                 outchr((char)0); // argc
                 return;

@@ -22,6 +22,7 @@ public reboot
 public halt
 extern kmain
 extern endThread
+extern withinISR
 
 header_magic equ 0x1BADB002
 header_flags equ 7
@@ -129,7 +130,9 @@ isrCommonStub:
     mov eax, esp   ; Push us the stack
     push eax
     mov eax, faultHandler
+    mov dword [withinISR], 1
     call eax       ; A special call, preserves the 'eip' register
+    mov dword [withinISR], 0
     pop eax
     pop gs
     pop fs
@@ -158,7 +161,9 @@ irqCommonStub:
     mov eax, esp
     push eax
     mov eax, irqHandler
+    mov dword [withinISR], 1
     call eax
+    mov dword [withinISR], 0
     pop eax
     pop gs
     pop fs
@@ -185,4 +190,3 @@ reboot:
 section '.bss'
     rd 0x1000
 stackPointer:
-

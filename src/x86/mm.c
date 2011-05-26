@@ -295,6 +295,18 @@ void *calloc(Size amount, Size elementSize)
     return memset(mem, 0, amount * elementSize);
 }
 
+bool isAllocated(void *memory)
+{
+    if (memory == NULL)
+        return false;
+    MemoryHeader *header = (MemoryHeader*)(memory - sizeof(MemoryHeader));
+    if (header->startMagic != mmMagic)
+        return false;
+    if (header->free)
+        return false;
+    return true;
+}
+
 void free(void *memory)
 {
     mutexAcquireLock(&mmLockMutex);
@@ -324,7 +336,9 @@ void free(void *memory)
     if (unlikely(header->free))
     {
         /* This is not a bad thing, but probably shouldn't happen either. */
+        #ifndef __release__
         printf("Memory at %x already freed, ignoring.\n", memory);
+        #endif
         return;
     }
     
@@ -379,8 +393,10 @@ void freeThread(Thread *thread)
         MemoryHeader *next = currentBlock->next;
         if (currentBlock->thread == thread)
         {
+            #ifndef __release__
             printf("Dying thread '%s' failed to free %x, size %x, freeing.\n",
                 thread->name, &currentBlock->start, currentBlock->size);
+            #endif
             free(&currentBlock->start);
         }
         currentBlock = next;

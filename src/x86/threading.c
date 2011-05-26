@@ -17,6 +17,7 @@
 
 #include <threading.h>
 #include <mm.h>
+#include <main.h>
 
 #define saveStackRegs(thread) \
     __asm__ __volatile__("mov %%esp, %0" : "=r"(thread->esp)); \
@@ -171,7 +172,6 @@ void schedule()
             freeThread(thread);
         }
     } while ((thread = thread->next) != currentThread);
-    
     /* Now we will see if we want to switch threads */
     if (ticksUntilSwitch == 0)
     {
@@ -210,7 +210,7 @@ void sleep(u32 milliseconds)
 {
     threadingLock();
     currentThread->sleepOverTime = timerTicks + milliseconds * systemClockFreq / 1000;
-    printf("will sleep until %i\n", currentThread->sleepOverTime);
+    //printf("%x will sleep until %i\n", currentThread, currentThread->sleepOverTime);
     currentThread->status = sleeping;
     ticksUntilSwitch = 0;
     threadingUnlock();
@@ -258,7 +258,10 @@ MutexReply mutexAcquireLock(Mutex *mutex)
 void mutexReleaseLock(Mutex *mutex)
 {
     assert(mutex->locked && mutex->multiplicity, "Attempted to free mutex that was not locked");
-    assert(mutex->thread == currentThread,
+    /* One way to wait for resources is for any thread to try and lock
+     * a mutex, and then an ISR unlocks it. If we are
+     * within an ISR then let it unlock completely. */
+    assert(mutex->thread == currentThread || withinISR,
         "Attempted to free mutex that was not allocated to the current thread");
     mutex->multiplicity--;
     if (!mutex->multiplicity)
@@ -292,4 +295,22 @@ void threadsDebug()
         printf("%i Thread: %s status: %s\n", thread->pid, thread->name, statuses[thread->status]);
     } while ((thread = thread->next) != currentThread);
     threadingUnlock();
+}
+
+bool threadExists(Thread *thread)
+{
+    threadingLock();
+    
+    Thread *first = currentThread;
+    Thread *current = currentThread;
+    do
+    {
+        if (current == thread)
+        {
+            threadingUnlock();
+            return true;
+        }
+    } while ((current = current->next) != first);
+    threadingUnlock();
+    return false;
 }

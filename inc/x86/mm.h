@@ -101,6 +101,7 @@ extern void mmInstall(MultibootStructure *multiboot);
 extern void *malloc(Size size);
 extern void *kalloc(Size size, struct thread *thread);
 extern void *calloc(Size amount, Size elementSize);
+extern bool isAllocated(void *memory);
 extern void free(void *memory);
 extern void *realloc(void *memory, Size size);
 extern void meminfo();

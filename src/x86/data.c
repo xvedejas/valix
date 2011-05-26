@@ -590,3 +590,33 @@ String stringBuilderToString(StringBuilder *sb)
     free(sb);
     return s;
 }
+
+//////////////////////////
+// Queue Implementation //
+//////////////////////////
+
+extern Queue *queueNew(Size size)
+{
+    Queue *queue = malloc(sizeof(Queue));
+    queue->size = size;
+    queue->array = malloc(sizeof(void*) * queue->size);
+    queue->start = 0;
+    queue->end = 0;
+    return queue;
+}
+
+extern void enqueue(Queue *queue, void *value)
+{
+    if ((queue->end + 1) % queue->size == queue->start) // overflow
+        queue->start = (queue->start + 1) % queue->size;
+    queue->array[queue->end] = value;
+    queue->end = (queue->end + 1) % queue->size;
+}
+
+extern void *dequeue(Queue *queue)
+{
+    if (queue->end == queue->start) // underflow
+        return NULL;
+    queue->end = (queue->end - 1) % queue->size;
+    return queue->array[queue->end];
+}

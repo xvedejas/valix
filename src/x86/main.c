@@ -27,10 +27,12 @@
 #include <parser.h>
 #include <video.h>
 #include <pci.h>
+#include <keyboard.h>
 #include <lexer.h>
 #include <vm.h>
 #include <acpi.h>
 
+bool withinISR = false;
 const Size systemStackSize = 0x1000;
 
 u8 inportb(u16 port)
@@ -202,16 +204,19 @@ void timerInstall()
 
 ThreadFunc langTest()
 {
-    printf("Running langTest in main.c\n\n");
-    u8 *bytecode = parse(lex(
-        "myMessage = \"Hello World!\n\".\n"
-        "Console print: myMessage.\n"
-        "Console print: \"Valix Pre-Pre-Alpha\n\".\n"
-        "Console print: \"3 x 4 x 5 x 6 equals \".\n"
-        "Console print: (3 * (4 * (5 * 6)))\n"));
-    execute(bytecode);
-    free(bytecode);
-    for (;;);
+    for (;;)
+    {
+        printf(">>> ");
+        String input;
+        do
+        {
+            input = getstring();
+        } while (strlen(input) == 0);
+        u8 *bytecode = parse(lex(input));
+        execute(bytecode);
+        free(bytecode);
+        free(input);
+    }
 }
 
 void pciinfo()
@@ -278,13 +283,16 @@ void kmain(u32 magic, MultibootStructure *multiboot, void *stackPointer)
     acpiInstall();
     videoInstall(multiboot);
     mmInstall(multiboot);
-    threadingInstall(stackPointer);
-    vmInstall();
-    //keyboardInstall();
+    threadingInstall(stackPointer); // must be after mmInstall
+    vmInstall(); // must be after mmInstall
+    keyboardInstall(); // must be after mmInstall, threadingInstall
     asm volatile("sti;");
     //FileCoreInit();
+    printf("Welcome to Valix! Try typing Console print: (5 * 6 / 3 + 10)\n");
     
     spawn("langTest", langTest);
+    
+    
     //pciinfo();
     for (;;);
     return; /* kills kernel thread */

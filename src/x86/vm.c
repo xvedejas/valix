@@ -42,6 +42,8 @@ Object *globalScope; // where all global classes should be as "local" variables
 
 Map *globalSymbolTable; // <string, symbol>
 
+#define runtimeError(message, args...) { printf("Runtime Error\n"); printf(message, ## args); endThread(); }
+
 /* Given a vtable, returns a new object with that vtable */
 Object *vtableAllocate(Object *self)
 {
@@ -126,7 +128,7 @@ Object *doMethod(Object *self, Object *methodClosure, ...)
                 return func(self, arg, va_arg(argptr, Object*));
             } break;
             default:
-                panic("Not implemented");
+                runtimeError("Not implemented");
             break;
         }
     }
@@ -134,7 +136,7 @@ Object *doMethod(Object *self, Object *methodClosure, ...)
     {
         /// recur over interpret()
     }
-    panic("Not implemented");
+    runtimeError("Not implemented");
     return NULL;
 }
 
@@ -149,6 +151,7 @@ Object *doMethod(Object *self, Object *methodClosure, ...)
 /* Find a method on an object by sending the lookup message */
 Object *bind(Object *self, Object *messageName)
 {
+    assert(messageName != NULL, "VM Error");
     Object *methodClosure;
     if (messageName == lookupSymbol && self == vtablevt)
         methodClosure = vtableLookup(self->vtable, lookupSymbol);
@@ -163,7 +166,7 @@ Object *bind(Object *self, Object *messageName)
 Object *new(Object *self)
 {
     if (self == objectClass)
-        panic("VM error, you can't instantiate class Object");
+        runtimeError("VM error, you can't instantiate class Object");
     Object *new = vtableAllocate(self->vtable);
     new->parent = self;
     return new;
@@ -178,7 +181,7 @@ Object *subclass(Object *self)
 
 void doesNotUnderstand(Object *self, Object *symbol)
 {
-    panic("Object at %x does not understand message \"%s\"", self, symbol->data);
+    runtimeError("Object at %x does not understand message \"%s\" %x", self, symbol->data);
 }
 
 /* Creates an internal function method closure */
@@ -289,16 +292,30 @@ Object *scopeNew(Object *parent, Object *closure, Size locals)
     return scope;
 }
 
-Object *multiply(Object *self, Object *factor)
+Object *multiply(Object *self, Object *operand)
 {
-    self->data = (void*)(((Size)self->data) * ((Size)factor->data));
-    return self;
+    return numberNew(numberClass, ((Size)self->data) * ((Size)operand->data));
+}
+
+Object *add(Object *self, Object *operand)
+{
+    return numberNew(numberClass, ((Size)self->data) + ((Size)operand->data));
+}
+
+Object *divide(Object *self, Object *operand)
+{
+    return numberNew(numberClass, ((Size)self->data) / ((Size)operand->data));
+}
+
+Object *subtract(Object *self, Object *operand)
+{
+    return numberNew(numberClass, ((Size)self->data) - ((Size)operand->data));
 }
 
 void print(Object *console, Object *argument)
 {
     Object *string = send(argument, asStringSymbol);
-    printf(string->data);
+    printf("%s\n", string->data);
 }
 
 Object *numberAsString(Object *self)
@@ -313,6 +330,11 @@ Object *stringAsString(Object *self)
     return self;
 }
 
+Object *objectAsString(Object *self)
+{
+    return stringNew(stringClass, "");
+}
+
 void initialize()
 {
     scopeClass = subclass(objectClass);
@@ -325,6 +347,7 @@ void initialize()
     send(numberClass->vtable, addMethodSymbol, asStringSymbol, methodNew(numberAsString, 0));
     send(stringClass->vtable, addMethodSymbol, newSymbol, methodNew(stringNew, 1));
     send(stringClass->vtable, addMethodSymbol, asStringSymbol, methodNew(stringAsString, 0));
+    send(objectClass->vtable, addMethodSymbol, asStringSymbol, methodNew(objectAsString, 0));
     send(symbolClass->vtable, addMethodSymbol, newSymbol, methodNew(symbolNew, 1));
     
     send(consoleClass->vtable, addMethodSymbol, printSymbol, methodNew(print, 1));
@@ -334,6 +357,15 @@ void initialize()
     
     Object *multiplySymbol = send(symbolClass, internSymbol, "*");
     send(numberClass->vtable, addMethodSymbol, multiplySymbol, methodNew(multiply, 1));
+    
+    Object *addSymbol = send(symbolClass, internSymbol, "+");
+    send(numberClass->vtable, addMethodSymbol, addSymbol, methodNew(add, 1));
+    
+    Object *divideSymbol = send(symbolClass, internSymbol, "/");
+    send(numberClass->vtable, addMethodSymbol, divideSymbol, methodNew(divide, 1));
+    
+    Object *subtractSymbol = send(symbolClass, internSymbol, "-");
+    send(numberClass->vtable, addMethodSymbol, subtractSymbol, methodNew(subtract, 1));
     
     numberClass = send(numberClass->vtable, allocateSymbol);
     stringClass = send(stringClass->vtable, allocateSymbol);
@@ -349,7 +381,8 @@ Object *lookupVar(Object *scope, Object *symbol)
     Object *value;
     do value = mapGetVal(((Scope*)scope->data)->vars, symbol->data);
     while (value == NULL && (scope = ((Scope*)scope->data)->parent) != NULL);
-    assert(value != NULL, "Undefined variable %s\n", symbol->data);
+    if (value == NULL)
+        runtimeError("Undefined variable %s\n", symbol->data);
     return value;
 }
 
@@ -386,6 +419,7 @@ void vmInstall()
 ThreadFunc execute(u8 *bytecode)
 {
     u8 *IP = bytecode;
+    Object *lastValue;
     
     /* The first section of the code is the method interned header.
      * We look at each entry, and create a dictionary (using the global
@@ -434,14 +468,14 @@ ThreadFunc execute(u8 *bytecode)
         
         Stack *vStack = stackNew();
         
-        while (*IP != 0xFF)
+        while (*IP)
         {
             //printf("%x %c\n", *IP, *IP); // print the byte we're looking at
             switch (*IP++)
             {
                 case importByteCode:
                 {
-                    panic("Not implemented!");
+                    runtimeError("Not implemented!");
                     /// this should recur over execute()
                 } break;
                 case newStringByteCode:
@@ -498,25 +532,26 @@ ThreadFunc execute(u8 *bytecode)
                 } break;
                 case beginListByteCode:
                 {
-                    panic("Not implemented!");
+                    runtimeError("Not implemented!");
                 } break;
                 case beginProcedureByteCode:
                 {
-                    panic("Not implemented!");
+                    runtimeError("Not implemented!");
                     
                 } break;
                 case endListByteCode:
                 {
-                    panic("Not implemented!");
+                    runtimeError("Not implemented!");
                 } break;
                 case endStatementByteCode:
                 {
                     // clear out the value stack
+                    lastValue = *vStack->bottom;
                     while (stackPop(vStack));
                 } break;
                 case returnByteCode:
                 {
-                    panic("Not implemented!");
+                    runtimeError("Not implemented!");
                 } break;
                 case setEqualByteCode:
                 {
@@ -526,20 +561,22 @@ ThreadFunc execute(u8 *bytecode)
                 } break;
                 case newSymbolByteCode:
                 {
-                    panic("Not implemented!");
+                    runtimeError("Not implemented!");
                 } break;
                 case setArgByteCode:
                 {
-                    panic("Not implemented!");
+                    runtimeError("Not implemented!");
                 } break;
                 case 0xFF: /* EOS */
                 {
+                    send(consoleClass, printSymbol, lastValue);
                     //printf("Execution done! Exiting thread.");
                     //endThread();
+                    return lastValue;
                 } break;
                 default:
                 {
-                    panic("Execution error: Malformed bytecode.");
+                    runtimeError("Execution error: Malformed bytecode.");
                 } break;
             }
         }

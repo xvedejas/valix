@@ -24,6 +24,8 @@
 #define likely(x)       __builtin_expect((x), 1)
 #define unlikely(x)     __builtin_expect((x), 0)
 
+#define __release__
+
 #define u8max (0xFF)
 #define u16max (0xFFFF)
 #define u32max (0xFFFFFFFF)
@@ -67,6 +69,7 @@ extern u32 inportd(u16 port);
 extern void outportd(u16 port, u32 data);
 
 extern void printf(const char *format, ...);
+extern void putch(u8 c);
 extern void _panic(String file, u32 line);
 
 extern void *linkKernelEntry;
@@ -77,5 +80,7 @@ extern void reboot();
 extern void gdtInstall(void);
 extern void timerInstall();
 extern void quickRestart();
+
+bool withinISR;
 
 #endif

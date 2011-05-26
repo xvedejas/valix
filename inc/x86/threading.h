@@ -91,6 +91,8 @@ Thread *getCurrentThread();
 void killThread(Thread *thread);
 void sleep(u32 milliseconds);
 void threadsDebug();
+bool threadExists(Thread *thread);
+void threadPromote(Thread *thread);
 
 ///////////////////////////////////////////////////////////////////////////////
 // Mutex Interface                                                           //

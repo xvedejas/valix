@@ -56,7 +56,8 @@ String tokenTypeNames[] =
 void lexerError(String message)
 {
     printf("Lexer Error");
-    for (;;) sleep(0xFFFFFFFF);
+    printf(message);
+    endThread();
 }
 
 Token *tokenNew(Size line, Size col)

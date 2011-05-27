@@ -199,11 +199,12 @@ void timerInstall()
 {
     timerTicks = 0;
     irqInstallHandler(0, timerHandler);
-    timerPhase(systemClockFreq); /* set to milisecond precision */
+    timerPhase(systemClockFreq);
 }
 
 ThreadFunc langTest()
 {
+    Object *process = processNew(processClass);
     for (;;)
     {
         printf(">>> ");
@@ -213,8 +214,8 @@ ThreadFunc langTest()
             input = getstring();
         } while (strlen(input) == 0);
         u8 *bytecode = parse(lex(input));
-        execute(bytecode);
-        free(bytecode);
+        Object *returnValue = processExecute(process, bytecode);
+        send(consoleClass, printSymbol, returnValue);
         free(input);
     }
 }

@@ -58,6 +58,7 @@ typedef struct method
         /* For user-defined closures only */
         struct
         {
+            Map *translationTable;
             Object *bytearray;
         };
     };
@@ -72,7 +73,47 @@ typedef struct scope
     Map *vars; /* <symbol,object> */
 } Scope;
 
+/* The following are some useful globals */
+
+/* Basic objects */
+Object *objectClass,
+       *scopeClass,
+       *symbolClass,
+       *numberClass,
+       *stringClass,
+       *closureClass,
+       *bytearrayClass,
+       *processClass,
+       *consoleClass;
+
+/* Symbols */
+Object *newSymbol,
+       *lengthSymbol,
+       *newSymbolZArgs,
+       *lookupSymbol,
+       *addMethodSymbol,
+       *allocateSymbol,
+       *delegatedSymbol,
+       *internSymbol,
+       *doesNotUnderstandSymbol,
+       *consoleSymbol,
+       *printSymbol,
+       *asStringSymbol,
+       *executeSymbol;
+
+/* Given an object and the symbol representing a message, send the
+ * message with some number of arguments */
+#define send(self, messageName, args...) \
+    ({\
+        Object *_self = self;\
+        doMethod(_self, bind(_self, messageName), ## args);\
+    })\
+
+Object *doMethod(Object *self, Object *methodClosure, ...);
+Object *bind(Object *self, Object *messageName);
+
 void vmInstall();
-ThreadFunc execute(u8 *bytecode);
+Object *processNew(Object *self);
+Object *processExecute(Object *self, u8 *headeredBytecode);
 
 #endif

@@ -220,8 +220,7 @@ Association *_mapFindBucket(Map *map, void *key, MapKeyType type, bool *inTableA
             return assoc;
         }
         *previous = assoc;
-        assoc = assoc->next;
-    } while (assoc != NULL);
+    } while ((assoc = assoc->next) != NULL);
     /* Look again, this time in table B if it exists */
     *previous = NULL;
     if (map->B != NULL)
@@ -237,8 +236,7 @@ Association *_mapFindBucket(Map *map, void *key, MapKeyType type, bool *inTableA
                 return assoc;
             }
             *previous = assoc;
-            assoc = assoc->next;
-        } while (assoc != NULL);
+        } while ((assoc = assoc->next) != NULL);
     }
     return NULL;
 }

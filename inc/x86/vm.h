@@ -22,11 +22,22 @@
 #include <threading.h>
 #include <data.h>
 
+struct scope;
+struct method;
+
 typedef struct object
 {
     struct object *vtable; /* methods */
     struct object *parent;
-    void *data; /* any associated data. In vtables, it's a Map<symbol,method> */
+    /* any associated data. In vtables, it's a Map<symbol,method>.
+     * The union is just for convenience in C */
+    union
+    {
+        void *data;
+        Map *map;
+        struct scope *scope;
+        struct method *method;
+    };
 } Object;
 
 typedef enum
@@ -102,11 +113,14 @@ Object *newSymbol,
        *printSymbol,
        *asStringSymbol,
        *callSymbol,
+       *callOneSymbol,
+       *callTwoSymbol,
        *equivSymbol,
        *whileSymbol,
        *lessThanSymbol,
        *greaterThanSymbol,
        *selfSymbol,
+       *typeSymbol,
        *executeSymbol;
 
 /* Given an object and the symbol representing a message, send the

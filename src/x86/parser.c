@@ -295,8 +295,6 @@ u8 *parse(Token *first)
             } break;
             case openBraceToken: /* '{' denotes a block */
             {
-                /// todo:
-                /// 8E opcode to load each argument
                 outchr(beginProcedureByteCode); /* Begin block directive */
                 nextToken();
                 
@@ -311,22 +309,20 @@ u8 *parse(Token *first)
                 {
                     // If we have arguments...
                     parserRequire(curToken->type == keywordToken, "Expected keyword token");
+                    outchr(setArgByteCode); /* Load arg */
                     outchr((char)intern(curToken->data));
-                    outchr('\0');
                     nextToken();
                     while (curToken->type != colonToken)
                     {
                         parserRequire(curToken->type == commaToken, "Expected ',' token");
                         nextToken();
                         parserRequire(curToken->type == keywordToken, "Expected keyword token");
-                        out(curToken->data, strlen(curToken->data));
-                        outchr('\0');
+                        outchr(setArgByteCode);
+                        outchr((char)intern(curToken->data));
                         nextToken();
                     }
+                    nextToken();
                 }
-                outchr(beginProcedureByteCode); /* Second begin block directive: means argument list done */
-                outchr('\0'); // number of expected local vars
-                
                 parseProcedure();
                 
                 parserRequire(curToken->type == closeBraceToken, "Expected '}' token");

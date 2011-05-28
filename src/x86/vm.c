@@ -113,6 +113,7 @@ Object *doMethod(Object *self, Object *closure, ...)
     va_list argptr;
     va_start(argptr, closure);
     Object *newScope = NULL;
+    Object *retval = NULL;
     if (method->type == userDefinedClosure)
     {
         newScope = scopeNew(method->containingScope, closure, 5);
@@ -125,29 +126,32 @@ Object *doMethod(Object *self, Object *closure, ...)
             if (method->type == internalFunction)
             {
                 Object *(*func)(Object*) = method->funcptr;
-                return func(self);
+                retval = func(self);
             }
             else
-                return interpret(newScope);
+                retval = interpret(newScope);
+        break;
         case 1:
             one = va_arg(argptr, Object*);
             if (method->type == internalFunction)
             {
                 Object *(*func)(Object*,Object*) = method->funcptr;
-                return func(self, one);
+                retval = func(self, one);
             }
             else
-                return interpret(newScope, one);
+                retval = interpret(newScope, one);
+        break;
         case 2:
             one = va_arg(argptr, Object*);
             two = va_arg(argptr, Object*);
             if (method->type == internalFunction)
             {
                 Object *(*func)(Object*,Object*,Object*) = method->funcptr;
-                return func(self, one, two);
+                retval = func(self, one, two);
             }
             else
-                return interpret(newScope, one, two);
+                retval = interpret(newScope, one, two);
+        break;
         case 3:
             one = va_arg(argptr, Object*);
             two = va_arg(argptr, Object*);
@@ -155,10 +159,11 @@ Object *doMethod(Object *self, Object *closure, ...)
             if (method->type == internalFunction)
             {
                 Object *(*func)(Object*,Object*,Object*,Object*) = method->funcptr;
-                return func(self, one, two, three);
+                retval = func(self, one, two, three);
             }
             else
-                return interpret(newScope, one, two, three);
+                retval = interpret(newScope, one, two, three);
+        break;
         case 4:
             one = va_arg(argptr, Object*);
             two = va_arg(argptr, Object*);
@@ -167,43 +172,14 @@ Object *doMethod(Object *self, Object *closure, ...)
             if (method->type == internalFunction)
             {
                 Object *(*func)(Object*,Object*,Object*,Object*,Object*) = method->funcptr;
-                return func(self, one, two, three, four);
+                retval = func(self, one, two, three, four);
             }
             else
-                return interpret(newScope, one, two, three, four);
-    }
-    panic("Not supported");
-    return NULL;
-}
-
-Object *doInternalMethod(Object *self, Object *methodClosure, ...)
-{
-    Method *method = methodClosure->data;
-    va_list argptr;
-    va_start(argptr, methodClosure);
-    switch (method->argc)
-    {
-        case 0:
-        {
-            Object *(*func)(Object*) = method->funcptr;
-            return func(self);
-        } break;
-        case 1:
-        {
-            Object *(*func)(Object*, Object*) = method->funcptr;
-            return func(self, va_arg(argptr, Object*));
-        } break;
-        case 2:
-        {   
-            Object *(*func)(Object*, Object*, Object*) = method->funcptr;
-            Object *arg = va_arg(argptr, Object*);
-            return func(self, arg, va_arg(argptr, Object*));
-        } break;
-        default:
-            runtimeError("Not implemented");
+                retval = interpret(newScope, one, two, three, four);
         break;
     }
-    return NULL;
+    va_end(argptr);
+    return retval;
 }
 
 /* Find a method on an object by sending the lookup message */
@@ -229,7 +205,8 @@ Object *subclass(Object *self)
 
 void doesNotUnderstand(Object *self, Object *symbol)
 {
-    runtimeError("Object at %x does not understand message \"%s\" %x", self, symbol->data);
+    runtimeError("%s at %x does not understand message \"%s\" %x",
+        send(self, typeSymbol)->data, self, symbol->data);
 }
 
 /* Creates an internal function method closure */
@@ -269,10 +246,13 @@ void symbolSetup()
     asStringSymbol          = symbolIntern(NULL, "asString");
     executeSymbol           = symbolIntern(NULL, "execute:");
     callSymbol              = symbolIntern(NULL, "call");
+    callOneSymbol           = symbolIntern(NULL, "call:");
+    callTwoSymbol           = symbolIntern(NULL, "call:and:");
     equivSymbol             = symbolIntern(NULL, "==");
     lessThanSymbol          = symbolIntern(NULL, "<");
     greaterThanSymbol       = symbolIntern(NULL, ">");
-    selfSymbol       = symbolIntern(NULL, "self");
+    selfSymbol              = symbolIntern(NULL, "self");
+    typeSymbol              = symbolIntern(NULL, "type");
     whileSymbol             = symbolIntern(NULL, "whileTrue:");
 }
 
@@ -363,9 +343,19 @@ Object *print(Object *console, Object *argument)
     return NULL;
 }
 
-Object *closureCallOne(Object *closure)
+Object *closureCallZero(Object *closure)
 {
     return doMethod(NULL, closure);
+}
+
+Object *closureCallOne(Object *closure, Object *arg)
+{
+    return doMethod(NULL, closure, arg);
+}
+
+Object *closureCallTwo(Object *closure, Object *one, Object *two)
+{
+    return doMethod(NULL, closure, one, two);
 }
 
 Object *numberAsString(Object *self)
@@ -447,8 +437,32 @@ Object *closureWhile(Object *self, Object *closure)
     return value;
 }
 
-#define translate(closure, internedValue)\
-    mapGetVal(((Method*)closure->data)->translationTable, internedValue)
+Object *numberType(Object *self)
+{
+    return stringNew(stringClass, "Number");
+}
+
+Object *objectType(Object *self)
+{
+    return stringNew(stringClass, "Object");
+}
+
+Object *symbolType(Object *self)
+{
+    return stringNew(stringClass, "Symbol");
+}
+
+Object *closureType(Object *self)
+{
+    return stringNew(stringClass, "Closure");
+}
+
+Object *translate(Object *closure, Size internedValue)
+{
+    Map *table = closure->method->translationTable;
+    Object *value = mapGetVal(table, internedValue);;
+    return value;
+}
 
 /* This returns a process object. Send it #execute: with a bytecode
  * argument to run the process. You can repeatedly send it #execute:
@@ -493,12 +507,12 @@ void setVar(Object *currentScope, Object *symbol, Object *value)
 /* Given the scope, interpret the bytecode in its closure */
 Object *interpret(Object *scope, ...)
 {
+    va_list argptr;
+    va_start(argptr, scope);
     Object *closure = ((Scope*)scope->data)->closure;
     Object *lastValue; /* For returning values from this closure */
-    Method *closurePayload = (Method*)closure->data;
+    Method *closurePayload = closure->method;
     u8 *IP = closurePayload->bytearray->data;
-    //Size argc = closurePayload->argc;
-    /// don't do anything with args... yet
     
     /* Okay, the first bytecode should "Begin Procedure" 0x86,
      * double check that this is true */
@@ -511,6 +525,16 @@ Object *interpret(Object *scope, ...)
     
     IP++; // just skip it for now
     
+    // Load arguments
+    
+    Size argc = closurePayload->argc;
+    int i;
+    for (i = 0; i < argc && *IP == setArgByteCode; i++)
+    {
+        IP++;
+        setVar(scope, translate(closure, (Size)*IP++), va_arg(argptr, Object*));
+    }
+
     /* Value stack */
     Stack *vStack = stackNew();
     
@@ -583,12 +607,13 @@ Object *interpret(Object *scope, ...)
             } break;
             case beginProcedureByteCode:
             {
-                /* Note; there are TWO begin procedure bytecodes for each
-                 * block statement. Between them are the argument definitions */
-                while (*IP != beginProcedureByteCode) IP++;
-                Object *newClosure = closureNew(closureClass, bytearrayNew(bytearrayClass, IP), scope);
+                Object *newClosure = closureNew(closureClass, bytearrayNew(bytearrayClass, IP - 1), scope);
+                IP++; // ignore this byte for now
+                int argc = 0;
+                while (*IP == setArgByteCode) IP += 2, argc++;
+                newClosure->method->argc = argc;
                 ((Method*)newClosure->data)->type = userDefinedClosure;
-                ((Method*)newClosure->data)->translationTable = ((Method*)closure->data)->translationTable;
+                ((Method*)newClosure->data)->translationTable = ((Method*)((Scope*)((Method*)newClosure->data)->containingScope->data)->closure->data)->translationTable;
                 while (*IP++ != endProcedureByteCode);
                 stackPush(vStack, newClosure);
             } break;
@@ -604,6 +629,7 @@ Object *interpret(Object *scope, ...)
             } break;
             case endProcedureByteCode:
             {
+                va_end(argptr);
                 return lastValue;
             } break;
             case returnByteCode:
@@ -622,12 +648,14 @@ Object *interpret(Object *scope, ...)
             } break;
             case setArgByteCode:
             {
-                runtimeError("Not implemented!");
+                // this should not be found here
+                runtimeError("Malformed Bytecode");
             } break;
             case 0xFF: /* EOS */
             {
                 //printf("Execution done! Exiting thread.");
                 //endThread();
+                va_end(argptr);
                 return lastValue;
             } break;
             default:
@@ -636,6 +664,7 @@ Object *interpret(Object *scope, ...)
             } break;
         }
     }
+    va_end(argptr);
     return NULL;
 }
 
@@ -643,24 +672,25 @@ Object *interpret(Object *scope, ...)
  * multiple null characters. The processExecute() function should be used to
  * run an entire file of bytecode. The interpret() function is for running
  * blocks. */
-Object *processExecute(Object *self, u8 *headeredBytecode)
+Object *processExecute(Object *self, u8 *bytecode)
 {
-    u8 *IP = headeredBytecode;
+    u8 *IP = bytecode;
     
     /* The first section of the code is the method interned header.
      * We look at each entry, and create a dictionary (using the global
      * method table) which has keys that equal the local interned value,
      * and values that are the global interned value. */
     
-    Size entries = (Size)*IP++;
+    Size entries = (Size)*bytecode++;
     Map *internTranslationTable = mapNewSize(entries + 1);
     Size i;
     for (i = 0; i < entries; i++)
     {
-        Object *globalSymbol = symbolIntern(NULL, (String)IP);
+        Object *globalSymbol = symbolIntern(NULL, (String)bytecode);
         mapSet(internTranslationTable, (void*)i, globalSymbol, valueKey);
-        while (*IP++);
+        while (*bytecode++);
     }
+    while (*IP != beginProcedureByteCode) IP++;
     
     /* Setup the process scope */
     Object *processScope = self->data;
@@ -668,8 +698,11 @@ Object *processExecute(Object *self, u8 *headeredBytecode)
     Object *bytearray = send(bytearrayClass, newSymbol, IP);
     
     // Create a new closure
-    ///if (scopePayload->closure != NULL)
-    ///    closureDel(scopePayload->closure);
+    //if (scopePayload->closure != NULL)
+    //{
+    //    closureDel(scopePayload->closure);
+    //    scopePayload->closure = NULL;
+    //}
     scopePayload->closure = closureNew(closureClass, bytearray, globalScope);
     Object *closure = scopePayload->closure;
     
@@ -725,6 +758,7 @@ void initialize()
     send(numberClass->vtable, addMethodSymbol, equivSymbol, methodNew(numberEquiv, 1));
     send(numberClass->vtable, addMethodSymbol, greaterThanSymbol, methodNew(numberGreaterThan, 1));
     send(numberClass->vtable, addMethodSymbol, lessThanSymbol, methodNew(numberLessThan, 1));
+    send(numberClass->vtable, addMethodSymbol, typeSymbol, methodNew(numberType, 0));
     
     // String //
     stringClass = subclass(objectClass);
@@ -734,14 +768,19 @@ void initialize()
     
     // Object //
     send(objectClass->vtable, addMethodSymbol, asStringSymbol, methodNew(objectAsString, 0));
+    send(objectClass->vtable, addMethodSymbol, typeSymbol, methodNew(objectType, 0));
     
     // Symbol //
     send(symbolClass->vtable, addMethodSymbol, newSymbol, methodNew(symbolNew, 1));
     send(symbolClass->vtable, addMethodSymbol, lengthSymbol, methodNew(stringLength, 0));
+    send(symbolClass->vtable, addMethodSymbol, typeSymbol, methodNew(symbolType, 0));
     
     // Closure //
-    send(closureClass->vtable, addMethodSymbol, callSymbol, methodNew(closureCallOne, 0));
+    send(closureClass->vtable, addMethodSymbol, callSymbol, methodNew(closureCallZero, 0));
+    send(closureClass->vtable, addMethodSymbol, callOneSymbol, methodNew(closureCallOne, 1));
+    send(closureClass->vtable, addMethodSymbol, callTwoSymbol, methodNew(closureCallTwo, 2));
     send(closureClass->vtable, addMethodSymbol, whileSymbol, methodNew(closureWhile, 1));
+    send(closureClass->vtable, addMethodSymbol, typeSymbol, methodNew(closureType, 0));
     
     // ByteArray //
     bytearrayClass = subclass(objectClass);

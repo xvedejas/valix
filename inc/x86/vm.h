@@ -60,6 +60,7 @@ typedef struct method
         {
             Map *translationTable;
             Object *bytearray;
+            Object *containingScope; // where this was declared, if anywhere
         };
     };
 } Method;
@@ -79,6 +80,7 @@ typedef struct scope
 Object *objectClass,
        *scopeClass,
        *symbolClass,
+       *boolClass,
        *numberClass,
        *stringClass,
        *closureClass,
@@ -99,6 +101,12 @@ Object *newSymbol,
        *consoleSymbol,
        *printSymbol,
        *asStringSymbol,
+       *callSymbol,
+       *equivSymbol,
+       *whileSymbol,
+       *lessThanSymbol,
+       *greaterThanSymbol,
+       *selfSymbol,
        *executeSymbol;
 
 /* Given an object and the symbol representing a message, send the

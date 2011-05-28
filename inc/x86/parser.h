@@ -30,6 +30,7 @@ typedef enum
     beginListByteCode      = 0x85,
     beginProcedureByteCode = 0x86,
     endListByteCode        = 0x87,
+    endProcedureByteCode   = 0x88,
     endStatementByteCode   = 0x89,
     returnByteCode         = 0x8A,
     setEqualByteCode       = 0x8B,

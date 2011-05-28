@@ -23,7 +23,8 @@
 #include <mm.h>
 
 String tokenTypeNames[] =
-{   "undefToken",
+{
+    "undefToken",
     "EOFToken",
     /* keywords */
     "returnToken",
@@ -261,6 +262,14 @@ Token *lex(String source)
                     break;
                 }
             } /* Do not break here, fall through */
+            case '=':
+            {
+                if (source[i] == '=' && source[i+1] == ' ')
+                {
+                    addNewToken(eqToken);
+                    break;
+                }
+            } /* Do not break here, fall through */
             case 'a' ... 'z': case 'A' ... 'Z': case '~': case '`':
             case '!': case '@': case '$': case '%': case '^': case '&':
             case '*': case '-': case '+': case '_': case '?': case '<':
@@ -342,7 +351,6 @@ Token *lex(String source)
                 i += length;
                 column += length;
             } break;
-            case '=': addNewToken(eqToken);           break;
             case '(': addNewToken(openParenToken);    break;
             case ')': addNewToken(closeParenToken);   break;
             case '{': addNewToken(openBraceToken);    break;

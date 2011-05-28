@@ -59,7 +59,7 @@ stmt  :: expr '.'
  *  85  begin list            {num entries}
  *  86  begin procedure       {num vars}
  *  87  end list
- *  88  [available]
+ *  88  end procedure
  *  89  end statement
  *  8A  return, end procedure (arg)
  *  8B  set equal             [varsymbol]
@@ -157,11 +157,11 @@ u8 *parse(Token *first)
         {
             nextToken();
             parseExpr();
-            outchr('\x8A'); /* Return directive */
+            outchr(returnByteCode); /* Return directive */
         }
         else if (unlikely(curToken->type == importToken))
         {
-            outchr('\x80'); /* Import directive */
+            outchr(importByteCode); /* Import directive */
             nextToken();
             parserRequire(curToken->type == keywordToken, "Expected module name.");
             out(curToken->data, strlen(curToken->data));
@@ -176,14 +176,14 @@ u8 *parse(Token *first)
             parserRequire(curToken->type == eqToken, "Expected '=' token.");
             nextToken();
             parseExpr();
-            outchr('\x8B'); /* Equal directive */
+            outchr(setEqualByteCode); /* Equal directive */
             if (!isStringInterned(symbolTable, lefthandKeyword))
                 currentVarCount++;
             outchr(intern(lefthandKeyword));
         }
         else
             parseExpr();
-        outchr('\x89'); /* End Statement directive */
+        outchr(endStatementByteCode); /* End Statement directive */
     }
     
     void parseMsg()
@@ -198,8 +198,8 @@ u8 *parse(Token *first)
             nextToken();
             if (curToken->type != colonToken) /* Unary message */
             {
-                parserRequire(i == 1, "Expected keyword, not binary message. Maybe use parentheses to show you want to use a binary message?");
-                outchr('\x84'); /* Message directive */
+                parserRequire(i == 1, "Expected keyword. Maybe use parentheses to show you want to use a binary/unary message?");
+                outchr(callMethodByteCode); /* Message directive */
                 outchr(intern(keywords[0]));
                 outchr((char)0); // argc
                 return;
@@ -208,7 +208,7 @@ u8 *parse(Token *first)
             parseValue();
         }
         u32 j;
-        outchr('\x84'); /* Message directive */
+        outchr(callMethodByteCode); /* Message directive */
         Size length = 0;
         for (j = 0; j < i; j++)
             length += strlen(keywords[j]) + 1;
@@ -235,7 +235,7 @@ u8 *parse(Token *first)
                 String data = curToken->data;
                 nextToken();
                 parseValue();
-                outchr('\x84'); /* (binary) message directive */
+                outchr(callMethodByteCode); /* (binary) message directive */
                 outchr((u8)intern(data)); /* method name */
                 outchr((char)1); // argc
             }
@@ -248,7 +248,7 @@ u8 *parse(Token *first)
         {
             case stringToken:
             {
-                outchr('\x81'); /* String directive */
+                outchr(newStringByteCode); /* String directive */
                 out(curToken->data, strlen(curToken->data));
                 outchr('\0');
                 nextToken();
@@ -256,7 +256,7 @@ u8 *parse(Token *first)
             } break;
             case numToken:
             {
-                outchr('\x82'); /* Number directive */
+                outchr(newNumberByteCode); /* Number directive */
                 out(curToken->data, strlen(curToken->data));
                 outchr('\0');
                 nextToken();
@@ -264,14 +264,14 @@ u8 *parse(Token *first)
             } break;
             case symbolToken:
             {
-                outchr('\x8C'); /* Symbol directive */
+                outchr(newSymbolByteCode); /* Symbol directive */
                 outchr((u8)intern(curToken->data));
                 nextToken();
                 return;
             } break;
             case keywordToken:
             {
-                outchr('\x83'); /* Keyword directive */
+                outchr(variableByteCode); /* Keyword directive */
                 if (!isStringInterned(symbolTable, curToken->data))
                     currentVarCount++;
                 outchr((char)intern(curToken->data));
@@ -280,7 +280,7 @@ u8 *parse(Token *first)
             } break;
             case openBracketToken: /* '[' denotes a list  */
             {
-                outchr('\x85'); /* Begin list directive */
+                outchr(beginListByteCode); /* Begin list directive */
                 nextToken();
                 while (curToken->type == commaToken)
                 {
@@ -290,14 +290,14 @@ u8 *parse(Token *first)
                 }
                 parserRequire(curToken->type == closeBracketToken, "Expected ']' token");
                 nextToken();
-                outchr('\x87'); /* End list directive */
+                outchr(endListByteCode); /* End list directive */
                 return;
             } break;
             case openBraceToken: /* '{' denotes a block */
             {
                 /// todo:
                 /// 8E opcode to load each argument
-                outchr('\x86'); /* Begin block directive */
+                outchr(beginProcedureByteCode); /* Begin block directive */
                 nextToken();
                 
                 stackPush(varCounts, (void*)currentVarCount);
@@ -324,10 +324,12 @@ u8 *parse(Token *first)
                         nextToken();
                     }
                 }
-                outchr('\x86'); /* Second begin block directive: means argument list done */
-                nextToken();
+                outchr(beginProcedureByteCode); /* Second begin block directive: means argument list done */
+                outchr('\0'); // number of expected local vars
+                
                 parseProcedure();
-                parserRequire(curToken->type == closeBraceToken, "Expected ',' token");
+                
+                parserRequire(curToken->type == closeBraceToken, "Expected '}' token");
                 nextToken();
                 
                 // say how many variables
@@ -336,7 +338,7 @@ u8 *parse(Token *first)
                 stackPush(varCounts, (void*)currentVarCount);
                 currentVarCount = previous;
                 
-                outchr('\x88'); /* End block directive */
+                outchr(endProcedureByteCode); /* End block directive */
                 return;
             } break;
             case openParenToken:

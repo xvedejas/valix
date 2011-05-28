@@ -48,7 +48,7 @@ void keyboardHandler(Regs *r)
     
     if (key->scancode & 0x80)
     {
-        key->scancode -= 0x80;
+        key->scancode &= ~0x80;
         key->flags |= bit(isReleased);
     }
     

@@ -24,6 +24,8 @@ Map *globalSymbolTable; // <string, symbol>
 
 #define runtimeError(message, args...) { printf("Runtime Error\n"); printf(message, ## args); endThread(); }
 
+void setVar(Object *currentScope, Object *symbol, Object *value);
+
 /* Given a vtable, returns a new object with that vtable */
 Object *vtableAllocate(Object *self)
 {
@@ -80,44 +82,127 @@ Object *vtableLookup(Object *vtable, Object *symbol)
     return NULL;
 }
 
+/* A basic constructor/instantiator */
+Object *new(Object *self)
+{
+    if (self == objectClass)
+        runtimeError("VM error, you can't instantiate class Object");
+    Object *new = vtableAllocate(self->vtable);
+    new->parent = self;
+    return new;
+}
+
+/* Not to be added as a message! The user should not be able to make
+ * their own scope classes. This is just for convenience in C. */
+Object *scopeNew(Object *parent, Object *closure, Size locals)
+{
+    Object *scope = new(scopeClass);
+    scope->data = malloc(sizeof(Scope));
+    ((Scope*)scope->data)->parent = parent;
+    ((Scope*)scope->data)->closure = closure;
+    ((Scope*)scope->data)->vars = mapNewSize(locals + 1);
+    return scope;
+}
+
+Object *interpret(Object *scope, ...);
 Object *bind(Object *self, Object *messageName);
 
-Object *doMethod(Object *self, Object *methodClosure, ...)
+Object *doMethod(Object *self, Object *closure, ...)
 {
-    Method *method = methodClosure->data;
-    if (method->type == internalFunction)
+    Method *method = closure->data;
+    va_list argptr;
+    va_start(argptr, closure);
+    Object *newScope = NULL;
+    if (method->type == userDefinedClosure)
     {
-        va_list argptr;
-        va_start(argptr, methodClosure);
-        switch (method->argc)
-        {
-            case 0:
+        newScope = scopeNew(method->containingScope, closure, 5);
+        setVar(newScope, selfSymbol, self);
+    }
+    Object *one, *two, *three, *four;
+    switch (method->argc)
+    {
+        case 0:
+            if (method->type == internalFunction)
             {
                 Object *(*func)(Object*) = method->funcptr;
                 return func(self);
-            } break;
-            case 1:
+            }
+            else
+                return interpret(newScope);
+        case 1:
+            one = va_arg(argptr, Object*);
+            if (method->type == internalFunction)
             {
-                Object *(*func)(Object*, Object*) = method->funcptr;
-                return func(self, va_arg(argptr, Object*));
-            } break;
-            case 2:
-            {   
-                Object *(*func)(Object*, Object*, Object*) = method->funcptr;
-                Object *arg = va_arg(argptr, Object*);
-                return func(self, arg, va_arg(argptr, Object*));
-            } break;
-            default:
-                runtimeError("Not implemented");
-            break;
-        }
+                Object *(*func)(Object*,Object*) = method->funcptr;
+                return func(self, one);
+            }
+            else
+                return interpret(newScope, one);
+        case 2:
+            one = va_arg(argptr, Object*);
+            two = va_arg(argptr, Object*);
+            if (method->type == internalFunction)
+            {
+                Object *(*func)(Object*,Object*,Object*) = method->funcptr;
+                return func(self, one, two);
+            }
+            else
+                return interpret(newScope, one, two);
+        case 3:
+            one = va_arg(argptr, Object*);
+            two = va_arg(argptr, Object*);
+            three = va_arg(argptr, Object*);
+            if (method->type == internalFunction)
+            {
+                Object *(*func)(Object*,Object*,Object*,Object*) = method->funcptr;
+                return func(self, one, two, three);
+            }
+            else
+                return interpret(newScope, one, two, three);
+        case 4:
+            one = va_arg(argptr, Object*);
+            two = va_arg(argptr, Object*);
+            three = va_arg(argptr, Object*);
+            four = va_arg(argptr, Object*);
+            if (method->type == internalFunction)
+            {
+                Object *(*func)(Object*,Object*,Object*,Object*,Object*) = method->funcptr;
+                return func(self, one, two, three, four);
+            }
+            else
+                return interpret(newScope, one, two, three, four);
     }
-    else // method->type == userDefined
+    panic("Not supported");
+    return NULL;
+}
+
+Object *doInternalMethod(Object *self, Object *methodClosure, ...)
+{
+    Method *method = methodClosure->data;
+    va_list argptr;
+    va_start(argptr, methodClosure);
+    switch (method->argc)
     {
-        //Object *childScope = scopeNew(scope, closure, (Size)*IP++);
-        /// recur over interpret()
+        case 0:
+        {
+            Object *(*func)(Object*) = method->funcptr;
+            return func(self);
+        } break;
+        case 1:
+        {
+            Object *(*func)(Object*, Object*) = method->funcptr;
+            return func(self, va_arg(argptr, Object*));
+        } break;
+        case 2:
+        {   
+            Object *(*func)(Object*, Object*, Object*) = method->funcptr;
+            Object *arg = va_arg(argptr, Object*);
+            return func(self, arg, va_arg(argptr, Object*));
+        } break;
+        default:
+            runtimeError("Not implemented");
+        break;
     }
-    runtimeError("Not implemented");
     return NULL;
 }
 
@@ -133,16 +218,6 @@ Object *bind(Object *self, Object *messageName)
     if (methodClosure == NULL)
         send(self, doesNotUnderstandSymbol, messageName);
     return methodClosure;
-}
-
-/* A basic constructor/instantiator */
-Object *new(Object *self)
-{
-    if (self == objectClass)
-        runtimeError("VM error, you can't instantiate class Object");
-    Object *new = vtableAllocate(self->vtable);
-    new->parent = self;
-    return new;
 }
 
 Object *subclass(Object *self)
@@ -169,11 +244,12 @@ Object *methodNew(void *funcptr, Size argc)
     return closure;
 }
 
-Object *closureNew(Object *self, Object *bytearray)
+Object *closureNew(Object *self, Object *bytearray, Object *scope)
 {
     Object *closure = new(self);
     Method *payload = calloc(1, sizeof(Method));
     payload->bytearray = bytearray;
+    payload->containingScope = scope;
     closure->data = payload;
     return closure;
 }
@@ -192,6 +268,12 @@ void symbolSetup()
     printSymbol             = symbolIntern(NULL, "print:");
     asStringSymbol          = symbolIntern(NULL, "asString");
     executeSymbol           = symbolIntern(NULL, "execute:");
+    callSymbol              = symbolIntern(NULL, "call");
+    equivSymbol             = symbolIntern(NULL, "==");
+    lessThanSymbol          = symbolIntern(NULL, "<");
+    greaterThanSymbol       = symbolIntern(NULL, ">");
+    selfSymbol       = symbolIntern(NULL, "self");
+    whileSymbol             = symbolIntern(NULL, "whileTrue:");
 }
 
 void bootstrap()
@@ -211,7 +293,6 @@ void bootstrap()
     symbolSetup();
     
     closureClass = subclass(objectClass);
-    vtableAddMethod(closureClass->vtable, newSymbol, methodNew(closureNew, 1));
 
     vtableAddMethod(vtablevt, lookupSymbol, methodNew(vtableLookup, 1));
 
@@ -255,18 +336,6 @@ Object *bytearrayNew(Object *self, u8 *bytecode)
     return bytearray;
 }
 
-/* Not to be added as a message! The user should not be able to make
- * their own scope classes. This is just for convenience in C. */
-Object *scopeNew(Object *parent, Object *closure, Size locals)
-{
-    Object *scope = new(scopeClass);
-    scope->data = malloc(sizeof(Scope));
-    ((Scope*)scope->data)->parent = parent;
-    ((Scope*)scope->data)->closure = closure;
-    ((Scope*)scope->data)->vars = mapNewSize(locals + 1);
-    return scope;
-}
-
 Object *multiply(Object *self, Object *operand)
 {
     return numberNew(numberClass, ((Size)self->data) * ((Size)operand->data));
@@ -287,10 +356,16 @@ Object *subtract(Object *self, Object *operand)
     return numberNew(numberClass, ((Size)self->data) - ((Size)operand->data));
 }
 
-void print(Object *console, Object *argument)
+Object *print(Object *console, Object *argument)
 {
     Object *string = send(argument, asStringSymbol);
     printf("%s\n", string->data);
+    return NULL;
+}
+
+Object *closureCallOne(Object *closure)
+{
+    return doMethod(NULL, closure);
 }
 
 Object *numberAsString(Object *self)
@@ -308,6 +383,68 @@ Object *stringAsString(Object *self)
 Object *objectAsString(Object *self)
 {
     return stringNew(stringClass, "");
+}
+
+Object *boolNew(Object *self, bool value)
+{
+    Object *boolean = new(self);
+    boolean->data = (void*)value;
+    return boolean;
+}
+
+Object *boolIfTrue(Object *self, Object *closure)
+{
+    Object *value = NULL;
+    if (self->data)
+        value = send(closure, callSymbol);
+    return value;
+}
+
+Object *boolIfFalse(Object *self, Object *closure)
+{
+    Object *value = NULL;
+    if (!self->data)
+        value = send(closure, callSymbol);
+    return value;
+}
+
+Object *boolIfTrueFalse(Object *self, Object *closureOne, Object *closureTwo)
+{
+    Object *value = NULL;
+    if (self->data)
+        value = send(closureOne, callSymbol);
+    else
+        value = send(closureTwo, callSymbol);
+    return value;
+}
+
+Object *numberEquiv(Object *self, Object *number)
+{
+    if (self->data == number->data)
+        return boolNew(boolClass, 1);
+    return boolNew(boolClass, 0);
+}
+
+Object *numberGreaterThan(Object *self, Object *number)
+{
+    if ((Size)self->data > (Size)number->data)
+        return boolNew(boolClass, 1);
+    return boolNew(boolClass, 0);
+}
+
+Object *numberLessThan(Object *self, Object *number)
+{
+    if ((Size)self->data < (Size)number->data)
+        return boolNew(boolClass, 1);
+    return boolNew(boolClass, 0);
+}
+
+Object *closureWhile(Object *self, Object *closure)
+{
+    void *value = NULL;
+    while (send(self, callSymbol)->data)
+        value = send(closure, callSymbol);
+    return value;
 }
 
 #define translate(closure, internedValue)\
@@ -328,7 +465,8 @@ Object *processNew(Object *self)
 Object *lookupVar(Object *scope, Object *symbol)
 {
     Object *value;
-    do value = mapGetVal(((Scope*)scope->data)->vars, symbol->data);
+    do
+        value = mapGetVal(((Scope*)scope->data)->vars, symbol->data);
     while (value == NULL && (scope = ((Scope*)scope->data)->parent) != NULL);
     if (value == NULL)
         runtimeError("Undefined variable %s\n", symbol->data);
@@ -428,13 +566,13 @@ Object *interpret(Object *scope, ...)
                 {
                     case 0: { ret = doMethod(receiver, methodClosure); } break;
                     case 1: { ret = doMethod(receiver, methodClosure, args[0]); } break;
-                    case 2: { ret = doMethod(receiver, methodClosure, args[0], args[1]); } break;
-                    case 3: { ret = doMethod(receiver, methodClosure, args[0], args[1], args[2]); } break;
-                    case 4: { ret = doMethod(receiver, methodClosure, args[0], args[1], args[2], args[3]); } break;
-                    case 5: { ret = doMethod(receiver, methodClosure, args[0], args[1], args[2], args[3], args[4]); } break;
-                    case 6: { ret = doMethod(receiver, methodClosure, args[0], args[1], args[2], args[3], args[4], args[5]); } break;
-                    case 7: { ret = doMethod(receiver, methodClosure, args[0], args[1], args[2], args[3], args[4], args[5], args[6]); } break;
-                    case 8: { ret = doMethod(receiver, methodClosure, args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7]); } break;
+                    case 2: { ret = doMethod(receiver, methodClosure, args[1], args[0]); } break;
+                    case 3: { ret = doMethod(receiver, methodClosure, args[2], args[1], args[0]); } break;
+                    case 4: { ret = doMethod(receiver, methodClosure, args[3], args[2], args[1], args[0]); } break;
+                    case 5: { ret = doMethod(receiver, methodClosure, args[4], args[3], args[2], args[1], args[0]); } break;
+                    case 6: { ret = doMethod(receiver, methodClosure, args[5], args[4], args[3], args[2], args[1], args[0]); } break;
+                    case 7: { ret = doMethod(receiver, methodClosure, args[6], args[5], args[4], args[3], args[2], args[1], args[0]); } break;
+                    case 8: { ret = doMethod(receiver, methodClosure, args[7], args[6], args[5], args[4], args[3], args[2], args[1], args[0]); } break;
                 }
                 if (ret != NULL)
                     stackPush(vStack, ret);
@@ -445,8 +583,14 @@ Object *interpret(Object *scope, ...)
             } break;
             case beginProcedureByteCode:
             {
-                runtimeError("Not implemented!");
-                
+                /* Note; there are TWO begin procedure bytecodes for each
+                 * block statement. Between them are the argument definitions */
+                while (*IP != beginProcedureByteCode) IP++;
+                Object *newClosure = closureNew(closureClass, bytearrayNew(bytearrayClass, IP), scope);
+                ((Method*)newClosure->data)->type = userDefinedClosure;
+                ((Method*)newClosure->data)->translationTable = ((Method*)closure->data)->translationTable;
+                while (*IP++ != endProcedureByteCode);
+                stackPush(vStack, newClosure);
             } break;
             case endListByteCode:
             {
@@ -457,6 +601,10 @@ Object *interpret(Object *scope, ...)
                 // clear out the value stack
                 lastValue = *vStack->bottom;
                 while (stackPop(vStack));
+            } break;
+            case endProcedureByteCode:
+            {
+                return lastValue;
             } break;
             case returnByteCode:
             {
@@ -491,6 +639,10 @@ Object *interpret(Object *scope, ...)
     return NULL;
 }
 
+/* Bytecode is not null-terminated! it is terminated with EOS and contains
+ * multiple null characters. The processExecute() function should be used to
+ * run an entire file of bytecode. The interpret() function is for running
+ * blocks. */
 Object *processExecute(Object *self, u8 *headeredBytecode)
 {
     u8 *IP = headeredBytecode;
@@ -518,7 +670,7 @@ Object *processExecute(Object *self, u8 *headeredBytecode)
     // Create a new closure
     ///if (scopePayload->closure != NULL)
     ///    closureDel(scopePayload->closure);
-    scopePayload->closure = closureNew(closureClass, bytearray);
+    scopePayload->closure = closureNew(closureClass, bytearray, globalScope);
     Object *closure = scopePayload->closure;
     
     // Setup the closure's bytearray and translation table
@@ -536,48 +688,62 @@ Object *processExecute(Object *self, u8 *headeredBytecode)
 
 void initialize()
 {
+    // Scope //
     scopeClass = subclass(objectClass);
     
+    // Console //
     consoleClass = subclass(objectClass);
+    send(consoleClass->vtable, addMethodSymbol, printSymbol, methodNew(print, 1));
     
-    
+    // Process //
     processClass = subclass(objectClass);
     send(processClass->vtable, addMethodSymbol, newSymbol, methodNew(processNew, 0));
     send(processClass->vtable, addMethodSymbol, executeSymbol, methodNew(processExecute, 1));
     
+    // Boolean //
+    boolClass = subclass(objectClass);
+    send(boolClass->vtable, addMethodSymbol, newSymbol, methodNew(boolNew, 1));
+    Object *ifTrueSymbol = send(symbolClass, internSymbol, "ifTrue:");
+    Object *ifFalseSymbol = send(symbolClass, internSymbol, "ifFalse:");
+    Object *ifTrueFalseSymbol = send(symbolClass, internSymbol, "ifTrue:ifFalse:");
+    send(boolClass->vtable, addMethodSymbol, ifTrueSymbol, methodNew(boolIfTrue, 1));
+    send(boolClass->vtable, addMethodSymbol, ifFalseSymbol, methodNew(boolIfFalse, 1));
+    send(boolClass->vtable, addMethodSymbol, ifTrueFalseSymbol, methodNew(boolIfTrueFalse, 2));
+    
+    // Number //
     numberClass = subclass(objectClass);
-    
-    stringClass = subclass(objectClass);
-    
     send(numberClass->vtable, addMethodSymbol, newSymbol, methodNew(numberNew, 1));
     send(numberClass->vtable, addMethodSymbol, asStringSymbol, methodNew(numberAsString, 0));
+    Object *multiplySymbol = send(symbolClass, internSymbol, "*");
+    Object *addSymbol = send(symbolClass, internSymbol, "+");
+    Object *divideSymbol = send(symbolClass, internSymbol, "/");
+    Object *subtractSymbol = send(symbolClass, internSymbol, "-");
+    send(numberClass->vtable, addMethodSymbol, multiplySymbol, methodNew(multiply, 1));
+    send(numberClass->vtable, addMethodSymbol, addSymbol, methodNew(add, 1));
+    send(numberClass->vtable, addMethodSymbol, divideSymbol, methodNew(divide, 1));
+    send(numberClass->vtable, addMethodSymbol, subtractSymbol, methodNew(subtract, 1));
+    send(numberClass->vtable, addMethodSymbol, equivSymbol, methodNew(numberEquiv, 1));
+    send(numberClass->vtable, addMethodSymbol, greaterThanSymbol, methodNew(numberGreaterThan, 1));
+    send(numberClass->vtable, addMethodSymbol, lessThanSymbol, methodNew(numberLessThan, 1));
+    
+    // String //
+    stringClass = subclass(objectClass);
     send(stringClass->vtable, addMethodSymbol, newSymbol, methodNew(stringNew, 1));
     send(stringClass->vtable, addMethodSymbol, asStringSymbol, methodNew(stringAsString, 0));
-    send(objectClass->vtable, addMethodSymbol, asStringSymbol, methodNew(objectAsString, 0));
-    send(symbolClass->vtable, addMethodSymbol, newSymbol, methodNew(symbolNew, 1));
-    
-    send(consoleClass->vtable, addMethodSymbol, printSymbol, methodNew(print, 1));
-    
     send(stringClass->vtable, addMethodSymbol, lengthSymbol, methodNew(stringLength, 0));
+    
+    // Object //
+    send(objectClass->vtable, addMethodSymbol, asStringSymbol, methodNew(objectAsString, 0));
+    
+    // Symbol //
+    send(symbolClass->vtable, addMethodSymbol, newSymbol, methodNew(symbolNew, 1));
     send(symbolClass->vtable, addMethodSymbol, lengthSymbol, methodNew(stringLength, 0));
     
-    Object *multiplySymbol = send(symbolClass, internSymbol, "*");
-    send(numberClass->vtable, addMethodSymbol, multiplySymbol, methodNew(multiply, 1));
+    // Closure //
+    send(closureClass->vtable, addMethodSymbol, callSymbol, methodNew(closureCallOne, 0));
+    send(closureClass->vtable, addMethodSymbol, whileSymbol, methodNew(closureWhile, 1));
     
-    Object *addSymbol = send(symbolClass, internSymbol, "+");
-    send(numberClass->vtable, addMethodSymbol, addSymbol, methodNew(add, 1));
-    
-    Object *divideSymbol = send(symbolClass, internSymbol, "/");
-    send(numberClass->vtable, addMethodSymbol, divideSymbol, methodNew(divide, 1));
-    
-    Object *subtractSymbol = send(symbolClass, internSymbol, "-");
-    send(numberClass->vtable, addMethodSymbol, subtractSymbol, methodNew(subtract, 1));
-    
-    numberClass = send(numberClass->vtable, allocateSymbol);
-    stringClass = send(stringClass->vtable, allocateSymbol);
-    
-    /* ByteArray */
-    
+    // ByteArray //
     bytearrayClass = subclass(objectClass);
     send(bytearrayClass->vtable, addMethodSymbol, newSymbol, methodNew(bytearrayNew, 1));
 }
@@ -590,12 +756,4 @@ void vmInstall()
     globalScope = scopeNew(NULL, NULL, 20 /*globalVarCount*/);
     /// setup the global scope
     setVar(globalScope, symbolIntern(NULL, "Console"), consoleClass);
-}
-
-/* Bytecode is not null-terminated! it is terminated with EOS and contains
- * multiple null characters. The execute() function should be used to
- * run an entire file of bytecode. */
-ThreadFunc execute(u8 *bytecode)
-{
-
 }

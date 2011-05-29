@@ -37,6 +37,7 @@ typedef struct object
         Map *map;
         struct scope *scope;
         struct method *method;
+        struct list *list;
     };
 } Object;
 
@@ -97,6 +98,7 @@ Object *objectClass,
        *closureClass,
        *bytearrayClass,
        *processClass,
+       *listClass,
        *consoleClass;
 
 /* Symbols */
@@ -112,15 +114,20 @@ Object *newSymbol,
        *consoleSymbol,
        *printSymbol,
        *asStringSymbol,
-       *callSymbol,
-       *callOneSymbol,
-       *callTwoSymbol,
+       *applySymbol,
+       *applyOneSymbol,
+       *applyTwoSymbol,
        *equivSymbol,
        *whileSymbol,
        *lessThanSymbol,
        *greaterThanSymbol,
        *selfSymbol,
        *typeSymbol,
+       *addSymbol,
+       *atSymbol,
+       *atPutSymbol,
+       *popSymbol,
+       *atInsertSymbol,
        *executeSymbol;
 
 /* Given an object and the symbol representing a message, send the
@@ -137,5 +144,9 @@ Object *bind(Object *self, Object *messageName);
 void vmInstall();
 Object *processNew(Object *self);
 Object *processExecute(Object *self, u8 *headeredBytecode);
+Object *stringNew(Object *self, String value);
+Object *symbolIntern(Object *symbol, String string);
+void setVar(Object *currentScope, Object *symbol, Object *value);
+Object *new(Object *self);
 
 #endif

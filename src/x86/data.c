@@ -82,7 +82,6 @@ void _mapSet(Map *map, void *key, void *value, MapKeyType type, bool incremental
 
 void _mapExpand(Map *map)
 {
-    mutexAcquireLock(map->lock);
     if (map->B == NULL)
     {
         map->capacityB = newMapSize(map->capacityA);
@@ -91,7 +90,6 @@ void _mapExpand(Map *map)
     }
     else
         panic("Old hashtable not destroyed fast enough, resize of map failed!");
-    mutexReleaseLock(map->lock);
 }
 
 void _mapDelAssoc(Association *assoc, Association *previous)
@@ -244,7 +242,6 @@ Association *_mapFindBucket(Map *map, void *key, MapKeyType type, bool *inTableA
 /* Returns NULL if the key is not found, otherwise returns the value */
 void *mapGet(Map *map, void *key, MapKeyType type)
 {
-    mutexAcquireLock(map->lock);
     // Find the key
     bool inTableA;
     Association *previous;
@@ -254,7 +251,6 @@ void *mapGet(Map *map, void *key, MapKeyType type)
         value = NULL;
     else
         value = assoc->value;
-    mutexReleaseLock(map->lock);
     return value;
 }
 
@@ -262,7 +258,6 @@ void *mapGet(Map *map, void *key, MapKeyType type)
  * once due to recursion from calling _mapSet from _mapMoveAtoB */
 void _mapSet(Map *map, void *key, void *value, MapKeyType type, bool incrementallyResize)
 {
-    mutexAcquireLock(map->lock);
     /* Gives the first bucket in the hashtable according to the hash of the key.
      * We want to choose table B if it exists to add to, since it is the larger
      * table available. */
@@ -299,7 +294,6 @@ void _mapSet(Map *map, void *key, void *value, MapKeyType type, bool incremental
         if (_mapKeysEquivalent(key, assoc->key, type, assoc->type))
         {
             assoc->value = value;
-            mutexReleaseLock(map->lock);
             return;
         }
         // key not in map, add
@@ -336,10 +330,8 @@ void _mapSet(Map *map, void *key, void *value, MapKeyType type, bool incremental
             if (incrementallyResize)
                 _mapMoveAtoB(map);
         }
-        mutexReleaseLock(map->lock);
         return;
     }
-    mutexReleaseLock(map->lock);
 }
 
 /* Use this function to both add keys to the map or change their value */
@@ -351,7 +343,6 @@ void mapSet(Map *map, void *key, void *value, MapKeyType type)
 /* Removes a key; Returns true or false depending on success */
 bool mapRemove(Map *map, void *key, MapKeyType type)
 {
-    mutexAcquireLock(map->lock);
     bool inTableA;
     Association *previous;
     Association *assoc = _mapFindBucket(map, key, type, &inTableA, &previous);
@@ -361,12 +352,10 @@ bool mapRemove(Map *map, void *key, MapKeyType type)
         map->entriesB--;
     if (assoc == NULL)
     {
-        mutexReleaseLock(map->lock);
         return false;
     }
     // delete!
     _mapDelAssoc(assoc, previous);
-    mutexReleaseLock(map->lock);
     return true;
 }
 
@@ -384,18 +373,15 @@ Map *mapNewSize(Size startingSize)
     map->capacityB = 0;
     map->A = calloc(map->capacityA, sizeof(Association));
     map->B = NULL;
-    map->lock = mutexNew();
     return map;
 }
 
 /* Deletes the map */
 void mapDel(Map *map)
 {
-    mutexAcquireLock(map->lock);
     _mapDeleteTable(map->capacityA, map->A);
     if (map->B != NULL)
         _mapDeleteTable(map->capacityB, map->B);
-    mutexDel(map->lock);
     free(map);
 }
 
@@ -482,13 +468,11 @@ Stack *stackNew()
     stack->capacity = 8;
     stack->bottom = malloc(sizeof(void*) * stack->capacity);
     stack->entries = 0;
-    stack->lock = mutexNew();
     return stack;
 }
 
 void stackPush(Stack *stack, void *element)
 {
-    mutexAcquireLock(stack->lock);
     stack->bottom[stack->entries] = element;
     stack->entries++;
     if (stack->entries >= stack->capacity) // embiggen, it's full
@@ -496,25 +480,20 @@ void stackPush(Stack *stack, void *element)
         stack->capacity = stackNextSize(stack->capacity);
         stack->bottom = realloc(stack->bottom, stack->capacity);
     }
-    mutexReleaseLock(stack->lock);
 }
 
 void *stackPop(Stack *stack)
 {
-    mutexAcquireLock(stack->lock);
     if (stack->entries == 0) // empty
         return NULL;
     stack->entries--;
     void *value = stack->bottom[stack->entries];
-    mutexReleaseLock(stack->lock);
     return value;
 }
 
 void stackDel(Stack *stack)
 {
-    mutexAcquireLock(stack->lock);
     free(stack->bottom);
-    free(stack->lock);
     free(stack);
 }
 

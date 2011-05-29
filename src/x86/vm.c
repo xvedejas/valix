@@ -6,6 +6,7 @@
 #include <types.h>
 #include <parser.h>
 #include <stdarg.h>
+#include <list.h>
 
 /* Some notes:
  * 
@@ -245,15 +246,20 @@ void symbolSetup()
     printSymbol             = symbolIntern(NULL, "print:");
     asStringSymbol          = symbolIntern(NULL, "asString");
     executeSymbol           = symbolIntern(NULL, "execute:");
-    callSymbol              = symbolIntern(NULL, "call");
-    callOneSymbol           = symbolIntern(NULL, "call:");
-    callTwoSymbol           = symbolIntern(NULL, "call:and:");
+    applySymbol             = symbolIntern(NULL, "apply");
+    applyOneSymbol          = symbolIntern(NULL, "apply:");
+    applyTwoSymbol          = symbolIntern(NULL, "apply:and:");
     equivSymbol             = symbolIntern(NULL, "==");
     lessThanSymbol          = symbolIntern(NULL, "<");
     greaterThanSymbol       = symbolIntern(NULL, ">");
     selfSymbol              = symbolIntern(NULL, "self");
     typeSymbol              = symbolIntern(NULL, "type");
     whileSymbol             = symbolIntern(NULL, "whileTrue:");
+    addSymbol               = symbolIntern(NULL, "add:");
+    atSymbol                = symbolIntern(NULL, "at:");
+    atPutSymbol             = symbolIntern(NULL, "at:put:");
+    popSymbol               = symbolIntern(NULL, "pop:");
+    atInsertSymbol          = symbolIntern(NULL, "at:insert:");
 }
 
 void bootstrap()
@@ -338,6 +344,7 @@ Object *subtract(Object *self, Object *operand)
 
 Object *print(Object *console, Object *argument)
 {
+    if (argument == NULL) return NULL;
     Object *string = send(argument, asStringSymbol);
     printf("%s\n", string->data);
     return NULL;
@@ -386,7 +393,7 @@ Object *boolIfTrue(Object *self, Object *closure)
 {
     Object *value = NULL;
     if (self->data)
-        value = send(closure, callSymbol);
+        value = send(closure, applySymbol);
     return value;
 }
 
@@ -394,7 +401,7 @@ Object *boolIfFalse(Object *self, Object *closure)
 {
     Object *value = NULL;
     if (!self->data)
-        value = send(closure, callSymbol);
+        value = send(closure, applySymbol);
     return value;
 }
 
@@ -402,9 +409,9 @@ Object *boolIfTrueFalse(Object *self, Object *closureOne, Object *closureTwo)
 {
     Object *value = NULL;
     if (self->data)
-        value = send(closureOne, callSymbol);
+        value = send(closureOne, applySymbol);
     else
-        value = send(closureTwo, callSymbol);
+        value = send(closureTwo, applySymbol);
     return value;
 }
 
@@ -432,8 +439,8 @@ Object *numberLessThan(Object *self, Object *number)
 Object *closureWhile(Object *self, Object *closure)
 {
     void *value = NULL;
-    while (send(self, callSymbol)->data)
-        value = send(closure, callSymbol);
+    while (send(self, applySymbol)->data)
+        value = send(closure, applySymbol);
     return value;
 }
 
@@ -457,6 +464,11 @@ Object *closureType(Object *self)
     return stringNew(stringClass, "Closure");
 }
 
+Object *listType(Object *self)
+{
+    return stringNew(stringClass, "List");
+}
+
 Object *translate(Object *closure, Size internedValue)
 {
     Map *table = closure->method->translationTable;
@@ -474,6 +486,11 @@ Object *processNew(Object *self)
     /* 5 is an arbitrary guess at how many global variables there could be */
     process->data = scopeNew(globalScope, NULL, 5);
     return process;
+}
+
+Object *processExit(Object *self)
+{
+   return NULL; 
 }
 
 Object *lookupVar(Object *scope, Object *symbol)
@@ -494,14 +511,14 @@ void setVar(Object *currentScope, Object *symbol, Object *value)
     do
     {
         Object *currentValue =
-            mapGetVal(((Scope*)scope->data)->vars, symbol->data);
+            mapGetVal(scope->scope->vars, symbol->data);
         if (currentValue != NULL)
         {
-            mapSetVal(((Scope*)scope->data)->vars, symbol->data, value);
+            mapSetVal(scope->scope->vars, symbol->data, value);
             return;
         }
-    } while ((scope = ((Scope*)scope->data)->parent) != NULL);
-    mapSetVal(((Scope*)currentScope->data)->vars, symbol->data, value);
+    } while ((scope = scope->scope->parent) != NULL);
+    mapSetVal(currentScope->scope->vars, symbol->data, value);
 }
 
 /* Given the scope, interpret the bytecode in its closure */
@@ -509,7 +526,7 @@ Object *interpret(Object *scope, ...)
 {
     va_list argptr;
     va_start(argptr, scope);
-    Object *closure = ((Scope*)scope->data)->closure;
+    Object *closure = scope->scope->closure;
     Object *lastValue; /* For returning values from this closure */
     Method *closurePayload = closure->method;
     u8 *IP = closurePayload->bytearray->data;
@@ -598,12 +615,11 @@ Object *interpret(Object *scope, ...)
                     case 7: { ret = doMethod(receiver, methodClosure, args[6], args[5], args[4], args[3], args[2], args[1], args[0]); } break;
                     case 8: { ret = doMethod(receiver, methodClosure, args[7], args[6], args[5], args[4], args[3], args[2], args[1], args[0]); } break;
                 }
-                if (ret != NULL)
-                    stackPush(vStack, ret);
+                stackPush(vStack, ret);
             } break;
             case beginListByteCode:
             {
-                runtimeError("Not implemented!");
+                // do nothing
             } break;
             case beginProcedureByteCode:
             {
@@ -619,12 +635,20 @@ Object *interpret(Object *scope, ...)
             } break;
             case endListByteCode:
             {
-                runtimeError("Not implemented!");
+                Size count = (Size)*IP++;
+                Object *list = listNewSize(listClass, count);
+                Size i = 0;
+                for (i = 0; i < count; i++)
+                    send(list, addSymbol, stackPop(vStack));
+                stackPush(vStack, list);
             } break;
             case endStatementByteCode:
             {
                 // clear out the value stack
-                lastValue = *vStack->bottom;
+                if (vStack->entries > 0)
+                    lastValue = *vStack->bottom;
+                else
+                    lastValue = NULL;
                 while (stackPop(vStack));
             } break;
             case endProcedureByteCode:
@@ -632,6 +656,8 @@ Object *interpret(Object *scope, ...)
                 va_end(argptr);
                 return lastValue;
             } break;
+            /* "return" is like lisp's "return-from", not like expected
+             * from most other languages. */
             case returnByteCode:
             {
                 runtimeError("Not implemented!");
@@ -748,11 +774,11 @@ void initialize()
     send(numberClass->vtable, addMethodSymbol, newSymbol, methodNew(numberNew, 1));
     send(numberClass->vtable, addMethodSymbol, asStringSymbol, methodNew(numberAsString, 0));
     Object *multiplySymbol = send(symbolClass, internSymbol, "*");
-    Object *addSymbol = send(symbolClass, internSymbol, "+");
+    Object *additionSymbol = send(symbolClass, internSymbol, "+");
     Object *divideSymbol = send(symbolClass, internSymbol, "/");
     Object *subtractSymbol = send(symbolClass, internSymbol, "-");
     send(numberClass->vtable, addMethodSymbol, multiplySymbol, methodNew(multiply, 1));
-    send(numberClass->vtable, addMethodSymbol, addSymbol, methodNew(add, 1));
+    send(numberClass->vtable, addMethodSymbol, additionSymbol, methodNew(add, 1));
     send(numberClass->vtable, addMethodSymbol, divideSymbol, methodNew(divide, 1));
     send(numberClass->vtable, addMethodSymbol, subtractSymbol, methodNew(subtract, 1));
     send(numberClass->vtable, addMethodSymbol, equivSymbol, methodNew(numberEquiv, 1));
@@ -776,15 +802,26 @@ void initialize()
     send(symbolClass->vtable, addMethodSymbol, typeSymbol, methodNew(symbolType, 0));
     
     // Closure //
-    send(closureClass->vtable, addMethodSymbol, callSymbol, methodNew(closureCallZero, 0));
-    send(closureClass->vtable, addMethodSymbol, callOneSymbol, methodNew(closureCallOne, 1));
-    send(closureClass->vtable, addMethodSymbol, callTwoSymbol, methodNew(closureCallTwo, 2));
+    send(closureClass->vtable, addMethodSymbol, applySymbol, methodNew(closureCallZero, 0));
+    send(closureClass->vtable, addMethodSymbol, applyOneSymbol, methodNew(closureCallOne, 1));
+    send(closureClass->vtable, addMethodSymbol, applyTwoSymbol, methodNew(closureCallTwo, 2));
     send(closureClass->vtable, addMethodSymbol, whileSymbol, methodNew(closureWhile, 1));
     send(closureClass->vtable, addMethodSymbol, typeSymbol, methodNew(closureType, 0));
     
     // ByteArray //
     bytearrayClass = subclass(objectClass);
     send(bytearrayClass->vtable, addMethodSymbol, newSymbol, methodNew(bytearrayNew, 1));
+    
+    // List //
+    listClass = subclass(objectClass);
+    send(listClass->vtable, addMethodSymbol, newSymbol, methodNew(listNew, 0));
+    send(listClass->vtable, addMethodSymbol, asStringSymbol, methodNew(listAsString, 0));
+    send(listClass->vtable, addMethodSymbol, typeSymbol, methodNew(listType, 0));
+    send(listClass->vtable, addMethodSymbol, addSymbol, methodNew(listAdd, 1));
+    send(listClass->vtable, addMethodSymbol, atSymbol, methodNew(listAt, 1));
+    send(listClass->vtable, addMethodSymbol, atPutSymbol, methodNew(listAtPut, 2));
+    send(listClass->vtable, addMethodSymbol, popSymbol, methodNew(listPop, 1));
+    send(listClass->vtable, addMethodSymbol, atInsertSymbol, methodNew(listAtInsert, 2));
 }
 
 void vmInstall()

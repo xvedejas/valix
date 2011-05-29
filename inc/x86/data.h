@@ -48,7 +48,6 @@ typedef struct
     Size entriesB;
     Size capacityA;
     Size capacityB;
-    Mutex *lock;
 } Map;
 
 Map *mapNew();
@@ -89,7 +88,6 @@ typedef struct
     void **bottom;  // pointer to first element in the stack array
     Size entries;
     Size capacity;  // size of the array
-    Mutex *lock;
 } Stack;
 
 Stack *stackNew();

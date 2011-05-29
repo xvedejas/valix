@@ -281,16 +281,21 @@ u8 *parse(Token *first)
             case openBracketToken: /* '[' denotes a list  */
             {
                 outchr(beginListByteCode); /* Begin list directive */
-                nextToken();
-                while (curToken->type == commaToken)
-                {
+                int count = 0;
+                if (lookahead(1)->type != closeBracketToken)
+                    do
+                    {
+                        nextToken();
+                        parserRequire(curToken->type != EOFToken, "Unexpected EOF Token");
+                        parseProcedure();
+                        count++;
+                    } while (curToken->type == commaToken);
+                else
                     nextToken();
-                    parserRequire(curToken->type != EOFToken, "Unexpected EOF Token");
-                    parseValue();
-                }
                 parserRequire(curToken->type == closeBracketToken, "Expected ']' token");
                 nextToken();
                 outchr(endListByteCode); /* End list directive */
+                outchr((char)count); /* number of items in list */
                 return;
             } break;
             case openBraceToken: /* '{' denotes a block */

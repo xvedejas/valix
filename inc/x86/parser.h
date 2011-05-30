@@ -38,4 +38,6 @@ typedef enum
     setArgByteCode         = 0x8E
 } bytecodeCommand;
 
+extern String bytecodes[];
+
 #endif

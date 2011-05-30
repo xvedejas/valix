@@ -28,9 +28,9 @@
  * parser, and is fairly easy to write. The following grammar is the current
  * desired subset of the final grammar.
  *  
-list  :: '[' value? (',' value)* ']'
+list  :: '[' proc? (',' proc)* ']'
 
-block :: '{' (Keyword (',' Keyword)* ':')? stmt* '}'
+block :: '{' (Keyword (',' Keyword)* ':')? proc '}'
 
 value :: String
       :: Num
@@ -41,8 +41,7 @@ value :: String
 
 expr  :: value (Keyword | SpecialCharacter value | (Keyword ':' value)+)
 
-stmt  :: expr '.'
-      :: keyword '=' expr '.'
+proc  :: (expr '.')* expr?
 */
 
 /* Bytecode format:
@@ -68,6 +67,25 @@ stmt  :: expr '.'
  *  8E  set var to block arg  [varsymbol]
  *  
  */
+ 
+String bytecodes[] =
+{
+    "import",
+    "string",
+    "number",
+    "variable",
+    "method",
+    "begin list",
+    "begin proc",
+    "end list",
+    "end proc",
+    "end stmt",
+    "return",
+    "set equal",
+    "symbol",
+    NULL,
+    "set argument"
+};
 
 /* Note that most function are defined as nested functions, that is they are
  * declared entirely within the scope of parse(). This allows us to use
@@ -141,14 +159,14 @@ u8 *parse(Token *first)
     
     void parseProcedure()
     {
-        parseStmt();
-        while (curToken->type == stopToken)
+        do
         {
-            nextToken();
+            if (curToken->type == stopToken)
+                nextToken();
+            parseStmt();
             if (curToken->type == EOFToken)
                 return;
-            parseStmt();
-        }
+        } while (curToken->type == stopToken);
     }
     
     void parseStmt()
@@ -281,13 +299,18 @@ u8 *parse(Token *first)
             case openBracketToken: /* '[' denotes a list  */
             {
                 outchr(beginListByteCode); /* Begin list directive */
+                Size i = output->size;
+                outchr('\0'); // list size
                 int count = 0;
                 if (lookahead(1)->type != closeBracketToken)
                     do
                     {
                         nextToken();
                         parserRequire(curToken->type != EOFToken, "Unexpected EOF Token");
+                        outchr(beginProcedureByteCode);
+                        outchr('\0');
                         parseProcedure();
+                        outchr(endProcedureByteCode);
                         count++;
                     } while (curToken->type == commaToken);
                 else
@@ -295,7 +318,7 @@ u8 *parse(Token *first)
                 parserRequire(curToken->type == closeBracketToken, "Expected ']' token");
                 nextToken();
                 outchr(endListByteCode); /* End list directive */
-                outchr((char)count); /* number of items in list */
+                output->s[i] = (char)count; /* number of items in list */
                 return;
             } break;
             case openBraceToken: /* '{' denotes a block */

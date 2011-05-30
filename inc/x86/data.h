@@ -90,10 +90,11 @@ typedef struct
     Size capacity;  // size of the array
 } Stack;
 
-Stack *stackNew();
-void stackPush(Stack *stack, void *element);
-void *stackPop(Stack *stack);
-void stackDel(Stack *stack);
+extern Stack *stackNew();
+extern void stackPush(Stack *stack, void *element);
+extern void *stackPop(Stack *stack);
+extern void stackDel(Stack *stack);
+extern void stackDebug(Stack *stack);
 
 /////////////////////////////
 // StringBuilder Interface //

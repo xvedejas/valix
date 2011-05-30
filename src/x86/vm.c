@@ -206,8 +206,8 @@ Object *subclass(Object *self)
 
 void doesNotUnderstand(Object *self, Object *symbol)
 {
-    runtimeError("%s at %x does not understand message \"%s\" %x",
-        send(self, typeSymbol)->data, self, symbol->data);
+    runtimeError("%s %i at %x does not understand message \"%s\" %x",
+        send(self, typeSymbol)->data, self->data, self, symbol->data);
 }
 
 /* Creates an internal function method closure */
@@ -260,6 +260,11 @@ void symbolSetup()
     atPutSymbol             = symbolIntern(NULL, "at:put:");
     popSymbol               = symbolIntern(NULL, "pop:");
     atInsertSymbol          = symbolIntern(NULL, "at:insert:");
+    doSymbol                = symbolIntern(NULL, "do:");
+    toSymbol                = symbolIntern(NULL, "to:");
+    toDoSymbol              = symbolIntern(NULL, "to:do:");
+    trueSymbol              = symbolIntern(NULL, "true");
+    falseSymbol             = symbolIntern(NULL, "false");
 }
 
 void bootstrap()
@@ -342,6 +347,29 @@ Object *subtract(Object *self, Object *operand)
     return numberNew(numberClass, ((Size)self->data) - ((Size)operand->data));
 }
 
+Object *modulus(Object *self, Object *operand)
+{
+    return numberNew(numberClass, ((Size)self->data) % ((Size)operand->data));
+}
+
+Object *numberTo(Object *self, Object *end)
+{
+    Object *list = listNewSize(listClass, end->data - self->data);
+    Size i;
+    for (i = (Size)self->data; i < (Size)end->data; i++)
+        listAdd(list, numberNew(numberClass, i));
+    return list;
+}
+
+Object *numberToDo(Object *self, Object *end, Object *closure)
+{
+    Object *value = NULL;
+    Size i;
+    for (i = (Size)self->data; i < (Size)end->data; i++)
+        value = send(closure, applyOneSymbol, numberNew(numberClass, i));
+    return value;
+}
+
 Object *print(Object *console, Object *argument)
 {
     if (argument == NULL) return NULL;
@@ -415,6 +443,13 @@ Object *boolIfTrueFalse(Object *self, Object *closureOne, Object *closureTwo)
     return value;
 }
 
+Object *boolAsString(Object *self)
+{
+    if (self->data)
+        return stringNew(stringClass, "true");
+    return stringNew(stringClass, "false");
+}
+
 Object *numberEquiv(Object *self, Object *number)
 {
     if (self->data == number->data)
@@ -441,6 +476,17 @@ Object *closureWhile(Object *self, Object *closure)
     void *value = NULL;
     while (send(self, applySymbol)->data)
         value = send(closure, applySymbol);
+    return value;
+}
+
+Object *listDo(Object *self, Object *closure)
+{
+    Size i;
+    Object *value;
+    for (i = 0; i < self->list->items; i++)
+    {
+        value = send(closure, applyOneSymbol, self->list->array[i]);
+    }
     return value;
 }
 
@@ -483,13 +529,14 @@ Object *translate(Object *closure, Size internedValue)
 Object *processNew(Object *self)
 {
     Object *process = new(processClass);
-    /* 5 is an arbitrary guess at how many global variables there could be */
+    /* 5 is an arbitrary guess at how many process-global variables there could be */
     process->data = scopeNew(globalScope, NULL, 5);
     return process;
 }
 
 Object *processExit(Object *self)
 {
+   /// todo
    return NULL; 
 }
 
@@ -497,8 +544,8 @@ Object *lookupVar(Object *scope, Object *symbol)
 {
     Object *value;
     do
-        value = mapGetVal(((Scope*)scope->data)->vars, symbol->data);
-    while (value == NULL && (scope = ((Scope*)scope->data)->parent) != NULL);
+        value = mapGetVal(scope->scope->vars, symbol->data);
+    while (value == NULL && (scope = scope->scope->parent) != NULL);
     if (value == NULL)
         runtimeError("Undefined variable %s\n", symbol->data);
     return value;
@@ -557,7 +604,7 @@ Object *interpret(Object *scope, ...)
     
     while (*IP)
     {
-        //printf("%x %c\n", *IP, *IP); // print the byte we're looking at
+        //printf("%s %x %c\n", bytecodes[*IP-0x80], *IP, *IP); // print the byte we're looking at
         switch (*IP++)
         {
             case importByteCode:
@@ -597,7 +644,11 @@ Object *interpret(Object *scope, ...)
                 Object *args[8]; // argc limit is 8
                 Size i;
                 for (i = 0; i < argc; i++)
+                {
                     args[i] = stackPop(vStack);
+                    if (args[i] == NULL)
+                        runtimeError("Null argument");
+                }
                 // now we can get the receiver
                 Object *receiver = stackPop(vStack);
                 Object *methodClosure = bind(receiver, methodSymbol);
@@ -619,7 +670,22 @@ Object *interpret(Object *scope, ...)
             } break;
             case beginListByteCode:
             {
-                // do nothing
+                Object *list = listNewSize(listClass, *IP++);
+                while (*IP == beginProcedureByteCode)
+                {
+                    /* Create a new closure */
+                    Object *newClosure = closureNew(closureClass, bytearrayNew(bytearrayClass, IP), scope);
+                    IP++; // ignore this byte for now
+                    newClosure->method->argc = 0;
+                    newClosure->method->type = userDefinedClosure;
+                    newClosure->method->translationTable = newClosure->method->containingScope->scope->closure->method->translationTable;
+                    while (*IP++ != endProcedureByteCode);
+                    /* Now apply the closure */
+                    Object *result = send(newClosure, applySymbol);
+                    send(list, addSymbol, result);
+                }
+                assert(*IP++ == endListByteCode, "VM Error");
+                stackPush(vStack, list);
             } break;
             case beginProcedureByteCode:
             {
@@ -628,19 +694,25 @@ Object *interpret(Object *scope, ...)
                 int argc = 0;
                 while (*IP == setArgByteCode) IP += 2, argc++;
                 newClosure->method->argc = argc;
-                ((Method*)newClosure->data)->type = userDefinedClosure;
-                ((Method*)newClosure->data)->translationTable = ((Method*)((Scope*)((Method*)newClosure->data)->containingScope->data)->closure->data)->translationTable;
-                while (*IP++ != endProcedureByteCode);
+                newClosure->method->type = userDefinedClosure;
+                newClosure->method->translationTable = scope->scope->closure->method->translationTable;
+                /* Now we increment IP until we are passed the block, making
+                 * sure that we don't count the ends of any inner blocks as
+                 * the end of the main block. */
+                Size blocks = 1; // The number of beginProcedures we encounter
+                while (blocks > 0)
+                {
+                    if (*IP == beginProcedureByteCode)
+                        blocks++;
+                    if (*IP == endProcedureByteCode)
+                        blocks--;
+                    IP++;
+                }
                 stackPush(vStack, newClosure);
             } break;
             case endListByteCode:
             {
-                Size count = (Size)*IP++;
-                Object *list = listNewSize(listClass, count);
-                Size i = 0;
-                for (i = 0; i < count; i++)
-                    send(list, addSymbol, stackPop(vStack));
-                stackPush(vStack, list);
+                panic("malformed bytecode; unexpected endlist");
             } break;
             case endStatementByteCode:
             {
@@ -768,6 +840,11 @@ void initialize()
     send(boolClass->vtable, addMethodSymbol, ifTrueSymbol, methodNew(boolIfTrue, 1));
     send(boolClass->vtable, addMethodSymbol, ifFalseSymbol, methodNew(boolIfFalse, 1));
     send(boolClass->vtable, addMethodSymbol, ifTrueFalseSymbol, methodNew(boolIfTrueFalse, 2));
+    send(boolClass->vtable, addMethodSymbol, asStringSymbol, methodNew(boolAsString, 0));
+    trueSingleton = boolNew(boolClass, 1);
+    falseSingleton = boolNew(boolClass, 0);
+    setVar(globalScope, trueSymbol, trueSingleton);
+    setVar(globalScope, falseSymbol, falseSingleton);
     
     // Number //
     numberClass = subclass(objectClass);
@@ -777,14 +854,18 @@ void initialize()
     Object *additionSymbol = send(symbolClass, internSymbol, "+");
     Object *divideSymbol = send(symbolClass, internSymbol, "/");
     Object *subtractSymbol = send(symbolClass, internSymbol, "-");
+    Object *modulusSymbol = send(symbolClass, internSymbol, "%");
     send(numberClass->vtable, addMethodSymbol, multiplySymbol, methodNew(multiply, 1));
     send(numberClass->vtable, addMethodSymbol, additionSymbol, methodNew(add, 1));
     send(numberClass->vtable, addMethodSymbol, divideSymbol, methodNew(divide, 1));
     send(numberClass->vtable, addMethodSymbol, subtractSymbol, methodNew(subtract, 1));
+    send(numberClass->vtable, addMethodSymbol, modulusSymbol, methodNew(modulus, 1));
     send(numberClass->vtable, addMethodSymbol, equivSymbol, methodNew(numberEquiv, 1));
     send(numberClass->vtable, addMethodSymbol, greaterThanSymbol, methodNew(numberGreaterThan, 1));
     send(numberClass->vtable, addMethodSymbol, lessThanSymbol, methodNew(numberLessThan, 1));
     send(numberClass->vtable, addMethodSymbol, typeSymbol, methodNew(numberType, 0));
+    send(numberClass->vtable, addMethodSymbol, toSymbol, methodNew(numberTo, 1));
+    send(numberClass->vtable, addMethodSymbol, toDoSymbol, methodNew(numberToDo, 2));
     
     // String //
     stringClass = subclass(objectClass);
@@ -822,14 +903,15 @@ void initialize()
     send(listClass->vtable, addMethodSymbol, atPutSymbol, methodNew(listAtPut, 2));
     send(listClass->vtable, addMethodSymbol, popSymbol, methodNew(listPop, 1));
     send(listClass->vtable, addMethodSymbol, atInsertSymbol, methodNew(listAtInsert, 2));
+    send(listClass->vtable, addMethodSymbol, doSymbol, methodNew(listDo, 1));
 }
 
 void vmInstall()
 {
     bootstrap();
     /* After bootstrap, send() may now be used */
-    initialize();
     globalScope = scopeNew(NULL, NULL, 20 /*globalVarCount*/);
+    initialize();
     /// setup the global scope
     setVar(globalScope, symbolIntern(NULL, "Console"), consoleClass);
 }

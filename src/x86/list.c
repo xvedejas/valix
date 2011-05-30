@@ -51,7 +51,7 @@ void _resizeList(Object *list)
 {
     assert(list->list->capacity == list->list->items, "List error");
     list->list->capacity = listNextSize(list->list->capacity);
-    list->list->array = realloc(list->list->array, list->list->capacity);
+    list->list->array = realloc(list->list->array, list->list->capacity * sizeof(void*));
 }
 
 /* [1, 2, 3] add: 5 ==> [1, 2, 3, 5] */
@@ -78,7 +78,7 @@ Object *listAtPut(Object *self, Object *index, void *value)
     Size i = (Size)index->data;
     assert(i < self->list->items, "List error");
     self->list->array[i] = value;
-    return NULL;
+    return self;
 }
 
 /* List#pop removes an index, for example:
@@ -99,8 +99,12 @@ Object *listAtInsert(Object *self, Object *index, void *value)
     Size i = (Size)index->data;
     if (self->list->capacity == self->list->items)
         _resizeList(self);
-    memmove(self->list->array + i + 1, self->list->array + i, self->list->items - 1 - i);
-    return NULL;
+    Size j;
+    for (j = self->list->items; j > i; j--)
+        self->list->array[j] = self->list->array[j - 1];
+    self->list->array[i] = value;
+    self->list->items++;
+    return self;
 }
 
 Object *listAsString(Object *self)

@@ -497,6 +497,14 @@ void stackDel(Stack *stack)
     free(stack);
 }
 
+void stackDebug(Stack *stack)
+{
+    printf("Begin Stack Debug:\n");
+    Size i;
+    for (i = 0; i < stack->entries; i++)
+        printf("  Item value %x\n", stack->bottom[i]);
+}
+
 //////////////////////////////////
 // StringBuilder Implementation //
 //////////////////////////////////

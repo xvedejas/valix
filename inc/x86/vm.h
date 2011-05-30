@@ -30,6 +30,7 @@ typedef struct object
     struct object *vtable; /* methods */
     struct object *parent;
     /* any associated data. In vtables, it's a Map<symbol,method>.
+     * In user-defined objects, it's a Map<symbol,object>.
      * The union is just for convenience in C */
     union
     {
@@ -99,7 +100,9 @@ Object *objectClass,
        *bytearrayClass,
        *processClass,
        *listClass,
-       *consoleClass;
+       *consoleClass,
+       *trueSingleton,
+       *falseSingleton;
 
 /* Symbols */
 Object *newSymbol,
@@ -128,7 +131,12 @@ Object *newSymbol,
        *atPutSymbol,
        *popSymbol,
        *atInsertSymbol,
-       *executeSymbol;
+       *doSymbol,
+       *toSymbol,
+       *toDoSymbol,
+       *executeSymbol,
+       *trueSymbol,
+       *falseSymbol;
 
 /* Given an object and the symbol representing a message, send the
  * message with some number of arguments */

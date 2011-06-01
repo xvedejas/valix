@@ -27,14 +27,11 @@ typedef enum
     EOFToken,
     /* keywords */
     returnToken,
-    yieldToken,
-    importToken,
-    breakToken,
-    continueToken,
     /* Builtin types */
-    stringToken, // "abc"
-    numToken,    // 12.34
-    noneToken,   // none
+    charToken,       // 'a'
+    stringToken,     // "abc"
+    integerToken,    // 1234
+    doubleToken,     // 12.34
     /* Builtin symbols */
     eqToken,           // =
     openParenToken,    // (
@@ -47,6 +44,7 @@ typedef enum
     commaToken,        // ,
     colonToken,        // :
     semiToken,         // ;
+    pipeToken,         // |
     /* symbols */
     symbolToken,  // #symbolName
     keywordToken,

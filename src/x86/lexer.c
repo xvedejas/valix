@@ -28,14 +28,11 @@ String tokenTypeNames[] =
     "EOFToken",
     /* keywords */
     "returnToken",
-    "yieldToken",
-    "importToken",
-    "breakToken",
-    "continueToken",
     /* Builtin types */
+    "charToken",
     "stringToken", // abc
-    "numToken",    // 12.34
-    "noneToken",   // none
+    "integerToken",
+    "doubleToken",
     /* Builtin symbols */
     "eqToken",           // =
     "openParenToken",    // (
@@ -48,6 +45,7 @@ String tokenTypeNames[] =
     "commaToken",        // ,
     "colonToken",        // :
     "semiToken",         // ;
+    "pipeToken",         // |
     /* symbols */
     "symbolToken",
     "keywordToken",
@@ -279,23 +277,9 @@ Token *lex(String source)
                 String data = malloc(sizeof(char) * (length + 1));
                 strlcpy(data, source + i, length);
                 Token *token = tokenNew(line, column);
+                /* Reserved keywords go here; more to come */
                 switch(data[0])
-                {   case 'b':
-                        // break
-                        if (unlikely(strcmp(data + 1, "reak") == 0))
-                            token->type = breakToken;
-                    break;
-                    case 'c':
-                        // continue
-                        if (unlikely(strcmp(data + 1, "ontinue") == 0))
-                            token->type = continueToken;
-                    break;
-                    case 'i':
-                        // import
-                        if (unlikely(strcmp(data + 1, "mport") == 0))
-                            token->type = importToken;
-                    break;
-                    case 'r':
+                {   case 'r':
                         // return
                         if (unlikely(strcmp(data + 1, "eturn") == 0))
                             token->type = returnToken;
@@ -333,7 +317,10 @@ Token *lex(String source)
                 strlcpy(data, source + i, length);
 
                 Token *token = tokenNew(line, column);
-                token->type = numToken;
+                if (strchr(data, '.'))
+                    token->type = doubleToken;
+                else
+                    token->type = integerToken;
                 token->data = data;
                 addToken(token);
                 i += length;
@@ -361,6 +348,7 @@ Token *lex(String source)
             case ',': addNewToken(commaToken);        break;
             case ':': addNewToken(colonToken);        break;
             case ';': addNewToken(semiToken);         break;
+            case '|': addNewToken(pipeToken);         break;
             case '\n':
                 line++;
                 column = 0;

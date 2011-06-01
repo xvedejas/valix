@@ -18,24 +18,29 @@
 #include <main.h>
 #include <lexer.h>
 
-u8 *parse(Token *first);
+extern u8 *parse(Token *first);
+extern const Size maxKeywordCount;
 
 typedef enum
 {
-    importByteCode         = 0x80,
-    newStringByteCode      = 0x81,
-    newNumberByteCode      = 0x82,
-    variableByteCode       = 0x83,
-    callMethodByteCode     = 0x84,
-    beginListByteCode      = 0x85,
-    beginProcedureByteCode = 0x86,
-    endListByteCode        = 0x87,
-    endProcedureByteCode   = 0x88,
-    endStatementByteCode   = 0x89,
-    returnByteCode         = 0x8A,
-    setEqualByteCode       = 0x8B,
-    newSymbolByteCode      = 0x8C,
-    setArgByteCode         = 0x8E
+    integerBC  = 0x81, // create integer object (convert from string; next n bytes until null)
+    doubleBC   = 0x82, // create double object (convert from string; next n bytes until null)
+    stringBC   = 0x83, // create string object (next n bytes until null)
+    charBC     = 0x84, // create character object (next byte)
+    symbolBC   = 0x85, // create symbol object (next n bytes until null)
+    arrayBC    = 0x86, // create array object (next byte tells how many elements to pop from stack)
+    blockBC    = 0x87, /* create block object
+                       * next byte tells how many arguments; the argument
+                       * symbols are popped from the stack. */
+    variableBC = 0x88, // push value of variable (next byte)
+    messageBC  = 0x89, /* send message
+                        * number of arguments is the next byte(s)
+                        * message on top of stack, then
+                        * args on stack in reverse order, then receiver */
+    stopBC     = 0x8A, // yield nil from expression
+    setBC      = 0x8B, // set variable (next byte) to data on stack
+    returnBC   = 0x8C, // return-from
+    endBC      = 0x8D, // ends a block or file
 } bytecodeCommand;
 
 extern String bytecodes[];

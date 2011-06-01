@@ -22,82 +22,48 @@
 #include <types.h>
 #include <data.h>
 
+const Size maxKeywordCount = 8;
+
 /*
  * This is a tail-recursive parser, which means it is designed to work with
  * left-recursive grammars. It uses less stack space than a recursive descent
  * parser, and is fairly easy to write. The following grammar is the current
  * desired subset of the final grammar.
- *  
-list  :: '[' proc? (',' proc)* ']'
-
-block :: '{' (Keyword (',' Keyword)* ':')? proc '}'
-
-value :: String
-      :: Num
-      :: Keyword
-      :: list
-      :: block
-      :: '(' expr ')'
-
-expr  :: value (Keyword | SpecialCharacter value | (Keyword ':' value)+)
-
-proc  :: (expr '.')* expr?
-*/
-
-/* Bytecode format:
- * 
- * [next in bytecode] (pop from stack)
- * {single byte (set size)}
- * 
- * byte meaning
- *  80  import                [name of module] {\0}
- *  81  push string           [stringval] {\0}
- *  82  push number
- *  83  variable              {index}
- *  84  call method           [methodsymbol] [argc] (args)*
- *  85  begin list            {num entries}
- *  86  begin procedure       {num vars}
- *  87  end list
- *  88  end procedure
- *  89  end statement
- *  8A  return, end procedure (arg)
- *  8B  set equal             [varsymbol]
- *  8C  push symbol
- *  8D  [available]
- *  8E  set var to block arg  [varsymbol]
- *  
  */
- 
+
 String bytecodes[] =
 {
-    "import",
+    "NULL",
+    "integer",
+    "double",
     "string",
-    "number",
-    "variable",
-    "method",
-    "begin list",
-    "begin proc",
-    "end list",
-    "end proc",
-    "end stmt",
-    "return",
-    "set equal",
+    "char",
     "symbol",
-    NULL,
-    "set argument"
+    "array",
+    "block",
+    "variable",
+    "message",
+    "stop",
+    "set",
+    "return",
+    "end",
 };
 
-/* Note that most function are defined as nested functions, that is they are
- * declared entirely within the scope of parse(). This allows us to use
- * variables in parse() that are either on the stack or maybe in registers
- * between all the functions. This means no lock is needed and no values must
- * be passed as parameters to use those variables in a thread-safe way. */
+/*
+ * Data literals:
+ *     Integer         123
+ *     Double          12.34
+ *     String          "abcd"
+ *     Character       'a'
+ *     Symbol          #ab:cd:
+ *     Array           [1, 2]
+ *     Block           { x, y | x + y }
+ * */
+
 u8 *parse(Token *first)
 {
     StringBuilder *output = stringBuilderNew(NULL);
     Token *curToken;
-    Stack *varCounts = stackNew();
-    Size currentVarCount = 0;
     /* Per file, when loaded is compared with global method table */
     InternTable *symbolTable = internTableNew();
     /* The method table must be saved */
@@ -106,11 +72,6 @@ u8 *parse(Token *first)
      * limit is 255 but it may very well change. that byte is reserved by
      * starting with a single character in the string builder. */
     
-    auto void parseStmt();
-    auto void parseExpr();
-    auto void parseValue();
-    auto void parseProcedure();
-    
     void parserRequire(bool condition, String error)
     {
         if (unlikely(!condition))
@@ -118,24 +79,9 @@ u8 *parse(Token *first)
             printf("\n [[ Parser Error ]]\n");
             printf("Token: %s Data: %s Line: %i Col: %i\n",
                 tokenTypeNames[curToken->type], curToken->data, curToken->line, curToken->col);
-            printf(error);
+            printf("%s\n", error);
             endThread();
         }
-    }
-    
-    void out(String val, Size len)
-    {
-        stringBuilderAppendN(output, val, len);
-    }
-    
-    void outchr(char val)
-    {
-        stringBuilderAppendChar(output, val);
-    }
-    
-    void nextToken()
-    {
-        curToken = curToken->next;
     }
     
     Size intern(String string)
@@ -150,6 +96,11 @@ u8 *parse(Token *first)
         return index;
     }
     
+    inline void nextToken()
+    {
+        curToken = curToken->next;
+    }
+    
     Token *lookahead(u32 n)
     {
         Token *token = curToken;
@@ -157,105 +108,106 @@ u8 *parse(Token *first)
         return token;
     }
     
-    void parseProcedure()
+    inline void outStr(String val)
     {
-        do
-        {
-            if (curToken->type == stopToken)
-                nextToken();
-            parseStmt();
-            if (curToken->type == EOFToken)
-                return;
-        } while (curToken->type == stopToken);
+        stringBuilderAppendN(output, val, strlen(val) + 1);
     }
     
+    inline void outByte(char val)
+    {
+        stringBuilderAppendChar(output, val);
+    }
+    
+    inline Size getPos()
+    {
+        return output->size;
+    }
+    
+    inline void setPos(Size pos, char value)
+    {
+        output->s[pos] = value;
+    }
+    
+    inline bool startsValue(TokenType type)
+    {
+        return type == integerToken   || type == doubleToken      ||
+               type == stringToken    || type == charToken        ||
+               type == symbolToken    || type == openBracketToken ||
+               type == openParenToken || type == openBraceToken   ||
+               type == keywordToken;
+    }
+    
+    auto void parseValue();
+    auto void parseExpr();
     void parseStmt()
     {
-        if (unlikely(curToken->type == returnToken))
+        while (startsValue(curToken->type))
         {
-            nextToken();
             parseExpr();
-            outchr(returnByteCode); /* Return directive */
-        }
-        else if (unlikely(curToken->type == importToken))
-        {
-            outchr(importByteCode); /* Import directive */
-            nextToken();
-            parserRequire(curToken->type == keywordToken, "Expected module name.");
-            out(curToken->data, strlen(curToken->data));
-            outchr('\0');
-            nextToken();
-        }
-        else if (unlikely(lookahead(1)->type == eqToken))
-        {
-            parserRequire(curToken->type == keywordToken, "Expected keyword.");
-            String lefthandKeyword = curToken->data;
-            nextToken();
-            parserRequire(curToken->type == eqToken, "Expected '=' token.");
-            nextToken();
-            parseExpr();
-            outchr(setEqualByteCode); /* Equal directive */
-            if (!isStringInterned(symbolTable, lefthandKeyword))
-                currentVarCount++;
-            outchr(intern(lefthandKeyword));
-        }
-        else
-            parseExpr();
-        outchr(endStatementByteCode); /* End Statement directive */
-    }
-    
-    void parseMsg()
-    {
-        String keywords[8];
-        u32 i = 0;
-        parserRequire(curToken->type == keywordToken, "Expected keyword.");
-        while (curToken->type == keywordToken)
-        {
-            parserRequire(i < 8, "More than eight keywords in one message");
-            keywords[i++] = curToken->data;
-            nextToken();
-            if (curToken->type != colonToken) /* Unary message */
+            if (curToken->type == stopToken)
             {
-                parserRequire(i == 1, "Expected keyword. Maybe use parentheses to show you want to use a binary/unary message?");
-                outchr(callMethodByteCode); /* Message directive */
-                outchr(intern(keywords[0]));
-                outchr((char)0); // argc
-                return;
+                outByte(stopBC);
+                nextToken();
             }
-            nextToken();
-            parseValue();
+            else
+                break;
         }
-        u32 j;
-        outchr(callMethodByteCode); /* Message directive */
-        Size length = 0;
-        for (j = 0; j < i; j++)
-            length += strlen(keywords[j]) + 1;
-        String methodName = calloc(length + 1, sizeof(char));        
-        for (j = 0; j < i; j++)
-        {
-            strcat(methodName, keywords[j]);
-            strcat(methodName, ":");
-        }
-        outchr(intern(methodName));
-        outchr((char)i); // argc
-        return;
     }
     
+    /* Value plus messages */
     void parseExpr()
     {
         parseValue();
-        while (curToken->type == specialCharToken || curToken->type == keywordToken)
+        while (curToken->type == keywordToken || curToken->type == specialCharToken)
         {
             if (curToken->type == keywordToken)
-                parseMsg();
-            else /* specialCharToken, binary message */
             {
-                String data = curToken->data;
+                String keywords[maxKeywordCount];
+                Size i = 0;
+                bool isUnary = false;
+                while (curToken->type == keywordToken)
+                {
+                    parserRequire(i < maxKeywordCount, "More keywords than allowed in one message");
+                    keywords[i++] = curToken->data;
+                    nextToken();
+                    if (curToken->type != colonToken) // unary message
+                    {
+                        parserRequire(i == 1, "Expected ':' token. Use parenthesis around binary messages.");
+                        outByte(symbolBC);
+                        outByte(intern(keywords[0]));
+                        outByte(messageBC);
+                        outByte(0); // argument count
+                        isUnary = true;
+                        break;
+                    }
+                    nextToken();
+                    parseValue();
+                }
+                if (isUnary)
+                    break;
+                Size j, length = 0;
+                for (j = 0; j < i; j++)
+                    length += strlen(keywords[j]) + 1;
+                String messageName = calloc(length + 1, sizeof(char));
+                for (j = 0; j < i; j++)
+                {
+                    strcat(messageName, keywords[j]);
+                    strcat(messageName, ":"); 
+                }
+                outByte(symbolBC);
+                outByte(intern(messageName));
+                outByte(messageBC);
+                outByte(i);
+            }
+            else
+            {
+                Size binaryMessage = intern(curToken->data);
                 nextToken();
                 parseValue();
-                outchr(callMethodByteCode); /* (binary) message directive */
-                outchr((u8)intern(data)); /* method name */
-                outchr((char)1); // argc
+                outByte(symbolBC);
+                outByte(binaryMessage);
+                outByte(messageBC);
+                outByte(1); // number of arguments
             }
         }
     }
@@ -264,141 +216,120 @@ u8 *parse(Token *first)
     {
         switch (curToken->type)
         {
+            case integerToken:
+            {
+                outByte(integerBC);
+                outStr(curToken->data);
+                nextToken();
+            } break;
+            case doubleToken:
+            {
+                outByte(doubleBC);
+                outStr(curToken->data);
+                nextToken();
+            } break;
             case stringToken:
             {
-                outchr(newStringByteCode); /* String directive */
-                out(curToken->data, strlen(curToken->data));
-                outchr('\0');
+                outByte(stringBC);
+                outStr(curToken->data);
                 nextToken();
-                return;
             } break;
-            case numToken:
+            case charToken:
             {
-                outchr(newNumberByteCode); /* Number directive */
-                out(curToken->data, strlen(curToken->data));
-                outchr('\0');
+                outByte(charBC);
+                outByte((char)(Size)curToken->data);
                 nextToken();
-                return;
             } break;
             case symbolToken:
             {
-                outchr(newSymbolByteCode); /* Symbol directive */
-                outchr((u8)intern(curToken->data));
+                outByte(symbolBC);
+                outStr(curToken->data);
                 nextToken();
-                return;
             } break;
-            case keywordToken:
+            case openBracketToken: // array
             {
-                outchr(variableByteCode); /* Keyword directive */
-                if (!isStringInterned(symbolTable, curToken->data))
-                    currentVarCount++;
-                outchr((char)intern(curToken->data));
-                nextToken();
-                return;
-            } break;
-            case openBracketToken: /* '[' denotes a list  */
-            {
-                outchr(beginListByteCode); /* Begin list directive */
-                Size i = output->size;
-                outchr('\0'); // list size
-                int count = 0;
-                if (lookahead(1)->type != closeBracketToken)
-                    do
-                    {
-                        nextToken();
-                        parserRequire(curToken->type != EOFToken, "Unexpected EOF Token");
-                        outchr(beginProcedureByteCode);
-                        outchr('\0');
-                        parseProcedure();
-                        outchr(endProcedureByteCode);
-                        count++;
-                    } while (curToken->type == commaToken);
-                else
+                Size elements = 0;
+                do
+                {
                     nextToken();
+                    parseStmt();
+                    elements++;
+                } while (curToken->type == commaToken);
                 parserRequire(curToken->type == closeBracketToken, "Expected ']' token");
                 nextToken();
-                outchr(endListByteCode); /* End list directive */
-                output->s[i] = (char)count; /* number of items in list */
-                return;
+                outByte(arrayBC);
+                outByte(elements);
             } break;
-            case openBraceToken: /* '{' denotes a block */
+            case openBraceToken: // block
             {
-                outchr(beginProcedureByteCode); /* Begin block directive */
                 nextToken();
-                
-                stackPush(varCounts, (void*)currentVarCount);
-                currentVarCount = 0;
-                /* Let's remember where the procedure began so that we can say here
-                 * how many variables have been defined for this procedure */
-                Size i = output->size;
-                outchr('\0');
-                
-                if (lookahead(1)->type == commaToken || lookahead(1)->type == colonToken)
+                outByte(blockBC);
+                Size argCountByte = getPos();
+                outByte('\0');
+                Size arguments = 0;
+                if (lookahead(1)->type == pipeToken || lookahead(1)->type == commaToken)
                 {
-                    // If we have arguments...
                     parserRequire(curToken->type == keywordToken, "Expected keyword token");
-                    outchr(setArgByteCode); /* Load arg */
-                    outchr((char)intern(curToken->data));
+                    outByte(setBC);
+                    outByte(intern(curToken->data));
+                    arguments++;
                     nextToken();
-                    while (curToken->type != colonToken)
+                    while (curToken->type != pipeToken)
                     {
                         parserRequire(curToken->type == commaToken, "Expected ',' token");
                         nextToken();
                         parserRequire(curToken->type == keywordToken, "Expected keyword token");
-                        outchr(setArgByteCode);
-                        outchr((char)intern(curToken->data));
+                        outByte(setBC);
+                        outByte(intern(curToken->data));
+                        arguments++;
                         nextToken();
                     }
+                    parserRequire(curToken->type == pipeToken, "Expected '|' token");
                     nextToken();
                 }
-                parseProcedure();
-                
+                setPos(argCountByte, arguments);
+                parseStmt();
                 parserRequire(curToken->type == closeBraceToken, "Expected '}' token");
                 nextToken();
-                
-                // say how many variables
-                output->s[i] = (char)currentVarCount;
-                Size previous = (Size)stackPop(varCounts);
-                stackPush(varCounts, (void*)currentVarCount);
-                currentVarCount = previous;
-                
-                outchr(endProcedureByteCode); /* End block directive */
-                return;
+                outByte(endBC);
             } break;
             case openParenToken:
             {
                 nextToken();
-                parseExpr();
+                parseStmt();
                 parserRequire(curToken->type == closeParenToken, "Expected ')' token");
                 nextToken();
-                return;
             } break;
-            case EOFToken:
+            case keywordToken:
             {
-                parserRequire(false, "Unexpected EOF Token");
+                if (unlikely(lookahead(1)->type == eqToken))
+                {
+                    Size keyword = intern(curToken->data);
+                    nextToken();
+                    parserRequire(curToken->type == eqToken, "Expected '=' token");
+                    nextToken();
+                    parseExpr();
+                    outByte(setBC);
+                    outByte(keyword);
+                }
+                else
+                {
+                    outByte(variableBC);
+                    outByte(intern(curToken->data));
+                    nextToken();
+                }
             } break;
             default:
-            break;
+            {
+                parserRequire(false, "Parser Error");
+            } break;
         }
-        parserRequire(false, "Expected expression");
-        
-        return;
     }
     curToken = first;
-    currentVarCount = 0;
-    outchr('\x86');
-    /* Let's remember where the procedure began so that we can say here
-     * how many variables have been defined for this procedure */
-    Size i = output->size;
-    outchr('\0');
     
-    parseProcedure();
+    parseStmt();
+    outByte(endBC); // EOS
     
-    // say how many variables
-    output->s[i] = (char)currentVarCount;
-    stackDel(varCounts);
-    
-    outchr('\xFF'); // EOS
     Token *next;
     do
     {
@@ -416,13 +347,15 @@ u8 *parse(Token *first)
     outputSize = symbolTableBytecode->size;
     u8 *finalBytecode = (u8*)stringBuilderToString(symbolTableBytecode);
     
-    finalBytecode[0] = (u8)symbolTable->count; // method count
+    finalBytecode[0] = (u8)symbolTable->count; // symbol count
     internTableDel(symbolTable);
     
     // see the output
+    //Size i;
     //for (i = 0; i < outputSize; i++)
-    //    printf("%x %c\n", finalBytecode[i], finalBytecode[i]);
+    //    printf("%x %c    %s\n", finalBytecode[i], finalBytecode[i], bytecodes[finalBytecode[i]]);
     //printf("Parser done\n");
     
     return (u8*)finalBytecode;
 }
+

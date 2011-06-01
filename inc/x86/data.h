@@ -95,6 +95,7 @@ extern void stackPush(Stack *stack, void *element);
 extern void *stackPop(Stack *stack);
 extern void stackDel(Stack *stack);
 extern void stackDebug(Stack *stack);
+extern void *stackTop(Stack *stack);
 
 /////////////////////////////
 // StringBuilder Interface //

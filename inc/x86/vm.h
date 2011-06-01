@@ -101,18 +101,18 @@ Object *objectClass,
        *processClass,
        *listClass,
        *consoleClass,
+       *arrayClass,
        *trueSingleton,
        *falseSingleton;
 
 /* Symbols */
-Object *newSymbol,
+Object *newSymbol,     // new:
+       *newZeroSymbol, // new
        *lengthSymbol,
-       *newSymbolZArgs,
        *lookupSymbol,
        *addMethodSymbol,
        *allocateSymbol,
        *delegatedSymbol,
-       *internSymbol,
        *doesNotUnderstandSymbol,
        *consoleSymbol,
        *printSymbol,
@@ -153,7 +153,6 @@ void vmInstall();
 Object *processNew(Object *self);
 Object *processExecute(Object *self, u8 *headeredBytecode);
 Object *stringNew(Object *self, String value);
-Object *symbolIntern(Object *symbol, String string);
 void setVar(Object *currentScope, Object *symbol, Object *value);
 Object *new(Object *self);
 

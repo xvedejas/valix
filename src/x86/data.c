@@ -485,7 +485,7 @@ void stackPush(Stack *stack, void *element)
 void *stackPop(Stack *stack)
 {
     if (stack->entries == 0) // empty
-        return NULL;
+        panic("stack underflow");
     stack->entries--;
     void *value = stack->bottom[stack->entries];
     return value;
@@ -495,6 +495,13 @@ void stackDel(Stack *stack)
 {
     free(stack->bottom);
     free(stack);
+}
+
+void *stackTop(Stack *stack)
+{
+    if (stack->entries == 0) // empty
+        panic("stack underflow");
+    return stack->bottom[stack->entries-1];
 }
 
 void stackDebug(Stack *stack)

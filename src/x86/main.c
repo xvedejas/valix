@@ -240,7 +240,7 @@ ThreadFunc langDemo()
     "|   { Console print: \"Valix Rocks!\"     |\n"
     "|     a = a + 1. }                      |\n"
     " --------------------------------------- \n";
-    setVar(process->data, symbolIntern(symbolClass, "help"), stringNew(stringClass, helpString));
+    setVar(process->data, send(symbolClass, newSymbol, "help"), stringNew(stringClass, helpString));
     for (;;)
     {
         printf(">>> ");
@@ -251,7 +251,8 @@ ThreadFunc langDemo()
         } while (strlen(input) == 0);
         u8 *bytecode = parse(lex(input));
         Object *returnValue = processExecute(process, bytecode);
-        send(consoleClass, printSymbol, returnValue);
+        if (returnValue != NULL)
+            send(consoleClass, printSymbol, returnValue);
         free(input);
     }
 }
@@ -259,12 +260,13 @@ ThreadFunc langDemo()
 ThreadFunc langTest()
 {
     String input =
-    "primes = [2].\n"
-    "3 to: 1000 do:\n"
-    "{ number :\n"
+    "primes = List new.\n"
+    "primes add: 2.\n"
+    "3 to: 100 do:\n"
+    "{ number |\n"
     "    isPrime = true.\n"
     "    primes do:\n"
-    "    { prime :\n"
+    "    { prime |\n"
     "        (number % prime == 0) ifTrue:\n"
     "            { isPrime = false }\n"
     "    }.\n"
@@ -273,6 +275,7 @@ ThreadFunc langTest()
     "Console print: primes\n";
     printf("Testing input:\n\n%s\n\n", input);
     processExecute(processNew(processClass), parse(lex(input)));
+    printf("Done.\n");
 }
 
 void pciinfo()

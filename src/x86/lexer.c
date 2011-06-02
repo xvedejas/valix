@@ -59,19 +59,7 @@ void lexerError(String message)
     endThread();
 }
 
-Token *tokenNew(Size line, Size col)
-{
-    Token* token = malloc(sizeof(Token));
-    token->type = undefToken;
-    token->data = NULL;
-    token->next = NULL;
-    token->length = 0;
-    token->line = line;
-    token->col = col;
-    return token;
-}
-
-Size matchSymbol(String source, Size start)
+Size matchKeyword(String source, Size start)
 {
     bool isAlnum;
     switch (source[start])
@@ -197,59 +185,64 @@ Size matchComment(String source, Size start)
     return 0;
 }
 
-Token *lex(String source)
+void tokenDel(Token *token)
 {
-    Token *firstToken = NULL,
-        *lastToken = NULL;
-    Size i = 0,
+    if (token->data != NULL)
+        free(token->data);
+    free(token);
+}
+
+/* Lexes a single token at a time */
+Token *lex(String source, Token *lastToken)
+{
+    Size i = 0;
+    Size line, column;
+    if (lastToken == NULL)
+    {
         line = 1,
         column = 0;
-    void addToken(Token *token)
-    {
-        if (unlikely(firstToken == NULL))
-        {
-            firstToken = token;
-            lastToken = token;
-        } else
-        {
-            lastToken->next = token;
-            lastToken = token;
-        }
     }
-    void addNewToken(TokenType type)
+    else
     {
-        Token *token = tokenNew(line, column);
+        line = lastToken->line;
+        column = lastToken->col;
+    }
+    
+    Token *tokenNew(TokenType type, String data, Size length)
+    {
+        Token* token = malloc(sizeof(Token));
         token->type = type;
-        token->data = NULL;
-        addToken(token);
-        i++;
-        column++;
+        token->data = data;
+        token->line = line;
+        token->col = column;
+        token->length = length;
+        token->previous = lastToken;
+        return token;
     }
-
-    for (i = 0;;)
+    
+    while (true)
     {
         switch(source[i])
         {
             case '#': // #symbol
             {
                 i++;
-                Size length = matchSymbol(source, i);
+                Size length = matchKeyword(source, i);
                 String data = malloc(sizeof(char) * (length + 1));
                 strlcpy(data, source + i, length);
-                Token *token = tokenNew(line, column);
-                token->data = data;
-                token->type = symbolToken;
-                addToken(token);
-                i += length;
                 column += length;
+                i += length;
+                return tokenNew(symbolToken, data, i);
             } break;
             case '/':
             {
                 Size length = matchComment(source, i);
                 if (length) // we have a comment
-                {   Size n;
+                {
+                    Size n;
                     for (n = 0; n < length; n++)
-                    {   if (source[i + n] == '\n')
+                    {
+                        if (source[i + n] == '\n')
                         {   column = 0;
                             line++;
                         }
@@ -264,8 +257,9 @@ Token *lex(String source)
             {
                 if (source[i] == '=' && source[i+1] == ' ')
                 {
-                    addNewToken(eqToken);
-                    break;
+                    column++;
+                    i++;
+                    return tokenNew(eqToken, NULL, i);
                 }
             } /* Do not break here, fall through */
             case 'a' ... 'z': case 'A' ... 'Z': case '~': case '`':
@@ -273,13 +267,14 @@ Token *lex(String source)
             case '*': case '-': case '+': case '_': case '?': case '<':
             case '>': case '\\':
             {
-                Size length = matchSymbol(source, i);
+                Size length = matchKeyword(source, i);
                 String data = malloc(sizeof(char) * (length + 1));
                 strlcpy(data, source + i, length);
-                Token *token = tokenNew(line, column);
+                Token *token = tokenNew(undefToken, NULL, 0);
                 /* Reserved keywords go here; more to come */
                 switch(data[0])
-                {   case 'r':
+                {
+                    case 'r':
                         // return
                         if (unlikely(strcmp(data + 1, "eturn") == 0))
                             token->type = returnToken;
@@ -291,7 +286,7 @@ Token *lex(String source)
                 {
                     switch (data[0])
                     {
-                        case 'a' ... 'z': case 'A' ... 'Z':
+                        case 'a' ... 'z': case 'A' ... 'Z': case '_':
                             token->type = keywordToken;
                         break;
                         default:
@@ -307,48 +302,46 @@ Token *lex(String source)
                 {
                     free(data);
                 }
-                addToken(token);
-                i += length;
                 column += length;
+                token->col = column;
+                i += length;
+                token->length = i;
+                return token;
             } break;
             case '0' ... '9':
-            {   Size length = matchNumber(source, i);
+            {
+                Size length = matchNumber(source, i);
                 String data = malloc(sizeof(char) * (length + 1));
                 strlcpy(data, source + i, length);
-
-                Token *token = tokenNew(line, column);
+                TokenType type = undefToken;
                 if (strchr(data, '.'))
-                    token->type = doubleToken;
+                    type = doubleToken;
                 else
-                    token->type = integerToken;
-                token->data = data;
-                addToken(token);
-                i += length;
+                    type = integerToken;
                 column += length;
+                i += length;
+                return tokenNew(type, data, i);
             } break;
             case '"':
-            {   Size length = matchString(source, i);
+            {
+                Size length = matchString(source, i);
                 String data = malloc(sizeof(char) * (length - 1));
                 strlcpy(data, source + i + 1, length - 2);
-
-                Token *token = tokenNew(line, column);
-                token->type = stringToken;
-                token->data = data;
-                addToken(token);
-                i += length;
                 column += length;
+                i += length;
+                return tokenNew(stringToken, data, i);
             } break;
-            case '(': addNewToken(openParenToken);    break;
-            case ')': addNewToken(closeParenToken);   break;
-            case '{': addNewToken(openBraceToken);    break;
-            case '}': addNewToken(closeBraceToken);   break;
-            case '[': addNewToken(openBracketToken);  break;
-            case ']': addNewToken(closeBracketToken); break;
-            case '.': addNewToken(stopToken);         break;
-            case ',': addNewToken(commaToken);        break;
-            case ':': addNewToken(colonToken);        break;
-            case ';': addNewToken(semiToken);         break;
-            case '|': addNewToken(pipeToken);         break;
+            case '(': i++; column++; return tokenNew(openParenToken, NULL, i);    break;
+            case ')': i++; column++; return tokenNew(closeParenToken, NULL, i);   break;
+            case '{': i++; column++; return tokenNew(openBraceToken, NULL, i);    break;
+            case '}': i++; column++; return tokenNew(closeBraceToken, NULL, i);   break;
+            case '[': i++; column++; return tokenNew(openBracketToken, NULL, i);  break;
+            case ']': i++; column++; return tokenNew(closeBracketToken, NULL, i); break;
+            case '.': i++; column++; return tokenNew(stopToken, NULL, i);         break;
+            case ',': i++; column++; return tokenNew(commaToken, NULL, i);        break;
+            case ':': i++; column++; return tokenNew(colonToken, NULL, i);        break;
+            case ';': i++; column++; return tokenNew(semiToken, NULL, i);         break;
+            case '|': i++; column++; return tokenNew(pipeToken, NULL, i);         break;
             case '\n':
                 line++;
                 column = 0;
@@ -359,15 +352,15 @@ Token *lex(String source)
                 i++;
             break;
             case '\0':
-                addNewToken(EOFToken);
-                return firstToken;
+                return tokenNew(EOFToken, NULL, i);
             break;
+            case ' ':
             default:
                 column += 1;
                 i++;
             break;
         }
     }
-    addNewToken(EOFToken);
-    return firstToken;
+    panic("error");
+    return NULL;
 }

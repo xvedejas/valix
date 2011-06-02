@@ -57,15 +57,16 @@ typedef struct token
 {
     String data;
     TokenType type;
-    struct token *next;
-    Size length, line, col; /* length in source */
+    struct token *previous;
+    Size line, col, length; /* The position marking the END of the token */
 } Token;
 
 #define lexLoop(source, tokenName) Token *_next = lex(source), *tokenName;\
     for (; (tokenName = _next)->data != NULL; free(tokenName->data),\
     _next = tokenName->next, free(tokenName))
 
-extern Token *lex(String source);
+extern void tokenDel(Token *token);
+extern Token *lex(String source, Token *lastToken);
 extern void testLexer(String source);
 
 #endif

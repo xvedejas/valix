@@ -249,7 +249,7 @@ ThreadFunc langDemo()
         {
             input = getstring();
         } while (strlen(input) == 0);
-        u8 *bytecode = parse(lex(input));
+        u8 *bytecode = compile(input);
         Object *returnValue = processExecute(process, bytecode);
         if (returnValue != NULL)
             send(consoleClass, printSymbol, returnValue);
@@ -259,6 +259,7 @@ ThreadFunc langDemo()
 
 ThreadFunc langTest()
 {
+    //Size initialMemUse = memUsed();
     String input =
     "primes = List new.\n"
     "primes add: 2.\n"
@@ -274,8 +275,8 @@ ThreadFunc langTest()
     "}.\n"
     "Console print: primes\n";
     printf("Testing input:\n\n%s\n\n", input);
-    processExecute(processNew(processClass), parse(lex(input)));
-    printf("Done.\n");
+    processExecute(processNew(processClass), compile(input));
+    //printf("Done. mem use: %i\n", memUsed() - initialMemUse);
 }
 
 void pciinfo()

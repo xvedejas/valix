@@ -18,7 +18,7 @@
 #include <main.h>
 #include <lexer.h>
 
-extern u8 *parse(Token *first);
+extern u8 *compile(String source);
 extern const Size maxKeywordCount;
 
 typedef enum
@@ -43,6 +43,6 @@ typedef enum
     endBC      = 0x8D, // ends a block or file
 } bytecodeCommand;
 
-extern String bytecodes[];
+extern const String bytecodes[];
 
 #endif

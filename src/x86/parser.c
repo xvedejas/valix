@@ -31,7 +31,7 @@ const Size maxKeywordCount = 8;
  * desired subset of the final grammar.
  */
 
-String bytecodes[] =
+const String bytecodes[] =
 {
     "NULL",
     "integer",
@@ -60,10 +60,16 @@ String bytecodes[] =
  *     Block           { x, y | x + y }
  * */
 
-u8 *parse(Token *first)
+u8 *compile(String source)
 {
+    Token *curToken = NULL;
+    inline void nextToken()
+    {
+        curToken = lex(source, curToken);
+        source += curToken->length;
+    }
     StringBuilder *output = stringBuilderNew(NULL);
-    Token *curToken;
+    nextToken();
     /* Per file, when loaded is compared with global method table */
     InternTable *symbolTable = internTableNew();
     /* The method table must be saved */
@@ -96,16 +102,20 @@ u8 *parse(Token *first)
         return index;
     }
     
-    inline void nextToken()
-    {
-        curToken = curToken->next;
-    }
-    
     Token *lookahead(u32 n)
     {
         Token *token = curToken;
-        while (n--) token = curToken->next;
-        return token;
+        String currentPos = source;
+        Token *lookahead = NULL;
+        while (n--)
+        {
+            curToken = lex(source, curToken);
+            source += curToken->length;
+        }
+        lookahead = curToken;
+        curToken = token;
+        source = currentPos;
+        return lookahead;
     }
     
     inline void outStr(String val)
@@ -325,19 +335,14 @@ u8 *parse(Token *first)
             } break;
         }
     }
-    curToken = first;
-    
     parseStmt();
     outByte(endBC); // EOS
     
-    Token *next;
+    Token *token = curToken;
     do
     {
-        next = first->next;
-        free(first);
-        if (first->data != NULL)
-            free(first->data);
-    } while ((first = next) != NULL);
+        tokenDel(token);
+    } while ((token = token->previous) != NULL);
     
     /* We want our method table at the beginning of the bytecode */
     Size outputSize = output->size;
@@ -356,6 +361,7 @@ u8 *parse(Token *first)
     //    printf("%x %c    %s\n", finalBytecode[i], finalBytecode[i], bytecodes[finalBytecode[i]]);
     //printf("Parser done\n");
     
+    //printf("Bytecode size %i\n", outputSize);
     return (u8*)finalBytecode;
 }
 

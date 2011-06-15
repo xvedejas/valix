@@ -111,3 +111,13 @@ void *memmove(void * dest, const void *src, Size count)
 
     return dest;
 }
+
+bool startswith(String string, String substring)
+{
+    return !strncmp(string, substring, strlen(substring));
+}
+
+bool endswith(String string, String substring)
+{
+    return !strncmp(string + strlen(string) - strlen(substring), substring, strlen(substring));
+}

@@ -206,40 +206,40 @@ ThreadFunc langDemo()
 {
     Object *process = processNew(processClass);
     String helpString =
-    " --------------------------------------- \n"
-    "| Basic Values                          |\n"
-    "|   \"abc\"         // String             |\n"
-    "|   1234            // Number           |\n"
-    "|                                       |\n"
-    "| Operations                            |\n"
-    "|   1 + 1                               |\n"
-    "|   5 * 2                               |\n"
-    "|   100 / 25                            |\n"
-    "|                                       |\n"
-    "| Comparisons                           |\n"
-    "|   1 > 3                               |\n"
-    "|   5 == 5                              |\n"
-    "|                                       |\n"
-    "| Variables                             |\n"
-    "|   a = 5.                              |\n"
-    "|   test = \"123\"                        |\n"
-    "|                                       |\n"
-    "| Blocks                                |\n"
-    "|   { 5 + 6 } apply                     |\n"
-    "|   { x : x * 2 } apply: 5              |\n"
-    "|   { x, y : x + y } apply: 2 and: 20   |\n"
-    "|                                       |\n"
-    "| Control                               |\n"
-    "|   (1 == 2) ifTrue: { ... }            |\n"
-    "|   {a < 10} whileTrue: { a = a + 1 }   |\n"
-    "|   1 to: 5 do: {i : Console print: i}  |\n"
-    "|                                       |\n"
-    "| Program Example                       |\n"
-    "|   a = 1.                              |\n"
-    "|   {a < 20} whileTrue:                 |\n"
-    "|   { Console print: \"Valix Rocks!\"     |\n"
-    "|     a = a + 1. }                      |\n"
-    " --------------------------------------- \n";
+    " ----------------------------------------- \n"
+    "| Basic Values                           |\n"
+    "|   \"abc\"         // String              |\n"
+    "|   1234            // Number            |\n"
+    "|                                        |\n"
+    "| Operations                             | \n"
+    "|   1 + 1                                |\n"
+    "|   5 * 2                                |\n"
+    "|   100 / 25                             |\n"
+    "|                                        |\n"
+    "| Comparisons                            |\n"
+    "|   1 > 3                                |\n"
+    "|   5 == 5                               |\n"
+    "|                                        |\n"
+    "| Variables                              |\n"
+    "|   a = 5.                               |\n"
+    "|   test = \"123\"                         |\n"
+    "|                                        |\n"
+    "| Blocks                                 |\n"
+    "|   { 5 + 6 } apply                      |\n"
+    "|   { x | x * 2 } apply: 5               |\n"
+    "|   { x, y | x + y } apply: 2 and: 20    |\n"
+    "|                                        |\n"
+    "| Control                                |\n"
+    "|   (1 == 2) ifTrue: { ... }             |\n"
+    "|   {a < 10} whileTrue: { a = a + 1 }    |\n"
+    "|   1 to: 5 do: { i | Console print: i } |\n"
+    "|                                        |\n"
+    "| Program Example                        |\n"
+    "|   a = 1.                               |\n"
+    "|   {a < 20} whileTrue:                  |\n"
+    "|   { Console print: \"Valix Rocks!\".     |\n"
+    "|     a = a + 1 }                        |\n"
+    " ----------------------------------------- \n";
     setVar(process->data, send(symbolClass, newSymbol, "help"), stringNew(stringClass, helpString));
     for (;;)
     {
@@ -347,12 +347,10 @@ void kmain(u32 magic, MultibootStructure *multiboot, void *stackPointer)
     vmInstall(); // must be after mmInstall
     keyboardInstall(); // must be after mmInstall, threadingInstall
     asm volatile("sti;");
-    //FileCoreInit();
     printf("Welcome to Valix! Try typing Console print: (5 * 6 / 3 + 10) or \"help\".\n\n");
     
-    //spawn("langDemo", langDemo);
-    spawn("langTest", langTest);
-    
+    spawn("langDemo", langDemo);
+    //spawn("langTest", langTest);
     
     //pciinfo();
     for (;;);

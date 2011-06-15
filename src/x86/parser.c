@@ -253,7 +253,7 @@ u8 *compile(String source)
             case symbolToken:
             {
                 outByte(symbolBC);
-                outStr(curToken->data);
+                outByte(intern(curToken->data));
                 nextToken();
             } break;
             case openBracketToken: // array
@@ -358,7 +358,7 @@ u8 *compile(String source)
     // see the output
     //Size i;
     //for (i = 0; i < outputSize; i++)
-    //    printf("%x %c    %s\n", finalBytecode[i], finalBytecode[i], bytecodes[finalBytecode[i]]);
+    //    printf("%x %c    %s\n", finalBytecode[i], finalBytecode[i], bytecodes[finalBytecode[i]-0x80]);
     //printf("Parser done\n");
     
     //printf("Bytecode size %i\n", outputSize);

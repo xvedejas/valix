@@ -25,7 +25,8 @@ void *irqRoutines[16] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
 
 /* Use this function to set an entry in the IDT. */
 void idtSetGate(u8 num, u64 base, u16 sel, u8 flags)
-{   /* The interrupt routine's base address */
+{
+    /* The interrupt routine's base address */
     idt[num].baseLow = (base & 0xFFFF);
     idt[num].baseHigh = (base >> 16) & 0xFFFF;
 
@@ -38,7 +39,8 @@ void idtSetGate(u8 num, u64 base, u16 sel, u8 flags)
 
 /* Installs the IDT */
 void idtInstall()
-{   idtp.limit = (sizeof(IdtEntry) * 256) - 1;
+{
+    idtp.limit = (sizeof(IdtEntry) * 256) - 1;
     idtp.base = (unsigned int)&idt;
 
     memset((u8*)&idt, 0, sizeof(IdtEntry) * 256);
@@ -46,7 +48,8 @@ void idtInstall()
 }
 
 String exceptionMessages[] =
-{   "Division By Zero",
+{
+    "Division By Zero",
     "Debug",
     "Non Maskable Interrupt",
     "Breakpoint",
@@ -78,16 +81,19 @@ String exceptionMessages[] =
 
 /* This installs a custom IRQ handler for the given IRQ */
 void irqInstallHandler(int irq, void (*handler)(Regs *r))
-{   irqRoutines[irq] = handler;
+{
+    irqRoutines[irq] = handler;
 }
 
 /* This clears the handler for a given IRQ */
 void irqUninstallHandler(int irq)
-{   irqRoutines[irq] = 0;
+{
+    irqRoutines[irq] = 0;
 }
 
 void irqRemap(void)
-{   outportb(0x20, 0x11); // PIC1: Initialization Command
+{
+    outportb(0x20, 0x11); // PIC1: Initialization Command
     outportb(0xA0, 0x11); // PIC2: Initialization Command
     outportb(0x21, 0x20); // PIC1: IRQ0-7 starts at 0x20 (Interrupt 32)
     outportb(0xA1, 0x28); // PCI2: IRQ8-15 starts at 0x28 (Intterupt 40)
@@ -101,7 +107,8 @@ void irqRemap(void)
 
 #define idtSetIrqGate(n, m) idtSetGate(n, (unsigned)irq##m, 0x08, 0x8E)
 void irqInstall()
-{   irqRemap();
+{
+    irqRemap();
     idtSetIrqGate(32, 0);  idtSetIrqGate(33, 1);  idtSetIrqGate(34, 2);
     idtSetIrqGate(35, 3);  idtSetIrqGate(36, 4);  idtSetIrqGate(37, 5);
     idtSetIrqGate(38, 6);  idtSetIrqGate(39, 7);  idtSetIrqGate(40, 8);
@@ -111,7 +118,8 @@ void irqInstall()
 }
 
 void irqHandler(Regs *r)
-{   /* This is a blank function pointer */
+{
+    /* This is a blank function pointer */
     void (*handler)(Regs *r);
     handler = irqRoutines[r->intNo - 32];
     if (handler)
@@ -124,7 +132,8 @@ void irqHandler(Regs *r)
 
 #define idtSetIsrGate(n) idtSetGate(n, (unsigned)isr##n, 0x08, 0x8E)
 void isrsInstall()
-{   idtSetIsrGate(0);  idtSetIsrGate(1);  idtSetIsrGate(2);  idtSetIsrGate(3);
+{
+    idtSetIsrGate(0);  idtSetIsrGate(1);  idtSetIsrGate(2);  idtSetIsrGate(3);
     idtSetIsrGate(4);  idtSetIsrGate(5);  idtSetIsrGate(6);  idtSetIsrGate(7);
     idtSetIsrGate(8);  idtSetIsrGate(9);  idtSetIsrGate(10); idtSetIsrGate(11);
     idtSetIsrGate(12); idtSetIsrGate(13); idtSetIsrGate(14); idtSetIsrGate(15);
@@ -135,7 +144,8 @@ void isrsInstall()
 }
 
 void dumpRegs(Regs *r)
-{   printf("\ngs:  %x ", r->gs);
+{
+    printf("\ngs:  %x ", r->gs);
     printf("fs:  %x ", r->fs);
     printf("es:  %x ", r->es);
     printf("ds:  %x\n", r->ds);
@@ -154,7 +164,8 @@ void dumpRegs(Regs *r)
 }
 
 void faultHandler(Regs *r)
-{   dumpRegs(r);
+{
+    dumpRegs(r);
     if (r->intNo < 32)
     {   printf("----\n%s\n", exceptionMessages[r->intNo]);
         _panic("unknown", 0);

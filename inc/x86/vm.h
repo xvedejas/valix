@@ -39,6 +39,7 @@ typedef struct object
         struct scope *scope;
         struct method *method;
         struct list *list;
+        String string;
     };
 } Object;
 
@@ -103,7 +104,8 @@ Object *objectClass,
        *consoleClass,
        *arrayClass,
        *trueSingleton,
-       *falseSingleton;
+       *falseSingleton,
+       *nilSingleton;
 
 /* Symbols */
 Object *newSymbol,     // new:
@@ -136,7 +138,9 @@ Object *newSymbol,     // new:
        *toDoSymbol,
        *executeSymbol,
        *trueSymbol,
-       *falseSymbol;
+       *falseSymbol,
+       *nilSymbol,
+       *isNilSymbol;
 
 /* Given an object and the symbol representing a message, send the
  * message with some number of arguments */
@@ -146,14 +150,14 @@ Object *newSymbol,     // new:
         doMethod(_self, bind(_self, messageName), ## args);\
     })\
 
-Object *doMethod(Object *self, Object *methodClosure, ...);
-Object *bind(Object *self, Object *messageName);
+extern Object *doMethod(Object *self, Object *closure, ...);
+extern Object *bind(Object *self, Object *messageName);
 
-void vmInstall();
-Object *processNew(Object *self);
-Object *processExecute(Object *self, u8 *headeredBytecode);
-Object *stringNew(Object *self, String value);
-void setVar(Object *currentScope, Object *symbol, Object *value);
-Object *new(Object *self);
+extern void vmInstall();
+extern Object *processNew(Object *self);
+extern Object *processExecute(Object *self, u8 *headeredBytecode);
+extern Object *stringNew(Object *self, String value);
+extern void setVar(Object *currentScope, Object *symbol, Object *value);
+extern Object *new(Object *self);
 
 #endif

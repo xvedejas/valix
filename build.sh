@@ -100,7 +100,7 @@ for FILE in ${CFILES}; do
     if [[ ${FILE} -nt ${OUTPUT} ]]; then
         notice "CC" "${FILE}"
         ${CC} ${AUTODEFINES} -nostdlib -nodefaultlibs -fno-stack-protector -fno-builtin \
-            -nostdinc -Werror -g ${CCARGS} ${ARCHARGS} -Wall ${INCLUDE} -c \
+            -O3 -nostdinc -Werror -g ${CCARGS} ${ARCHARGS} -Wall ${INCLUDE} -c \
             -o $OUTPUT $FILE || error "C compilation failed"
     fi
 done

@@ -63,7 +63,8 @@ Size matchKeyword(String source, Size start)
 {
     bool isAlnum;
     switch (source[start])
-    {   case '_': case 'a' ... 'z': case 'A' ... 'Z': case '0' ... '9':
+    {
+        case '_': case 'a' ... 'z': case 'A' ... 'Z': case '0' ... '9':
             isAlnum = true;
         break;
         default:
@@ -72,8 +73,10 @@ Size matchKeyword(String source, Size start)
 
     Size index;
     for (index = 1; true; index++)
-    {   switch (source[start + index])
-        {   case '_': case 'a' ... 'z': case 'A' ... 'Z': case '0' ... '9':
+    {
+        switch (source[start + index])
+        {
+            case '_': case 'a' ... 'z': case 'A' ... 'Z': case '0' ... '9':
                 if (isAlnum == false)
                     return index;
             break;
@@ -90,6 +93,16 @@ Size matchKeyword(String source, Size start)
     }
     lexerError("this should never be reached");
     return 0;
+}
+
+Size matchSymbol(String source, Size start)
+{
+    Size index = 0;
+    while (source[start + index] != ' ' &&
+           source[start + index] != '\n' &&
+           source[start + index] != '\t' &&
+           source[start + index] != '\0') index++;
+    return index;
 }
 
 Size matchNumber(String source, Size start)
@@ -227,7 +240,7 @@ Token *lex(String source, Token *lastToken)
             case '#': // #symbol
             {
                 i++;
-                Size length = matchKeyword(source, i);
+                Size length = matchSymbol(source, i);
                 String data = malloc(sizeof(char) * (length + 1));
                 strlcpy(data, source + i, length);
                 column += length;

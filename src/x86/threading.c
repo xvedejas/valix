@@ -60,6 +60,12 @@ void threadingInstall(void *stackPointer)
     threadingLockObj = 0;
 }
 
+inline void leaveThread() // doesn't end the thread, just gives up control temporarily
+{
+    ticksUntilSwitch = 0;
+    __asm__ __volatile__("int $0x20;");
+}
+
 void threadPromote(Thread *thread)
 {
     /* Move a thread up so it's next. This is desired for quick response for
@@ -144,7 +150,6 @@ void schedule()
          * action of unlocking a mutex most likely. */
         if (thread->status == sleeping)
         {
-            // printf("sleeping: %s now: %x overat: %x\n", thread->name, timerTicks, thread->sleepOverTime);
             if (timerTicks > thread->sleepOverTime)
             {
                 /* Wake up the thread */
@@ -203,7 +208,7 @@ void killThread(Thread *thread)
 {
     thread->status = zombie;
     if (thread == currentThread)
-        ticksUntilSwitch = 0;
+        leaveThread();
 }
 
 void sleep(u32 milliseconds)
@@ -211,9 +216,10 @@ void sleep(u32 milliseconds)
     threadingLock();
     currentThread->sleepOverTime = timerTicks + milliseconds * systemClockFreq / 1000;
     //printf("%x will sleep until %i\n", currentThread, currentThread->sleepOverTime);
+    currentThread->sleepOverTime -= 1;
     currentThread->status = sleeping;
-    ticksUntilSwitch = 0;
     threadingUnlock();
+    leaveThread();
     while (currentThread->status == sleeping);
 }
 

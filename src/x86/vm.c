@@ -73,7 +73,7 @@ Object *vtableLookup(Object *vtable, Object *symbol)
         if (methodClosure != NULL)
             return methodClosure;
     } while ((vtable = vtable->parent) != NULL);
-    return NULL;
+    return nilSingleton;
 }
 
 /* A basic constructor/instantiator */
@@ -176,7 +176,39 @@ Object *doMethod(Object *self, Object *closure, ...)
     return retval;
 }
 
-/* Find a method on an object by sending the lookup message */
+/* List of variable arguments messages that may accept the message */
+Object *variableAcceptors(Object *messageSymbol)
+{
+    String symbolMinusNArgs(String origMessage, Size n)
+    {
+        Size len = strlen(origMessage);
+        for (; n; n--)
+        {
+            len -= 2;
+            while (origMessage[len-1] != ':') len--;
+        }
+        String message = calloc(sizeof(char), (len + 3));
+        strncat(message, origMessage, len);
+        strcat(message, "...");
+        return message;
+    }
+    Object *list = listNew(listClass);
+    Size i;
+    Size colonCount = chrcount(messageSymbol->string, ':');
+    for (i = 0; i < colonCount; i++)
+    {
+        String symbol = symbolMinusNArgs(messageSymbol->string, i);
+        listAdd(list, symbolNew(symbolClass, symbol));
+    }
+    return list;
+}
+
+/* Find a method on an object by sending the lookup message.
+ * 
+ * If the message ends in "...", it takes additional keyword arguments
+ * in a dictionary.
+ * 
+ *  */
 Object *bind(Object *self, Object *messageName)
 {
     assert(messageName != NULL, "VM Error");
@@ -186,7 +218,20 @@ Object *bind(Object *self, Object *messageName)
     else
         methodClosure = send(self->vtable, lookupSymbol, messageName);
     if (methodClosure == NULL)
+    {
+        /* try to lookup messageName - arg + "..." */
+        Object *list = variableAcceptors(messageName);
+        Size i;
+        for (i = 0; i < list->list->items; i++)
+        {
+            Object *variableMessage = list->list->array[i];
+            methodClosure = send(self->vtable, lookupSymbol, variableMessage);
+            if (methodClosure != NULL)
+                return methodClosure;
+        }
+        /* failed, so send doesNotUnderstand */
         send(self, doesNotUnderstandSymbol, messageName);
+    }
     return methodClosure;
 }
 
@@ -225,8 +270,36 @@ Object *closureNew(Object *self, Object *bytearray, Object *scope)
     return closure;
 }
 
-void symbolSetup()
+Object *nilIsNil(Object *self)
 {
+    return trueSingleton;
+}
+
+Object *isNil(Object *self)
+{
+    return falseSingleton;
+}
+
+Object *retNil(Object *self)
+{
+    return nilSingleton;
+}
+
+void bootstrap()
+{
+    /* Initialize vtablevt, objectvt, and objectClass */
+    vtablevt = vtableDelegated(NULL);
+    vtablevt->vtable = vtablevt;
+
+    Object *objectvt = vtableDelegated(NULL);
+    objectvt->vtable = vtablevt;
+    vtablevt->parent = objectvt;
+    objectClass = vtableAllocate(objectvt);
+
+    /* Setup symbolClass, closureClass, and lookup/addmethod methods */
+    symbolClass = subclass(objectClass);
+    globalSymbolTable = mapNew();
+    
     lengthSymbol            = symbolNew(symbolClass, "length");
     newSymbol               = symbolNew(symbolClass, "new:");
     lookupSymbol            = symbolNew(symbolClass, "lookup:");
@@ -257,23 +330,14 @@ void symbolSetup()
     toDoSymbol              = symbolNew(symbolClass, "to:do:");
     trueSymbol              = symbolNew(symbolClass, "true");
     falseSymbol             = symbolNew(symbolClass, "false");
-}
-
-void bootstrap()
-{
-    /* Initialize vtablevt, objectvt, and objectClass */
-    vtablevt = vtableDelegated(NULL);
-    vtablevt->vtable = vtablevt;
-
-    Object *objectvt = vtableDelegated(NULL);
-    objectvt->vtable = vtablevt;
-    vtablevt->parent = objectvt;
-    objectClass = vtableAllocate(objectvt);
-
-    /* Setup symbolClass, closureClass, and lookup/addmethod methods */
-    symbolClass = subclass(objectClass);
-    globalSymbolTable = mapNew();
-    symbolSetup();
+    nilSymbol               = symbolNew(symbolClass, "nil");
+    isNilSymbol             = symbolNew(symbolClass, "isNil");
+    
+    vtableAddMethod(objectvt, isNilSymbol, methodNew(isNil, 0));
+    
+    nilSingleton = subclass(objectClass);
+    vtableAddMethod(nilSingleton->vtable, isNilSymbol, methodNew(nilIsNil, 0));
+    vtableAddMethod(nilSingleton->vtable, doesNotUnderstandSymbol, methodNew(retNil, 1));
     
     closureClass = subclass(objectClass);
 
@@ -364,25 +428,29 @@ Object *numberToDo(Object *self, Object *end, Object *closure)
 
 Object *print(Object *console, Object *argument)
 {
-    if (argument == NULL) return NULL;
+    if (argument == nilSingleton)
+    {
+        printf("nil\n");
+        return argument;
+    }
     Object *string = send(argument, asStringSymbol);
     printf("%s\n", string->data);
-    return NULL;
+    return nilSingleton;
 }
 
 Object *closureCallZero(Object *closure)
 {
-    return doMethod(NULL, closure);
+    return doMethod(nilSingleton, closure);
 }
 
 Object *closureCallOne(Object *closure, Object *arg)
 {
-    return doMethod(NULL, closure, arg);
+    return doMethod(nilSingleton, closure, arg);
 }
 
 Object *closureCallTwo(Object *closure, Object *one, Object *two)
 {
-    return doMethod(NULL, closure, one, two);
+    return doMethod(nilSingleton, closure, one, two);
 }
 
 Object *numberAsString(Object *self)
@@ -411,7 +479,7 @@ Object *boolNew(Object *self, bool value)
 
 Object *boolIfTrue(Object *self, Object *closure)
 {
-    Object *value = NULL;
+    Object *value = nilSingleton;
     if (self->data)
         value = send(closure, applySymbol);
     return value;
@@ -419,7 +487,7 @@ Object *boolIfTrue(Object *self, Object *closure)
 
 Object *boolIfFalse(Object *self, Object *closure)
 {
-    Object *value = NULL;
+    Object *value = nilSingleton;
     if (!self->data)
         value = send(closure, applySymbol);
     return value;
@@ -427,7 +495,7 @@ Object *boolIfFalse(Object *self, Object *closure)
 
 Object *boolIfTrueFalse(Object *self, Object *closureOne, Object *closureTwo)
 {
-    Object *value = NULL;
+    Object *value = nilSingleton;
     if (self->data)
         value = send(closureOne, applySymbol);
     else
@@ -497,7 +565,21 @@ Object *arrayAt(Object *self, Object *index)
 Object *arrayAtPut(Object *self, Object *index, Object *value)
 {
     ((Object**)self->data)[((Size)index->data)] = value;
-    return NULL;
+    return nilSingleton;
+}
+
+Object *arrayAsString(Object *self)
+{
+    StringBuilder *s = stringBuilderNew("[");
+    Size i;
+    for (i = 0; i < self->list->items; i++)
+    {
+        stringBuilderAppend(s, send(self->list->array[i], asStringSymbol)->data);
+        if (i + 1 < self->list->items)
+            stringBuilderAppend(s, ", ");
+    }
+    stringBuilderAppendChar(s, ']');
+    return stringNew(stringClass, stringBuilderToString(s));
 }
 
 Object *numberType(Object *self)
@@ -547,7 +629,7 @@ Object *processNew(Object *self)
 Object *processExit(Object *self)
 {
    /// todo
-   return NULL; 
+   return nilSingleton; 
 }
 
 Object *lookupVar(Object *scope, Object *symbol)
@@ -557,7 +639,7 @@ Object *lookupVar(Object *scope, Object *symbol)
         value = mapGetVal(scope->scope->vars, symbol->data);
     while (value == NULL && (scope = scope->scope->parent) != NULL);
     if (value == NULL)
-        runtimeError("Undefined variable %s\n", symbol->data);
+        return nilSingleton;
     return value;
 }
 
@@ -726,7 +808,7 @@ Object *interpret(Object *scope, ...)
                 if (vStack->entries)
                     return stackPop(vStack);
                 else
-                    return NULL;
+                    return nilSingleton;
             } break;
             default:
             {
@@ -734,7 +816,7 @@ Object *interpret(Object *scope, ...)
             } break;
         }
     }
-    return NULL;
+    return nilSingleton;
 }
 
 /* Bytecode is not null-terminated! it is terminated with EOS and contains
@@ -808,6 +890,9 @@ void initialize()
     setVar(globalScope, trueSymbol, trueSingleton);
     setVar(globalScope, falseSymbol, falseSingleton);
     
+    // Nil //
+    setVar(globalScope, nilSymbol, nilSingleton);
+    
     // Number //
     numberClass = subclass(objectClass);
     send(numberClass->vtable, addMethodSymbol, newSymbol, methodNew(numberNew, 1));
@@ -843,6 +928,7 @@ void initialize()
     send(symbolClass->vtable, addMethodSymbol, newSymbol, methodNew(symbolNew, 1));
     send(symbolClass->vtable, addMethodSymbol, lengthSymbol, methodNew(stringLength, 0));
     send(symbolClass->vtable, addMethodSymbol, typeSymbol, methodNew(symbolType, 0));
+    send(symbolClass->vtable, addMethodSymbol, asStringSymbol, methodNew(stringAsString, 0));
     
     // Closure //
     send(closureClass->vtable, addMethodSymbol, applySymbol, methodNew(closureCallZero, 0));
@@ -860,6 +946,7 @@ void initialize()
     send(arrayClass->vtable, addMethodSymbol, newSymbol, methodNew(arrayNew, 1));
     send(arrayClass->vtable, addMethodSymbol, atSymbol, methodNew(arrayAt, 1));
     send(arrayClass->vtable, addMethodSymbol, atPutSymbol, methodNew(arrayAtPut, 2));
+    send(arrayClass->vtable, addMethodSymbol, asStringSymbol, methodNew(arrayAsString, 0));
     
     // List //
     listClass = subclass(objectClass);

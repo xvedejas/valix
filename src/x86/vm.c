@@ -760,11 +760,7 @@ Object *interpret(Object *scope, ...)
                 Object *args[8]; // argc limit is 8
                 Size i;
                 for (i = 0; i < argc; i++)
-                {
                     args[i] = stackPop(vStack);
-                    if (args[i] == NULL)
-                        runtimeError("Null argument");
-                }
                 // now we can get the receiver
                 Object *receiver = stackPop(vStack);
                 Object *methodClosure = bind(receiver, methodSymbol);

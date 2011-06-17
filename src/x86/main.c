@@ -206,7 +206,7 @@ ThreadFunc langDemo()
 {
     Object *process = processNew(processClass);
     String helpString =
-    " ----------------------------------------- \n"
+    " ---------------------------------------- \n"
     "| Basic Values                           |\n"
     "|   \"abc\"         // String              |\n"
     "|   1234            // Number            |\n"
@@ -239,7 +239,7 @@ ThreadFunc langDemo()
     "|   {a < 20} whileTrue:                  |\n"
     "|   { Console print: \"Valix Rocks!\".     |\n"
     "|     a = a + 1 }                        |\n"
-    " ----------------------------------------- \n";
+    " ---------------------------------------- \n";
     setVar(process->data, send(symbolClass, newSymbol, "help"), stringNew(stringClass, helpString));
     for (;;)
     {
@@ -344,7 +344,7 @@ void kmain(u32 magic, MultibootStructure *multiboot, void *stackPointer)
     irqInstall();
     timerInstall();
     debugInstall();
-    printf("Valix OS Alpha - Built on " __DATE__ " " __TIME__
+    printf("Valix OS Pre-Alpha - Built on " __DATE__ " " __TIME__
         "\nCompiled with gcc " __VERSION__ "...\n");
     acpiInstall();
     videoInstall(multiboot);
@@ -353,10 +353,10 @@ void kmain(u32 magic, MultibootStructure *multiboot, void *stackPointer)
     vmInstall(); // must be after mmInstall
     keyboardInstall(); // must be after mmInstall, threadingInstall
     asm volatile("sti;");
-    printf("Welcome to Valix! Try typing Console print: (5 * 6 / 3 + 10) or \"help\".\n\n");
+    printf("Welcome to Valix Pre-Alpha 1. Type \"help\" for usage information.\n\n");
     
-    //spawn("langDemo", langDemo);
-    spawn("langTest", langTest);
+    spawn("langDemo", langDemo);
+    //spawn("langTest", langTest);
     
     //pciinfo();
     for (;;);

@@ -36,17 +36,14 @@ u32 fontX,
 void videoInstall(MultibootStructure *multiboot)
 {
     // assert the presence of vbe info
-    //assert(multiboot->flags & bit(12), "Grub provides no framebuffer info");
-    //assert(multiboot->framebufferType == 1, "Grub doesn't provide RGB video");
-    
-    /// this stuff is hard-coded until the grub reporting stuff works
-    /// correctly again...
+    assert(multiboot->flags & bit(12), "Grub provides no framebuffer info");
+    assert(multiboot->framebufferType == 1, "Grub doesn't provide RGB video");
     
     framebuffer.mem = (u8*)(u32)multiboot->framebufferAddr;
-    framebuffer.bpp = 24;//multiboot->framebufferBpp;
-    framebuffer.width = 800;//multiboot->framebufferWidth;
-    framebuffer.height = 600;//multiboot->framebufferHeight;
-
+    framebuffer.bpp = multiboot->framebufferBpp;
+    framebuffer.width = multiboot->framebufferWidth;
+    framebuffer.height = multiboot->framebufferHeight;
+    
     /* Top-left corners of first character */
     fontX = 1,
     fontY = 1;
@@ -68,7 +65,13 @@ inline u32 getColor(Buffer buffer, u32 pos)
 		case 24:
 		
 		color |= buffer.mem[pos + 2] << 16;
+        
+        case 16:
+        
 		color |= buffer.mem[pos + 1] << 8;
+        
+        case 8:
+        
 		color |= buffer.mem[pos + 0];
 		
 		break;
@@ -93,13 +96,19 @@ inline void setColor(Buffer buffer, u32 pos, u32 color)
     {
 		case 32:
 		
-		buffer.mem[pos + 3] = alpha(newColor);
+		buffer.mem[pos + 3] = newColor >> 24;
 		
 		case 24:
 		
-		buffer.mem[pos + 2] = blue(newColor);
-		buffer.mem[pos + 1] = green(newColor);
-		buffer.mem[pos + 0] = red(newColor);
+		buffer.mem[pos + 2] = (newColor >> 16) & 0xFF;
+        
+        case 16:
+        
+		buffer.mem[pos + 1] = (newColor >> 8) & 0xFF;
+        
+        case 8:
+        
+		buffer.mem[pos + 0] = newColor & 0xFF;
 		
 		break;
 		default:

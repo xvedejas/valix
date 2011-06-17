@@ -29,7 +29,7 @@ typedef struct
     u32 type;   // if (type == 1), ram is free
 } MMapField;
 
-typedef struct
+struct multibootStructure
 {
     u32 flags;              // 0
     u32 memLower;           // 4
@@ -54,28 +54,31 @@ typedef struct
     u16 vbeInterfaceLen;    // 86
     u64 framebufferAddr;    // 88
     u32 framebufferPitch;   // 96
-    u32 framebufferWidth;   // 100
-    u32 framebufferHeight;  // 104
-    u8 framebufferBpp;      // 108
-    u8 framebufferType;     // 109
+    u32 unknown;            // 100
+    u32 framebufferWidth;   // 104
+    u32 framebufferHeight;  // 108
+    u8 framebufferBpp;      // 112
+    u8 framebufferType;     // 113
     union
     {
         struct
         {
-            u32 framebuffer_palette_addr;
-            u16 framebuffer_palette_num_colors;
+            u32 framebufferPaletteAddr;
+            u16 framebufferPaletteNumColors;
         };
         struct
         {
-            u8 framebuffer_red_field_position;
-            u8 framebuffer_red_mask_size;
-            u8 framebuffer_green_field_position;
-            u8 framebuffer_green_mask_size;
-            u8 framebuffer_blue_field_position;
-            u8 framebuffer_blue_mask_size;
+            u8 framebufferRedFieldPosition;
+            u8 framebufferRedMaskSize;
+            u8 framebufferGreenFieldPosition;
+            u8 framebufferGreenMaskSize;
+            u8 framebufferBlueFieldPosition;
+            u8 framebufferBlueMaskSize;
         };
-    } colorInfo;
-} MultibootStructure;
+    };
+} __attribute__((__packed__));
+
+typedef struct multibootStructure MultibootStructure;
 
 typedef struct memoryHeader
 {

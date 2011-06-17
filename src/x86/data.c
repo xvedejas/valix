@@ -73,9 +73,7 @@ u32 getStringHash(String string)
 void _mapExpand(Map *map);
 void _mapDelAssoc(Association *assoc, Association *previous);
 void _mapMoveAtoB(Map *map);
-bool _mapKeysEquivalent(void *key1, void *key2, MapKeyType type1, MapKeyType type2);
 Association *_mapFindBucket(Map *map, void *key, MapKeyType type, bool *inTableA, Association **previous);
-void _mapSet(Map *map, void *key, void *value, MapKeyType type, bool incrementallyResize);
 
 // The next size to choose when the map must grow
 #define newMapSize(oldSize) ((oldSize << 1) + 1)
@@ -166,26 +164,11 @@ void _mapMoveAtoB(Map *map)
     _mapSet(map, key, value, type, false);
 }
 
-bool _mapKeysEquivalent(void *key1, void *key2, MapKeyType type1, MapKeyType type2)
+inline bool _mapKeysEquivalent(void *key1, void *key2, MapKeyType type1, MapKeyType type2)
 {
-    switch (type1)
-    {
-        case nullKey:
-            panic("Map error: null key");
-        break;
-        case stringKey:
-            if (type2 == stringKey)
-                return (strcmp(key1, key2) == 0);
-        break;
-        case valueKey:
-            if (type2 == valueKey)
-                return key1 == key2;
-        break;
-        default:
-            panic("Map error");
-        break;
-    }
-    return false;
+    return type1 == stringKey ?
+        type2 == stringKey && strcmp(key1, key2) == 0
+        : type2 == valueKey && key1 == key2;
 }
 
 /* Return the exact association whose key matches. "hashtable" should be a reference argument */
@@ -334,12 +317,6 @@ void _mapSet(Map *map, void *key, void *value, MapKeyType type, bool incremental
     }
 }
 
-/* Use this function to both add keys to the map or change their value */
-void mapSet(Map *map, void *key, void *value, MapKeyType type)
-{
-    _mapSet(map, key, value, type, true);
-}
-
 /* Removes a key; Returns true or false depending on success */
 bool mapRemove(Map *map, void *key, MapKeyType type)
 {
@@ -485,7 +462,7 @@ void stackPush(Stack *stack, void *element)
 void *stackPop(Stack *stack)
 {
     if (stack->entries == 0) // empty
-        panic("stack underflow");
+        return NULL;
     stack->entries--;
     void *value = stack->bottom[stack->entries];
     return value;

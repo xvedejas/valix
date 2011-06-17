@@ -88,10 +88,10 @@ typedef struct memoryHeader
     Size start[0]; // use &start to get the memory directly after the header
 } MemoryHeader;
 
-#ifdef __release
-#define sweep() _sweep();
+#ifdef __release__
+#define sweep() {}
 #else
-#define sweep()
+#define sweep() _sweep()
 #endif
 
 extern void _sweep();

@@ -263,7 +263,7 @@ ThreadFunc langTest()
     String input =
     "primes = List new.\n"
     "primes add: 2.\n"
-    "3 to: 100 do:\n"
+    "3 to: 1000 do:\n"
     "{ number |\n"
     "    isPrime = true.\n"
     "    primes do:\n"
@@ -275,7 +275,13 @@ ThreadFunc langTest()
     "}.\n"
     "Console print: primes\n";
     printf("Testing input:\n\n%s\n\n", input);
-    processExecute(processNew(processClass), compile(input));
+    Object *process = processNew(processClass);
+    umax startTime = time();
+    u8 *bytecode = compile(input);
+    umax endCompileTime = time();
+    printf("Time to compile: %i ticks.\n", endCompileTime - startTime);
+    processExecute(process, bytecode);
+    printf("Time to run: %i ticks.\n", time() - endCompileTime);
     //printf("Done. mem use: %i\n", memUsed() - initialMemUse);
 }
 
@@ -349,8 +355,8 @@ void kmain(u32 magic, MultibootStructure *multiboot, void *stackPointer)
     asm volatile("sti;");
     printf("Welcome to Valix! Try typing Console print: (5 * 6 / 3 + 10) or \"help\".\n\n");
     
-    spawn("langDemo", langDemo);
-    //spawn("langTest", langTest);
+    //spawn("langDemo", langDemo);
+    spawn("langTest", langTest);
     
     //pciinfo();
     for (;;);

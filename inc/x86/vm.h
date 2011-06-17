@@ -104,8 +104,7 @@ Object *objectClass,
        *consoleClass,
        *arrayClass,
        *trueSingleton,
-       *falseSingleton,
-       *nilSingleton;
+       *falseSingleton;
 
 /* Symbols */
 Object *newSymbol,     // new:
@@ -143,15 +142,22 @@ Object *newSymbol,     // new:
        *isNilSymbol;
 
 /* Given an object and the symbol representing a message, send the
- * message with some number of arguments */
+ * message with some number of arguments. The send macro memoizes the
+ * previous vtable and associated closure returned from bind.
+ */
 #define send(self, messageName, args...) \
-    ({\
-        Object *_self = self;\
-        doMethod(_self, bind(_self, messageName), ## args);\
+    ({                                   \
+        Object *_self = self;            \
+        Object *thisVT = _self->vtable;  \
+        static Object *prevVT = NULL;    \
+        static Object *method = NULL;    \
+        doMethod(_self,                  \
+            (thisVT == prevVT ? method : \
+            (prevVT = thisVT, method = bind(_self, messageName))), ##args);\
     })\
 
-extern Object *doMethod(Object *self, Object *closure, ...);
-extern Object *bind(Object *self, Object *messageName);
+extern inline Object *doMethod(Object *self, Object *closure, ...);
+extern inline Object *bind(Object *self, Object *messageName);
 
 extern void vmInstall();
 extern Object *processNew(Object *self);

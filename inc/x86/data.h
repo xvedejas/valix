@@ -28,8 +28,8 @@
 typedef enum
 {
     nullKey = 0,
-    stringKey,
-    valueKey
+    stringKey = 1,
+    valueKey = 2
 } MapKeyType;
 
 typedef struct assoc
@@ -54,7 +54,9 @@ Map *mapNew();
 Map *mapNewSize(Size startingSize);
 void *mapGet(Map *map, void *key, MapKeyType type);
 #define mapGetVal(map, key) mapGet(map, (void*)key, valueKey)
-void mapSet(Map *map, void *key, void *value, MapKeyType type);
+void _mapSet(Map *map, void *key, void *value, MapKeyType type, bool incrementallyResize);
+/* Use this function to both add keys to the map or change their value */
+#define mapSet(map, key, value, type) _mapSet(map, key, value, type, true)
 #define mapSetVal(map, key, value) mapSet(map, (void*)key, (void*)value, valueKey)
 bool mapRemove(Map *map, void *key, MapKeyType type);
 #define mapRemoveVal(map, key) mapRemove(map, (void*)key, valueKey)

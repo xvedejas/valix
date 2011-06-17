@@ -73,7 +73,7 @@ Object *vtableLookup(Object *vtable, Object *symbol)
         if (methodClosure != NULL)
             return methodClosure;
     } while ((vtable = vtable->parent) != NULL);
-    return nilSingleton;
+    return NULL;
 }
 
 /* A basic constructor/instantiator */
@@ -99,9 +99,8 @@ Object *scopeNew(Object *parent, Object *closure, Size locals)
 }
 
 Object *interpret(Object *scope, ...);
-Object *bind(Object *self, Object *messageName);
 
-Object *doMethod(Object *self, Object *closure, ...)
+inline Object *doMethod(Object *self, Object *closure, ...)
 {
     Method *method = closure->data;
     va_list argptr;
@@ -209,9 +208,15 @@ Object *variableAcceptors(Object *messageSymbol)
  * in a dictionary.
  * 
  *  */
-Object *bind(Object *self, Object *messageName)
+inline Object *bind(Object *self, Object *messageName)
 {
-    assert(messageName != NULL, "VM Error");
+    if (unlikely(self == NULL))
+    {
+        if (messageName == isNilSymbol)
+            return trueSingleton;
+        return self;
+    }
+    assert(messageName != NULL, "VM Error, null message");
     Object *methodClosure;
     if (messageName == lookupSymbol && self == vtablevt)
         methodClosure = vtableLookup(self->vtable, lookupSymbol);
@@ -230,7 +235,7 @@ Object *bind(Object *self, Object *messageName)
                 return methodClosure;
         }
         /* failed, so send doesNotUnderstand */
-        send(self, doesNotUnderstandSymbol, messageName);
+        return send(self, doesNotUnderstandSymbol, messageName);
     }
     return methodClosure;
 }
@@ -242,10 +247,11 @@ Object *subclass(Object *self)
     return subclass;
 }
 
-void doesNotUnderstand(Object *self, Object *symbol)
+Object *doesNotUnderstand(Object *self, Object *symbol)
 {
     runtimeError("%s at %x does not understand message \"%s\" %x",
         send(self, typeSymbol)->data, self, symbol->data, symbol);
+    return NULL;
 }
 
 /* Creates an internal function method closure */
@@ -270,11 +276,6 @@ Object *closureNew(Object *self, Object *bytearray, Object *scope)
     return closure;
 }
 
-Object *nilIsNil(Object *self)
-{
-    return trueSingleton;
-}
-
 Object *isNil(Object *self)
 {
     return falseSingleton;
@@ -282,7 +283,7 @@ Object *isNil(Object *self)
 
 Object *retNil(Object *self)
 {
-    return nilSingleton;
+    return NULL;
 }
 
 void bootstrap()
@@ -334,10 +335,6 @@ void bootstrap()
     isNilSymbol             = symbolNew(symbolClass, "isNil");
     
     vtableAddMethod(objectvt, isNilSymbol, methodNew(isNil, 0));
-    
-    nilSingleton = subclass(objectClass);
-    vtableAddMethod(nilSingleton->vtable, isNilSymbol, methodNew(nilIsNil, 0));
-    vtableAddMethod(nilSingleton->vtable, doesNotUnderstandSymbol, methodNew(retNil, 1));
     
     closureClass = subclass(objectClass);
 
@@ -428,29 +425,29 @@ Object *numberToDo(Object *self, Object *end, Object *closure)
 
 Object *print(Object *console, Object *argument)
 {
-    if (argument == nilSingleton)
+    if (argument == NULL)
     {
         printf("nil\n");
         return argument;
     }
     Object *string = send(argument, asStringSymbol);
     printf("%s\n", string->data);
-    return nilSingleton;
+    return NULL;
 }
 
 Object *closureCallZero(Object *closure)
 {
-    return doMethod(nilSingleton, closure);
+    return doMethod(NULL, closure);
 }
 
 Object *closureCallOne(Object *closure, Object *arg)
 {
-    return doMethod(nilSingleton, closure, arg);
+    return doMethod(NULL, closure, arg);
 }
 
 Object *closureCallTwo(Object *closure, Object *one, Object *two)
 {
-    return doMethod(nilSingleton, closure, one, two);
+    return doMethod(NULL, closure, one, two);
 }
 
 Object *numberAsString(Object *self)
@@ -479,7 +476,7 @@ Object *boolNew(Object *self, bool value)
 
 Object *boolIfTrue(Object *self, Object *closure)
 {
-    Object *value = nilSingleton;
+    Object *value = NULL;
     if (self->data)
         value = send(closure, applySymbol);
     return value;
@@ -487,7 +484,7 @@ Object *boolIfTrue(Object *self, Object *closure)
 
 Object *boolIfFalse(Object *self, Object *closure)
 {
-    Object *value = nilSingleton;
+    Object *value = NULL;
     if (!self->data)
         value = send(closure, applySymbol);
     return value;
@@ -495,7 +492,7 @@ Object *boolIfFalse(Object *self, Object *closure)
 
 Object *boolIfTrueFalse(Object *self, Object *closureOne, Object *closureTwo)
 {
-    Object *value = nilSingleton;
+    Object *value = NULL;
     if (self->data)
         value = send(closureOne, applySymbol);
     else
@@ -565,7 +562,7 @@ Object *arrayAt(Object *self, Object *index)
 Object *arrayAtPut(Object *self, Object *index, Object *value)
 {
     ((Object**)self->data)[((Size)index->data)] = value;
-    return nilSingleton;
+    return NULL;
 }
 
 Object *arrayAsString(Object *self)
@@ -629,7 +626,7 @@ Object *processNew(Object *self)
 Object *processExit(Object *self)
 {
    /// todo
-   return nilSingleton; 
+   return NULL; 
 }
 
 Object *lookupVar(Object *scope, Object *symbol)
@@ -639,7 +636,7 @@ Object *lookupVar(Object *scope, Object *symbol)
         value = mapGetVal(scope->scope->vars, symbol->data);
     while (value == NULL && (scope = scope->scope->parent) != NULL);
     if (value == NULL)
-        return nilSingleton;
+        return NULL;
     return value;
 }
 
@@ -805,10 +802,7 @@ Object *interpret(Object *scope, ...)
             } break;
             case endBC:
             {
-                if (vStack->entries)
-                    return stackPop(vStack);
-                else
-                    return nilSingleton;
+                return stackPop(vStack);
             } break;
             default:
             {
@@ -816,7 +810,7 @@ Object *interpret(Object *scope, ...)
             } break;
         }
     }
-    return nilSingleton;
+    return NULL;
 }
 
 /* Bytecode is not null-terminated! it is terminated with EOS and contains
@@ -891,7 +885,7 @@ void initialize()
     setVar(globalScope, falseSymbol, falseSingleton);
     
     // Nil //
-    setVar(globalScope, nilSymbol, nilSingleton);
+    setVar(globalScope, nilSymbol, NULL);
     
     // Number //
     numberClass = subclass(objectClass);

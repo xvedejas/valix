@@ -24,7 +24,7 @@
 #define likely(x)       __builtin_expect((x), 1)
 #define unlikely(x)     __builtin_expect((x), 0)
 
-#define __release__
+#define __release__ true
 
 #define u8max (0xFF)
 #define u16max (0xFFFF)

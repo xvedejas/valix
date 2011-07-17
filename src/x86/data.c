@@ -135,7 +135,7 @@ void _mapMoveAtoB(Map *map)
     assert(map->B != NULL, "Map error");
     /* move any one item from hashtable A to hashtable B by finding the first
      * assocation in the table and iterating */
-    Association *assoc;
+    Association *assoc = NULL;
     int i;
     for (i = 0; i < map->capacityA; i++)
     {
@@ -174,7 +174,7 @@ inline bool _mapKeysEquivalent(void *key1, void *key2, MapKeyType type1, MapKeyT
 /* Return the exact association whose key matches. "hashtable" should be a reference argument */
 Association *_mapFindBucket(Map *map, void *key, MapKeyType type, bool *inTableA, Association **previous)
 {
-    Size hash;
+    Size hash = 0;
     switch (type)
     {
         case nullKey:
@@ -244,7 +244,7 @@ void _mapSet(Map *map, void *key, void *value, MapKeyType type, bool incremental
     /* Gives the first bucket in the hashtable according to the hash of the key.
      * We want to choose table B if it exists to add to, since it is the larger
      * table available. */
-    Size hash;
+    Size hash = 0;
     switch (type)
     {
         case nullKey:
@@ -344,6 +344,12 @@ Map *mapNew()
 Map *mapNewSize(Size startingSize)
 {
     Map *map = malloc(sizeof(Map));
+    return mapInit(map, startingSize);
+}
+
+Map *mapInit(Map *map, Size startingSize)
+{
+    assert(startingSize > 0, "Map cannot have a starting size of 0");
     map->entriesA = 0;
     map->entriesB = 0;
     map->capacityA = startingSize;
@@ -436,8 +442,8 @@ bool isStringInterned(InternTable *table, String string)
 // Stack Implementation //
 //////////////////////////
 
-// Grow by 200% each time
-#define stackNextSize(currentSize) (currentSize + (currentSize << 1))
+// Grow to about 150% each time
+#define stackNextSize(currentSize) (currentSize + (currentSize >> 1) + 1)
 
 Stack *stackNew()
 {
@@ -454,6 +460,7 @@ void stackPush(Stack *stack, void *element)
     stack->entries++;
     if (stack->entries >= stack->capacity) // embiggen, it's full
     {
+        printf("previous %x next %x\n", stack->capacity, stackNextSize(stack->capacity));
         stack->capacity = stackNextSize(stack->capacity);
         stack->bottom = realloc(stack->bottom, stack->capacity);
     }
@@ -474,19 +481,23 @@ void stackDel(Stack *stack)
     free(stack);
 }
 
-void *stackTop(Stack *stack)
-{
-    if (stack->entries == 0) // empty
-        panic("stack underflow");
-    return stack->bottom[stack->entries-1];
-}
-
 void stackDebug(Stack *stack)
 {
     printf("Begin Stack Debug:\n");
     Size i;
     for (i = 0; i < stack->entries; i++)
         printf("  Item value %x\n", stack->bottom[i]);
+}
+
+void **stackArgs(Stack *stack, Size count)
+{
+    return stack->bottom + stack->entries - (count + 1);
+}
+
+/* Get value n from top */
+void *stackGet(Stack *stack, Size index)
+{
+    return stack->bottom[stack->entries - (index + 1)];
 }
 
 //////////////////////////////////
@@ -504,11 +515,11 @@ StringBuilder *stringBuilderNew(String initial)
     else
     {
         sb->size = strlen(initial);
-        sb->capacity = sb->size * 2;
+        sb->capacity = sb->size * 2 + 1;
     }
     sb->s = malloc(sb->capacity * sizeof(char));
     if (initial != NULL)
-        memcpy(sb->s, initial, sb->size);
+        strncpy(sb->s, initial, sb->size);
     return sb;
 }
 
@@ -520,24 +531,12 @@ void stringBuilderDel(StringBuilder *sb)
 
 void stringBuilderAppend(StringBuilder *sb, String s)
 {
-    Size len = strlen(s);
-    if (sb->size + len >= sb->capacity)
-    {
-        sb->capacity = (sb->size + len) * 2;
-        sb->s = realloc(sb->s, sizeof(char) * sb->capacity);
-    }
-    memcpy(sb->s + sb->size, s, len);
-    sb->size += len;
+    stringBuilderAppendN(sb, s, strlen(s));
 }
 
 void stringBuilderAppendChar(StringBuilder *sb, char c)
 {
-    if (sb->size + 1 >= sb->capacity)
-    {
-        sb->capacity = (sb->size + 1) * 2;
-        sb->s = realloc(sb->s, sizeof(char) * sb->capacity);
-    }
-    sb->s[sb->size++] = c;
+    stringBuilderAppendN(sb, &c, 1);
 }
 
 void stringBuilderAppendN(StringBuilder *sb, String s, Size len)
@@ -554,7 +553,7 @@ void stringBuilderAppendN(StringBuilder *sb, String s, Size len)
 /* Delete the string builder; get a string result */
 String stringBuilderToString(StringBuilder *sb)
 {
-    sb->s[sb->size++] = '\0';
+    sb->s[sb->size] = '\0';
     String s = sb->s;
     free(sb);
     return s;
@@ -588,4 +587,132 @@ extern void *dequeue(Queue *queue)
         return NULL;
     queue->end = (queue->end - 1) % queue->size;
     return queue->array[queue->end];
+}
+
+//////////////////////////////
+// SymbolMap Implementation //
+//////////////////////////////
+
+/* The SymbolMap datatype is a specialized associative array. Its keys are
+ * pointer values. It has a static size with an expected static number of
+ * entries. The size should be at least 125% of the number of entries to avoid
+ * too many collisions. Currently the size is set at 150%. */
+
+inline Size symbolHash(void *key, Size tableSize)
+{
+    return (((Size)key >> 2) ^ ((Size)key << 2)) % tableSize;
+}
+
+SymbolMap *symbolMapNew(Size size, void **keys, void **values)
+{
+    Size buckets = (size + (size >> 1)) + 1;
+    SymbolMap *symbolMap = malloc(sizeof(SymbolMap) + buckets * 2 * sizeof(void*));
+    memsetd(&symbolMap->hashTable, 0, buckets * 2);
+    symbolMap->buckets = buckets;
+    register Size i = size;
+    while (i --> 0)
+    {
+        register Size hashIndex = symbolHash(keys[i], buckets);
+        register Size *hashTable = symbolMap->hashTable;
+        while (hashTable[hashIndex * 2] != 0)
+        {
+            if (hashIndex == 0)
+                hashIndex = size - 1;
+            else
+                hashIndex--;
+        }
+        hashTable[hashIndex * 2] = (Size)keys[i];
+        hashTable[hashIndex * 2 + 1] = (Size)values[i];
+    }
+    return symbolMap;
+}
+
+void symbolMapDebug(SymbolMap *map)
+{
+    Size i;
+    for (i = 0; i < map->buckets; i++)
+    {
+        printf("Key: %x ", map->hashTable[i * 2]);
+        printf("Value: %x\n", map->hashTable[i * 2 + 1]);
+    }
+}
+
+#define _symbolMapGetLoop() ({\
+    register Size existingKey = (Size)hashTable[hashIndex];\
+    if (existingKey == (Size)key)\
+        return (void*)hashTable[hashIndex + 1];\
+    if (existingKey == 0)\
+        return NULL;\
+    if (hashIndex == 0)\
+        hashIndex = (buckets - 1) * 2;\
+    else\
+        hashIndex -= 2; })
+
+void *symbolMapGet(SymbolMap *map, void *key)
+{
+    Size buckets = map->buckets;
+    register Size hashIndex = symbolHash(key, buckets) * 2;
+    register Size *hashTable = map->hashTable;
+    while (true)
+    {
+        _symbolMapGetLoop();
+        _symbolMapGetLoop();
+        _symbolMapGetLoop();
+        _symbolMapGetLoop();
+    }
+    return NULL;
+}
+
+#define _symbolMapHasLoop() ({\
+    register Size existingKey = (Size)hashTable[hashIndex];\
+    if (existingKey == (Size)key)\
+        return true;\
+    if (existingKey == 0)\
+        return false;\
+    if (hashIndex == 0)\
+        hashIndex = (buckets - 1) * 2;\
+    else\
+        hashIndex -= 2; })
+
+bool symbolMapHasKey(SymbolMap *map, void *key)
+{
+    Size buckets = map->buckets;
+    register Size hashIndex = symbolHash(key, buckets) * 2;
+    register Size *hashTable = map->hashTable;
+    while (true)
+    {
+        _symbolMapHasLoop();
+        _symbolMapHasLoop();
+        _symbolMapHasLoop();
+        _symbolMapHasLoop();
+    }
+    return false;
+}
+
+#define _symbolMapSetLoop() ({\
+    register Size existingKey = (Size)hashTable[hashIndex];\
+    if (existingKey == (Size)key) {\
+        hashTable[hashIndex + 1] = (Size)value;\
+        return true; }\
+    if (existingKey == 0)\
+        return false;\
+    if (hashIndex == 0)\
+        hashIndex = (buckets - 1) * 2;\
+    else\
+        hashIndex -= 2; })
+
+/* returns 'true' if success, otherwise 'false' */
+bool symbolMapSet(SymbolMap *map, void *key, void *value)
+{
+    Size buckets = map->buckets;
+    register Size hashIndex = symbolHash(key, buckets) * 2;
+    register Size *hashTable = map->hashTable;
+    while (true)
+    {
+        _symbolMapSetLoop();
+        _symbolMapSetLoop();
+        _symbolMapSetLoop();
+        _symbolMapSetLoop();
+    }
+    return false;
 }

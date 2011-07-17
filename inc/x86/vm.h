@@ -21,149 +21,111 @@
 #include <main.h>
 #include <threading.h>
 #include <data.h>
+#include <setjmp.h>
 
-struct scope;
-struct method;
-
-typedef struct object
-{
-    struct object *vtable; /* methods */
-    struct object *parent;
-    /* any associated data. In vtables, it's a Map<symbol,method>.
-     * In user-defined objects, it's a Map<symbol,object>.
-     * The union is just for convenience in C */
-    union
-    {
-        void *data;
-        Map *map;
-        struct scope *scope;
-        struct method *method;
-        struct list *list;
-        String string;
-    };
-} Object;
+typedef struct object Object;
 
 typedef enum
 {
-    internalFunction,
+    internalClosure,
     userDefinedClosure
-} ClosureType;
+} closureType;
 
 typedef enum
 {
-    kernelPermissions,
-    rootPermissions,
-    userPermissions
-} Permissions;
+    tobefilledout
+} PermissionLevel;
 
-/* The method struct is the payload for a closure object */
-typedef struct method
+typedef struct byteArray
 {
-    ClosureType type;
-    Size argc;
-    union
-    {
-        /* For internal functions only */
-        struct
-        {
-            void *funcptr;
-            Permissions permissions;
-        };
-        /* For user-defined closures only */
-        struct
-        {
-            Map *translationTable;
-            Object *bytearray;
-            Object *containingScope; // where this was declared, if anywhere
-        };
-    };
-} Method;
+    Size len;
+    u8 array[0];
+} ByteArray;
 
-/* This is the payload for a scope object, which should be useful in
- * error handling and stack trace stuff. */
 typedef struct scope
 {
-    Object *parent;
-    Object *closure;
-    Map *vars; /* <symbol,object> */
+    struct object *block; // the corresponding closure
+    union
+    {
+        struct // if user-defined closure
+        {
+            struct object *parent; // parent scope is where the closure was defined
+            SymbolMap *variables;
+            u8 *IP;
+        };
+        struct // if internal function
+        {
+            jmp_buf env;
+        };
+    };
 } Scope;
 
-/* The following are some useful globals */
+#define arg(n) ((Object*)stackGet(process->process->valueStack, n))
+#define pop() ((Object*)stackPop(process->process->valueStack))
+#define args(n) ((Object**)stackArgs(process->process->valueStack, n))
+#define push(v) (stackPush(process->process->valueStack, v))
+#define currentScope (process->process->scope)
+#define currentIP (currentScope->scope->IP)
+#define currentClosure (currentScope->scope->block)
 
-/* Basic objects */
-Object *objectClass,
-       *scopeClass,
-       *symbolClass,
-       *boolClass,
-       *numberClass,
-       *stringClass,
-       *closureClass,
-       *bytearrayClass,
-       *processClass,
-       *listClass,
-       *consoleClass,
-       *arrayClass,
-       *trueSingleton,
-       *falseSingleton;
+typedef void (InternalFunction)(Object*);
 
-/* Symbols */
-Object *newSymbol,     // new:
-       *newZeroSymbol, // new
-       *lengthSymbol,
-       *lookupSymbol,
-       *addMethodSymbol,
-       *allocateSymbol,
-       *delegatedSymbol,
-       *doesNotUnderstandSymbol,
-       *consoleSymbol,
-       *printSymbol,
-       *asStringSymbol,
-       *applySymbol,
-       *applyOneSymbol,
-       *applyTwoSymbol,
-       *equivSymbol,
-       *whileSymbol,
-       *lessThanSymbol,
-       *greaterThanSymbol,
-       *selfSymbol,
-       *typeSymbol,
-       *addSymbol,
-       *atSymbol,
-       *atPutSymbol,
-       *popSymbol,
-       *atInsertSymbol,
-       *doSymbol,
-       *toSymbol,
-       *toDoSymbol,
-       *executeSymbol,
-       *trueSymbol,
-       *falseSymbol,
-       *nilSymbol,
-       *isNilSymbol;
+typedef struct closure
+{
+    closureType type;
+    Size argc;
+    struct object *containingClosure;
+    union
+    {
+        struct
+        {
+            PermissionLevel permissions;
+            InternalFunction *function;
+        };
+        struct
+        {
+            u8 *bytecode;
+            Map *translationTable; // int -> symbol
+            Size variables;
+        };
+    };
+} Closure;
 
-/* Given an object and the symbol representing a message, send the
- * message with some number of arguments. The send macro memoizes the
- * previous vtable and associated closure returned from bind.
- */
-#define send(self, messageName, args...) \
-    ({                                   \
-        Object *_self = self;            \
-        Object *thisVT = _self->vtable;  \
-        static Object *prevVT = NULL;    \
-        static Object *method = NULL;    \
-        doMethod(_self,                  \
-            (thisVT == prevVT ? method : \
-            (prevVT = thisVT, method = bind(_self, messageName))), ##args);\
-    })\
+typedef struct process
+{
+    u8 *bytecode;
+    Object *scope;
+    Stack *valueStack;
+    PermissionLevel permissions;
+    jmp_buf mainLoop;
+} Process;
 
-extern inline Object *doMethod(Object *self, Object *closure, ...);
-extern inline Object *bind(Object *self, Object *messageName);
+typedef struct stringData
+{
+    Size len;
+    char string[0];
+} StringData;
 
+struct object
+{
+    struct object *proto;
+    SymbolMap *methods;
+    union
+    {
+        SymbolMap members[0];
+        struct closure closure[0];
+        struct scope   scope[0];
+        struct process process[0];
+        struct stringData string[0];
+        u8 byte[0];
+        void *data[0];
+    };
+};
+
+
+extern Object *processNew();
+extern void processSetBytecode(Object *process, u8 *bytecode);
+extern void processMainLoop(Object *process);
 extern void vmInstall();
-extern Object *processNew(Object *self);
-extern Object *processExecute(Object *self, u8 *headeredBytecode);
-extern Object *stringNew(Object *self, String value);
-extern void setVar(Object *currentScope, Object *symbol, Object *value);
-extern Object *new(Object *self);
 
 #endif

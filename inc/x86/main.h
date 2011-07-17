@@ -39,8 +39,10 @@
 
 #define NULL ((void*)0)
 
-#define panic(message, args...) { printf("\nPANIC\n"); printf(message, ## args); _panic(__FILE__, __LINE__); }
-#define assert(boolean, message, args...) { if (unlikely(!(boolean))) {panic(message, ## args);} }
+#define panic(message, args...) { printf("\n[-PANIC----------]\n");\
+    printf(message, ## args); _panic(__FILE__, __LINE__); }
+#define assert(boolean, message, args...)\
+    { if (unlikely(!(boolean))) {panic(message, ## args);} }
 
 typedef unsigned char  u8;
 typedef          char  s8;

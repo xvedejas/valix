@@ -91,13 +91,7 @@ typedef struct memoryHeader
     Size start[0]; // use &start to get the memory directly after the header
 } MemoryHeader;
 
-#ifdef __release__
-#define sweep() {}
-#else
-#define sweep() _sweep()
-#endif
-
-extern void _sweep();
+extern void sweep();
 extern Size memUsed();
 extern Size memFree();
 extern void mmInstall(MultibootStructure *multiboot);

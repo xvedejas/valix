@@ -250,6 +250,7 @@ MutexReply mutexAcquireLock(Mutex *mutex)
         threadingUnlock();
         /* Wait until the mutex is unlocked, when this thread will be unpaused */
         currentThread->status = paused;
+        leaveThread();
         while (currentThread->status == paused);
     }
     mutex->multiplicity++;

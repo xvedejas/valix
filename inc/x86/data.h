@@ -50,18 +50,19 @@ typedef struct
     Size capacityB;
 } Map;
 
-Map *mapNew();
-Map *mapNewSize(Size startingSize);
-void *mapGet(Map *map, void *key, MapKeyType type);
+extern Map *mapNew();
+extern Map *mapNewSize(Size startingSize);
+extern Map *mapInit(Map *map, Size startingSize);
+extern void *mapGet(Map *map, void *key, MapKeyType type);
 #define mapGetVal(map, key) mapGet(map, (void*)key, valueKey)
 void _mapSet(Map *map, void *key, void *value, MapKeyType type, bool incrementallyResize);
 /* Use this function to both add keys to the map or change their value */
-#define mapSet(map, key, value, type) _mapSet(map, key, value, type, true)
+#define mapSet(map, key, value, type) _mapSet(map, (void*)key, value, type, true)
 #define mapSetVal(map, key, value) mapSet(map, (void*)key, (void*)value, valueKey)
-bool mapRemove(Map *map, void *key, MapKeyType type);
+extern bool mapRemove(Map *map, void *key, MapKeyType type);
 #define mapRemoveVal(map, key) mapRemove(map, (void*)key, valueKey)
-void mapDel(Map *map);
-void mapDebug(Map *map);
+extern void mapDel(Map *map);
+extern void mapDebug(Map *map);
 
 ///////////////////////////
 // InternTable Interface //
@@ -92,12 +93,15 @@ typedef struct
     Size capacity;  // size of the array
 } Stack;
 
+#define stackTop(stack) ( (stack->entries == 0) ? NULL : stack->bottom[stack->entries-1] )
+
 extern Stack *stackNew();
 extern void stackPush(Stack *stack, void *element);
 extern void *stackPop(Stack *stack);
 extern void stackDel(Stack *stack);
 extern void stackDebug(Stack *stack);
-extern void *stackTop(Stack *stack);
+extern void **stackArgs(Stack *stack, Size count);
+extern void *stackGet(Stack *stack, Size index);
 
 /////////////////////////////
 // StringBuilder Interface //
@@ -114,8 +118,8 @@ extern StringBuilder *stringBuilderNew(String initial);
 /* note: Del will destroy both the string builder and its contents */
 extern void stringBuilderDel(StringBuilder *sb);
 extern void stringBuilderAppend(StringBuilder *sb, String s);
-void stringBuilderAppendN(StringBuilder *sb, String s, Size len);
-void stringBuilderAppendChar(StringBuilder *sb, char c);
+extern void stringBuilderAppendN(StringBuilder *sb, String s, Size len);
+extern void stringBuilderAppendChar(StringBuilder *sb, char c);
 /* note: ToString will destroy the string builder! */
 extern String stringBuilderToString(StringBuilder *sb);
 
@@ -133,5 +137,22 @@ typedef struct
 extern Queue *queueNew(Size size);
 extern void enqueue(Queue *queue, void *value);
 extern void *dequeue(Queue *queue);
+
+/////////////////////////
+// SymbolMap Interface //
+/////////////////////////
+
+typedef struct
+{
+    Size buckets;
+    Size hashTable[0];
+} SymbolMap;
+
+SymbolMap *symbolMapNew(Size size, void **keys, void **values);
+extern void *symbolMapGet(SymbolMap *map, void *key);
+extern void symbolMapDebug(SymbolMap *map);
+extern bool symbolMapHasKey(SymbolMap *map, void *key);
+/* returns 'true' if success, otherwise 'false' */
+extern bool symbolMapSet(SymbolMap *map, void *key, void *value);
 
 #endif

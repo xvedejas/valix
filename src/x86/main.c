@@ -202,89 +202,6 @@ void timerInstall()
     timerPhase(systemClockFreq);
 }
 
-ThreadFunc langDemo()
-{
-    Object *process = processNew(processClass);
-    String helpString =
-    " ---------------------------------------- \n"
-    "| Basic Values                           |\n"
-    "|   \"abc\"         // String              |\n"
-    "|   1234            // Number            |\n"
-    "|                                        |\n"
-    "| Operations                             | \n"
-    "|   1 + 1                                |\n"
-    "|   5 * 2                                |\n"
-    "|   100 / 25                             |\n"
-    "|                                        |\n"
-    "| Comparisons                            |\n"
-    "|   1 > 3                                |\n"
-    "|   5 == 5                               |\n"
-    "|                                        |\n"
-    "| Variables                              |\n"
-    "|   a = 5.                               |\n"
-    "|   test = \"123\"                         |\n"
-    "|                                        |\n"
-    "| Blocks                                 |\n"
-    "|   { 5 + 6 } apply                      |\n"
-    "|   { x | x * 2 } apply: 5               |\n"
-    "|   { x, y | x + y } apply: 2 and: 20    |\n"
-    "|                                        |\n"
-    "| Control                                |\n"
-    "|   (1 == 2) ifTrue: { ... }             |\n"
-    "|   {a < 10} whileTrue: { a = a + 1 }    |\n"
-    "|   1 to: 5 do: { i | Console print: i } |\n"
-    "|                                        |\n"
-    "| Program Example                        |\n"
-    "|   a = 1.                               |\n"
-    "|   {a < 20} whileTrue:                  |\n"
-    "|   { Console print: \"Valix Rocks!\".     |\n"
-    "|     a = a + 1 }                        |\n"
-    " ---------------------------------------- \n";
-    setVar(process->data, send(symbolClass, newSymbol, "help"), stringNew(stringClass, helpString));
-    for (;;)
-    {
-        printf(">>> ");
-        String input;
-        do
-        {
-            input = getstring();
-        } while (strlen(input) == 0);
-        u8 *bytecode = compile(input);
-        Object *returnValue = processExecute(process, bytecode);
-        if (returnValue != NULL)
-            send(consoleClass, printSymbol, returnValue);
-        free(input);
-    }
-}
-
-ThreadFunc langTest()
-{
-    //Size initialMemUse = memUsed();
-    String input =
-    "primes = List new.\n"
-    "primes add: 2.\n"
-    "3 to: 1000 do:\n"
-    "{ number |\n"
-    "    isPrime = true.\n"
-    "    primes do:\n"
-    "    { prime |\n"
-    "        (number % prime == 0) ifTrue:\n"
-    "            { isPrime = false }\n"
-    "    }.\n"
-    "    isPrime ifTrue: { primes add: number }\n"
-    "}.\n"
-    "Console print: primes\n";
-    printf("Testing input:\n\n%s\n\n", input);
-    Object *process = processNew(processClass);
-    umax startTime = time();
-    u8 *bytecode = compile(input);
-    umax endCompileTime = time();
-    printf("Time to compile: %i ticks.\n", endCompileTime - startTime);
-    processExecute(process, bytecode);
-    printf("Time to run: %i ticks.\n", time() - endCompileTime);
-    //printf("Done. mem use: %i\n", memUsed() - initialMemUse);
-}
-
 void pciinfo()
 {
     u16 bus, dev, func;
@@ -348,17 +265,24 @@ void kmain(u32 magic, MultibootStructure *multiboot, void *stackPointer)
         "\nCompiled with gcc " __VERSION__ "...\n");
     acpiInstall();
     videoInstall(multiboot);
+    printf("video installed\n");
     mmInstall(multiboot);
+    printf("mm installed\n");
     threadingInstall(stackPointer); // must be after mmInstall
+    printf("threading installed\n");
     vmInstall(); // must be after mmInstall
+    printf("vm installed\n");
     keyboardInstall(); // must be after mmInstall, threadingInstall
+    printf("keyboard installed\n");
     asm volatile("sti;");
     printf("Welcome to Valix Pre-Alpha 1. Type \"help\" for usage information.\n\n");
     
-    spawn("langDemo", langDemo);
-    //spawn("langTest", langTest);
+    u8 *bytecode = compile("{ Console print: \"test\" } apply.");
+    
+    Object *process = processNew();
+    processSetBytecode(process, bytecode);
+    processMainLoop(process);
     
     //pciinfo();
-    for (;;);
     return; /* kills kernel thread */
 }

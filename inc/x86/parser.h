@@ -17,6 +17,7 @@
 #define __parser_h__
 #include <main.h>
 #include <lexer.h>
+#include <vm.h>
 
 extern u8 *compile(String source);
 extern const Size maxKeywordCount;
@@ -30,8 +31,10 @@ typedef enum
     symbolBC   = 0x85, // create symbol object (next n bytes until null)
     arrayBC    = 0x86, // create array object (next byte tells how many elements to pop from stack)
     blockBC    = 0x87, /* create block object
-                       * next byte tells how many arguments; the argument
-                       * symbols are popped from the stack. */
+                       * next byte tells how many arguments. Byte after that
+                       * tells how many local variables, including the number of
+                       * arguments. Immediately afterwards is a list of the
+                       * names of arguments and variables. */
     variableBC = 0x88, // push value of variable (next byte)
     messageBC  = 0x89, /* send message
                         * number of arguments is the next byte(s)

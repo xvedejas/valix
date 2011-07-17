@@ -21,6 +21,7 @@
 #include <string.h>
 #include <types.h>
 #include <data.h>
+#include <vm.h>
 
 const Size maxKeywordCount = 8;
 
@@ -57,7 +58,7 @@ const String bytecodes[] =
  *     Character       'a'
  *     Symbol          #ab:cd:
  *     Array           [1, 2]
- *     Block           { x, y | x + y }
+ *     Block           { x, y | z, w. x + y }
  * */
 
 u8 *compile(String source)
@@ -133,7 +134,7 @@ u8 *compile(String source)
         return output->size;
     }
     
-    inline void setPos(Size pos, char value)
+    inline void setPos(Size pos, u8 value)
     {
         output->s[pos] = value;
     }
@@ -149,6 +150,8 @@ u8 *compile(String source)
     
     auto void parseValue();
     auto void parseExpr();
+    
+    /* Statements can be any string of expressions separated by '.' */
     void parseStmt()
     {
         while (startsValue(curToken->type))
@@ -222,6 +225,66 @@ u8 *compile(String source)
         }
     }
     
+    /*
+        A block header is one of the four following formats:
+            { a, b, c | x, y, z | ... }
+            { | x, y, z | ... }
+            { a, b, c | ... }
+            { ... }
+    */
+    
+    void parseBlockHeader()
+    {
+        Size argCountByte = getPos();
+        outByte('\0');
+        Size arguments = 0;
+        /* Argument List */
+        if (lookahead(1)->type == pipeToken || lookahead(1)->type == commaToken)
+        {
+            parserRequire(curToken->type == keywordToken, "Expected keyword token");
+            outByte(intern(curToken->data));
+            arguments++;
+            nextToken();
+            while (curToken->type != pipeToken)
+            {
+                parserRequire(curToken->type == commaToken, "Expected ',' token");
+                nextToken();
+                parserRequire(curToken->type == keywordToken, "Expected keyword token");
+                outByte(intern(curToken->data));
+                arguments++;
+                nextToken();
+            }
+            setPos(argCountByte, arguments);
+        }
+        Size variables = 0;
+        Size varCountByte = getPos();
+        outByte('\0');
+        if (curToken->type == pipeToken)
+        {
+            nextToken();
+            /* Variable list */
+            if (lookahead(1)->type == pipeToken || lookahead(1)->type == commaToken)
+            {
+                parserRequire(curToken->type == keywordToken, "Expected keyword token");
+                outByte(intern(curToken->data));
+                variables++;
+                nextToken();
+                while (curToken->type != pipeToken)
+                {
+                    parserRequire(curToken->type == commaToken, "Expected ',' token");
+                    nextToken();
+                    parserRequire(curToken->type == keywordToken, "Expected keyword token");
+                    outByte(intern(curToken->data));
+                    variables++;
+                    nextToken();
+                }
+                parserRequire(curToken->type == pipeToken, "Expected '|' token");
+                nextToken();
+                setPos(varCountByte, (u8)variables);
+            }
+        }
+    }
+    
     void parseValue()
     {
         switch (curToken->type)
@@ -274,30 +337,7 @@ u8 *compile(String source)
             {
                 nextToken();
                 outByte(blockBC);
-                Size argCountByte = getPos();
-                outByte('\0');
-                Size arguments = 0;
-                if (lookahead(1)->type == pipeToken || lookahead(1)->type == commaToken)
-                {
-                    parserRequire(curToken->type == keywordToken, "Expected keyword token");
-                    outByte(setBC);
-                    outByte(intern(curToken->data));
-                    arguments++;
-                    nextToken();
-                    while (curToken->type != pipeToken)
-                    {
-                        parserRequire(curToken->type == commaToken, "Expected ',' token");
-                        nextToken();
-                        parserRequire(curToken->type == keywordToken, "Expected keyword token");
-                        outByte(setBC);
-                        outByte(intern(curToken->data));
-                        arguments++;
-                        nextToken();
-                    }
-                    parserRequire(curToken->type == pipeToken, "Expected '|' token");
-                    nextToken();
-                }
-                setPos(argCountByte, arguments);
+                parseBlockHeader();
                 parseStmt();
                 parserRequire(curToken->type == closeBraceToken, "Expected '}' token");
                 nextToken();
@@ -335,6 +375,9 @@ u8 *compile(String source)
             } break;
         }
     }
+    
+    // starts here
+    parseBlockHeader();
     parseStmt();
     outByte(endBC); // EOS
     
@@ -356,12 +399,12 @@ u8 *compile(String source)
     internTableDel(symbolTable);
     
     // see the output
-    //Size i;
-    //for (i = 0; i < outputSize; i++)
-    //    printf("%x %c    %s\n", finalBytecode[i], finalBytecode[i], bytecodes[finalBytecode[i]-0x80]);
-    //printf("Parser done\n");
+    Size i;
+    for (i = 0; i < outputSize; i++)
+        printf("%x %c\n", finalBytecode[i], finalBytecode[i]);
+    printf("Parser done\n");
     
-    //printf("Bytecode size %i\n", outputSize);
-    return (u8*)finalBytecode;
+    printf("Bytecode size %i\n", outputSize);
+    return finalBytecode;
 }
 

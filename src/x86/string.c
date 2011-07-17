@@ -1,6 +1,8 @@
 #include <string.h>
 #include <mm.h>
 
+#define hasZeroByte(v) ((v - 0x01010101UL) & ~v & 0x80808080UL)
+
 String strdup(String s)
 {
     String new = malloc(sizeof(char) * strlen(s));

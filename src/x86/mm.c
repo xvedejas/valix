@@ -103,7 +103,7 @@ void mmInstall(MultibootStructure *multiboot)
 /* Memory is kept track of in two linked lists, one for free blocks and the other
  * for used blocks. The following functions allow us to add or remove blocks from
  * the linked lists safely. */
-void removeFromFreeList(MemoryHeader *block)
+inline void removeFromFreeList(MemoryHeader *block)
 {
     assert(block->free, "MM Fatal Error");
 
@@ -127,7 +127,7 @@ void removeFromFreeList(MemoryHeader *block)
     block->previous = NULL;
 }
 
-void addToFreeList(MemoryHeader *block)
+inline void addToFreeList(MemoryHeader *block)
 {
     assert(block->free, "MM Fatal Error");
     
@@ -144,7 +144,7 @@ void addToFreeList(MemoryHeader *block)
     firstFreeBlock = block;
 }
 
-void removeFromUsedList(MemoryHeader *block)
+inline void removeFromUsedList(MemoryHeader *block)
 {
     /* This assert tends to fire if modifying mm structures while
      * looping through them. Don't do this, it is bad! */
@@ -166,7 +166,7 @@ void removeFromUsedList(MemoryHeader *block)
     block->previous = NULL;
 }
 
-void addToUsedList(MemoryHeader *block)
+inline void addToUsedList(MemoryHeader *block)
 {
     assert(!block->free, "MM Fatal Error");
     // make sure both block->previous and next are null before adding
@@ -190,10 +190,9 @@ void *kalloc(Size size, Thread *thread)
     assert(size != 0, "Cannot allocate 0-length memory block!");
     MemoryHeader *currentBlock = firstFreeBlock;
     sweep();
-
     while (true)
-    {   
-        assert(currentBlock != NULL, "Out of Memory!");
+    {
+        assert(currentBlock != NULL, "Out of Memory! Was looking for %i bytes", size);
             
         if (unlikely(currentBlock->size >= size &&
             (currentBlock->size <= size + sizeof(MemoryHeader))))
@@ -247,20 +246,22 @@ void *malloc(Size size)
 
 void *realloc(void *memory, Size size)
 {
-    // change the size of allocated memory
+    // change the size of a single block of allocated memory
     mutexAcquireLock(&mmLockMutex);
+    sweep();
     MemoryHeader *block = (MemoryHeader*)((Size)memory - sizeof(MemoryHeader));
-    MemoryHeader *nextBlock = (MemoryHeader*)((Size)memory + block->size);
-    if (nextBlock->free)
+    MemoryHeader *nextBlock = (MemoryHeader*)((Size)&block->start + block->size);
+    if (nextBlock->startMagic == mmMagic && nextBlock->endMagic == mmMagic && nextBlock->free)
     {
         if (block->size + 2 * sizeof(MemoryHeader) + nextBlock->size < size)
         {
             /* Big enough to split nextBlock */
+            Size room = block->size + nextBlock->size;
             removeFromFreeList(nextBlock);
             block->size = size;
             MemoryHeader *newBlock = /* For leftover memory */
                 (MemoryHeader*)(&block->start + size);
-            newBlock->size = (Size)block->size - size - sizeof(MemoryHeader);
+            newBlock->size = room - size;
             newBlock->free = true;
             newBlock->startMagic = mmMagic;
             newBlock->previous = NULL;
@@ -300,7 +301,7 @@ bool isAllocated(void *memory)
     if (memory == NULL)
         return false;
     MemoryHeader *header = (MemoryHeader*)(memory - sizeof(MemoryHeader));
-    if (header->startMagic != mmMagic)
+    if (header->startMagic != mmMagic || header->endMagic != mmMagic)
         return false;
     if (header->free)
         return false;
@@ -324,9 +325,9 @@ void free(void *memory)
 
     MemoryHeader *header = (MemoryHeader*)(memory - sizeof(MemoryHeader));
     
-    if (unlikely(header->startMagic != mmMagic))
+    if (unlikely(header->startMagic != mmMagic || header->endMagic != mmMagic))
     {
-        /* This is not a bad thing, just happens when the memory given to be
+        /* This is not necessarily a bad thing, just happens when the memory given to be
          * freed is in the stack or something, not handled by the memory manager */
         printf("Incorrect freeing of unallocated pointer at %x, ignoring.\n", memory);
         mutexReleaseLock(&mmLockMutex);
@@ -336,9 +337,10 @@ void free(void *memory)
     if (unlikely(header->free))
     {
         /* This is not a bad thing, but probably shouldn't happen either. */
-        #ifndef __release__
+#ifndef __release__
         printf("Memory at %x already freed, ignoring.\n", memory);
-        #endif
+#endif
+        mutexReleaseLock(&mmLockMutex);
         return;
     }
     
@@ -409,17 +411,17 @@ void meminfo()
 {
     MemoryHeader *currentBlock = firstFreeBlock;
     printf("=========== MemInfo ===========\n");
-    do printf("free block at %x, size %x\n",
+    do printf("free block at %x, size %x, magic %x %x\n",
         &currentBlock->start,
-        currentBlock->size);
+        currentBlock->size, currentBlock->startMagic, currentBlock->endMagic);
     while ((currentBlock = currentBlock->next) != NULL);
 
     currentBlock = firstUsedBlock;
     if (currentBlock == NULL)
         return;
-    do printf("used block at %x, size %x\n",
+    do printf("used block at %x, size %x, magic %x %x\n",
         &currentBlock->start,
-        currentBlock->size);
+        currentBlock->size, currentBlock->startMagic, currentBlock->endMagic);
     while ((currentBlock = currentBlock->next) != NULL);
 }
 
@@ -450,7 +452,7 @@ Size memFree()
     return amount;
 }
 
-void _sweep() // quick tests
+void sweep() // quick tests
 {
     mutexAcquireLock(&mmLockMutex);
     MemoryHeader *currentBlock = firstFreeBlock;
@@ -469,7 +471,10 @@ void _sweep() // quick tests
 
     currentBlock = firstUsedBlock;
     if (currentBlock == NULL)
+    {
+        mutexReleaseLock(&mmLockMutex);
         return;
+    }
     assert(currentBlock->previous == NULL, "Sweep failed");
     do
     {

@@ -84,6 +84,7 @@ Object *stringNew(Size len, String s)
     Object *string = malloc(
         sizeof(Object) + sizeof(StringData) + sizeof(char) * len);
     memcpy(string->string->string, s, len);
+    string->proto = stringProto;
     string->string->len = len;
     return string;
 }
@@ -116,8 +117,14 @@ void vDoesNotUnderstand(Object *process)
     push(NULL);
 }
 
+void vApply(Object *process);
+
 void vPrint(Object *process)
 {
+    push(bind(arg(0), symbolNew("asString")));
+    printf("A\n");
+    vApply(process); // in vApply, we should jump back into the main loop
+    printf("B\n");
     printf("%s", pop()->string->string);
     push(NULL);
 }
@@ -145,12 +152,14 @@ void setVar(Object *scope, Object *symbol, Object *value)
 
 void processPushScope(Object *process, Object *scope)
 {
+    printf("Push scope\n");
     scope->scope->parent = currentScope;
     currentScope = scope;
 }
 
 Object *processPopScope(Object *process)
 {
+    printf("Pop scope\n");
     Object *prevScope = currentScope;
     currentScope = currentScope->scope->parent;
     return prevScope;
@@ -165,11 +174,7 @@ void vApply(Object *process)
     Object *block = pop();
     Closure *closure = block->closure;
     // if we are calling from an internal function, save this state
-    if (currentClosure->closure->type == internalClosure)
-    {
-        if (setjmp(currentScope->scope->env))
-            return;
-    }
+    bool fromInternal = currentClosure->closure->type == internalClosure;
     // create a new scope
     Object *scope = scopeNew();
     scope->scope->block = block;
@@ -183,6 +188,20 @@ void vApply(Object *process)
         case userDefinedClosure:
         {
             currentScope->scope->IP = closure->bytecode;
+            if (fromInternal)
+            {
+                printf("Saving state\n");
+                if (setjmp(currentScope->scope->env))
+                {
+                    printf("Returning from saved state");
+                    return;
+                }
+                else
+                {
+                    printf("re-entering main loop\n");
+                    longjmp(process->process->mainLoop, true);
+                }
+            }
         } break;
         default: panic("VM Error");
     }
@@ -200,6 +219,8 @@ void processSetBytecode(Object *process, u8 *bytecode)
 
 void processMainLoop(Object *process)
 {
+    Size depth = 0;
+    bool inScope = true;
     Object *closure = closureNew();
     closure->closure->bytecode = process->process->bytecode;
     Object *scope = scopeNew();
@@ -253,8 +274,6 @@ void processMainLoop(Object *process)
         currentIP = IP;
     }
     
-    Size depth = 0;
-    
     while (true)
     {
         if (currentClosure->closure->type == internalClosure)
@@ -264,10 +283,11 @@ void processMainLoop(Object *process)
         /* Begin looking at the block. First byte is the number of variables
          * used in the scope, followed by their interned values. The next
          * byte is the number of arguments. */
-        bool inScope = true;
+        inScope = true;
         while (inScope)
         {
-            //printf("Bytecode %x at %x\n", *currentIP, currentIP);
+            setjmp(process->process->mainLoop);
+            printf("Bytecode %x at %x\n", *currentIP, currentIP);
             switch (*currentIP++)
             {
                 case 0x81: // integer literal
@@ -388,11 +408,8 @@ void processMainLoop(Object *process)
                 case 0x8D: // end
                 {
                     processPopScope(process);
-                    if (depth == 0)
-                    {
-                        printf("process done\n");
+                    if (depth == 0) // process done
                         return;
-                    }
                     depth--;
                 } break;
                 default:
@@ -405,9 +422,16 @@ void processMainLoop(Object *process)
     }
 }
 
-Object *symbolAsString(Object **args)
+void symbolAsString(Object *process)
 {
-    return (Object*)args[0]->data[0];
+    String s = pop()->data[0];
+    push(stringNew(strlen(s), s));
+}
+
+void stringAsString(Object *process)
+{
+    /* Do nothing */
+    return;
 }
 
 void vObjectNewMethods(Object *process)
@@ -456,8 +480,8 @@ void bootstrap()
     ///symbolMethodSymbols[0] = cloneSymbol;
     ///symbolMethods[0] = internalMethodNew(symbolClone, 1);
     
-    ///symbolMethodSymbols[1] = asStringSymbol;
-    ///symbolMethods[1] = internalMethodNew(symbolAsString, 1);
+    symbolMethodSymbols[1] = symbolNew("asString");
+    symbolMethods[1] = internalMethodNew(symbolAsString, 1);
     
     symbolProto->methods = symbolMapNew(symbolMethodCount,
         (void**)symbolMethodSymbols, (void**)symbolMethods);
@@ -484,6 +508,22 @@ void bootstrap()
     /* Setting up ScopeProto */
     
     scopeProto = objectNew();
+    
+    /* Setting up stringProto */
+    
+    stringProto = objectNew();
+    
+    Object *stringMethodNames[] =
+    {
+        symbolNew("asString"),
+    };
+    Object *stringMethods[] =
+    {
+        internalMethodNew(stringAsString, 1),
+    };
+    
+    stringProto->methods = symbolMapNew(1, (void**)stringMethodNames,
+        (void**)stringMethods);
     
     /* Setting up console */
     

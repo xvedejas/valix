@@ -8,12 +8,6 @@
 #include <stdarg.h>
 #include <list.h>
 
-// only functions beginning with "v" should be used by the VM.
-
-// #new:[varible list]methods:[method dictionary] creates a new object with
-// given variables/methods out of another object.
-// #clone creates a new object out of another without assigning new variables or methods
-
 Map *globalSymbolTable;
 
 Object *globalScope;
@@ -135,8 +129,9 @@ void vPrint(Object *process)
 {
     Object *method = bind(arg(0), symbolNew("asString"));
     stackDebug(process->process->valueStack);
-    printf("%x", arg(0));
+    printf("%x\n", arg(0));
     printf("Method %x\n", method);
+    printf("attempting to call asString method\n");
     push(method);
     vApply(process);
     printf("%s", pop()->string->string);
@@ -185,12 +180,14 @@ Object *processPopScope(Object *process)
  * the scope of execution by pushing a new scope to the process. */
 void vApply(Object *process)
 {
+    Object *oldScope = NULL;
     Object *block = pop();
     assert(block != NULL, "Internal error; method does not exist");
     Closure *closure = block->closure;
     // if we are calling from an internal function, save this state
     bool fromInternal = currentClosure->closure->type == internalClosure;
     // create a new scope
+    oldScope = process->process->scope;
     Object *scope = scopeNew(block, block->closure->scope);
     processPushScope(process, scope);
     switch (closure->type)
@@ -204,8 +201,7 @@ void vApply(Object *process)
             currentScope->scope->IP = closure->bytecode;
             if (fromInternal)
             {
-                printf("Saving state\n");
-                if (setjmp(currentScope->scope->env))
+                if (setjmp(oldScope->scope->env))
                 {
                     printf("Returning from saved state");
                     return;
@@ -223,10 +219,11 @@ void vApply(Object *process)
     }
 }
 
+// returns symbol
 #define translate(internedValue)\
-    ({  Map *table = currentClosure->closure->translationTable;\
+    ((Object*)({  Map *table = currentClosure->closure->translationTable;\
         assert(table != NULL, "VM Error");\
-    mapGetVal(table, (void*)(Size)internedValue); })
+    mapGetVal(table, (void*)(Size)internedValue); }))
 
 void processSetBytecode(Object *process, u8 *bytecode)
 {
@@ -241,8 +238,7 @@ void processMainLoop(Object *process)
     Object *closure = closureNew(NULL);
     closure->closure->bytecode = process->process->bytecode;
     closure->closure->type = userDefinedClosure;
-    Object *scope = scopeNew(closure, closure->closure->scope);
-    scope->scope->containing = globalScope;
+    Object *scope = scopeNew(closure, globalScope);
     
     scope->scope->IP = closure->closure->bytecode;
     currentScope = NULL;
@@ -263,10 +259,11 @@ void processMainLoop(Object *process)
     }
     currentIP = IP;
     
-    void setupVariables()
+    void setupVariables() // variables includes arguments
     {
         u8 *IP = currentIP;
         Size varcount = *IP++;
+        IP += 1; // skip over arg count
         Object *keys[varcount],
             *values[varcount];
         Size i;
@@ -275,8 +272,8 @@ void processMainLoop(Object *process)
             keys[i] = translate(*IP++);
             values[i] = NULL;
         }
-        symbolMapInit(currentScope->scope->variables,
-            varcount, (void**)keys, (void**)values);
+        currentScope->scope->variables = symbolMapNew(varcount, (void**)keys,
+            (void**)values);
     }
     
     void setupArguments()
@@ -301,7 +298,10 @@ void processMainLoop(Object *process)
         while (inScope)
         {
             if (currentClosure->closure->type == internalClosure)
-                longjmp(currentScope->scope->env, 1);
+            {
+                longjmp(currentScope->scope->env, true);
+                panic("Failure");
+            }
             printf("Bytecode %x at %x\n", *currentIP, currentIP);
             switch (*currentIP++)
             {
@@ -432,7 +432,9 @@ void processMainLoop(Object *process)
                 {
                     printf("? %x\n", currentClosure->closure->type == internalClosure);
                     printf("? %x\n", currentScope->scope->parent->scope->block->closure->type == internalClosure);
+                    printf("?scope %x\n", currentScope);
                     processPopScope(process);
+                    printf("?scope %x\n", currentScope);
                     if (depth == 0) // process done
                         return;
                     depth--;

@@ -30,8 +30,12 @@ function notice_build
 #################
 
 if [[ $1 == "clean" ]]; then
-    rm output -rf
+    rm output/* -rf
     exit 0
+fi
+
+if [[ $1 == "asm" ]]; then
+    compiletoasm=true
 fi
 
 #################
@@ -93,6 +97,8 @@ done
 
 notice_build "Compiling"
 for FILE in ${CFILES}; do
+    ASMOUTPUT=${FILE}.s
+    ASMOUTPUT=output/${ASMOUTPUT##*/}
     OUTPUT=${FILE}.o
     OUTPUT=output/${OUTPUT##*/}
     OFILES="${OFILES} ${OUTPUT}"
@@ -103,6 +109,12 @@ for FILE in ${CFILES}; do
             -ffreestanding -fno-stack-limit -fno-stack-check \
             -O3 -nostdinc -Werror -g ${CCARGS} ${ARCHARGS} -Wall ${INCLUDE} -c \
             -o $OUTPUT $FILE || error "C compilation failed"
+    fi
+    if $compiletoasm; then
+        ${CC} ${AUTODEFINES} -S -nostdlib -nodefaultlibs -fno-stack-protector \
+            -ffreestanding -fno-stack-limit -fno-stack-check \
+            -O3 -nostdinc -Werror -g ${CCARGS} ${ARCHARGS} -Wall ${INCLUDE} -c \
+            -o $ASMOUTPUT $FILE || error "C compilation failed"
     fi
 done
 

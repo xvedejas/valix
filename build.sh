@@ -99,7 +99,8 @@ for FILE in ${CFILES}; do
     # Compile only if modified since last build
     if [[ ${FILE} -nt ${OUTPUT} ]]; then
         notice "CC" "${FILE}"
-        ${CC} ${AUTODEFINES} -nostdlib -nodefaultlibs -fno-stack-protector -fno-builtin \
+        ${CC} ${AUTODEFINES} -nostdlib -nodefaultlibs -fno-stack-protector \
+            -ffreestanding -fno-stack-limit -fno-stack-check \
             -O3 -nostdinc -Werror -g ${CCARGS} ${ARCHARGS} -Wall ${INCLUDE} -c \
             -o $OUTPUT $FILE || error "C compilation failed"
     fi

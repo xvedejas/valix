@@ -277,7 +277,12 @@ void kmain(u32 magic, MultibootStructure *multiboot, void *stackPointer)
     asm volatile("sti;");
     printf("Welcome to Valix Pre-Alpha 1. Type \"help\" for usage information.\n\n");
     
-    u8 *bytecode = compile("{ Console print: \"test\" } apply. Console print: #hello.");
+    u8 *bytecode = compile(
+        " | myObject |\n"
+        " myObject = Object new: [] values: [] methods: [ #asString ] \n"
+        " def: [ { self | \"win\" } ]. \n"
+        " Console print: myObject.\n"
+        );
     
     Object *process = processNew();
     processSetBytecode(process, bytecode);

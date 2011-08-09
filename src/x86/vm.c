@@ -19,7 +19,7 @@ Map *globalSymbolTable;
 Object *globalScope;
 
 Object *objectProto, *symbolProto, *closureProto, *scopeProto, *processProto,
-       *byteArrayProto, *stringProto;
+       *byteArrayProto, *stringProto, *arrayProto;
 
 Object *trueObject, *falseObject, *console;
 
@@ -65,17 +65,21 @@ Object *processNew()
     return process;
 }
 
-Object *scopeNew()
+Object *scopeNew(Object *block, Object *containing)
 {
-    Object *scope = malloc(sizeof(Object) + sizeof(Scope));
-    scope->proto = scopeProto;
-    return scope;
+    Object *self = malloc(sizeof(Object) + sizeof(Scope));
+    self->proto = scopeProto;
+    Scope *scope = self->scope;
+    scope->block = block;
+    scope->containing = containing;
+    return self;
 }
 
-Object *closureNew()
+Object *closureNew(Object *scope)
 {
     Object *closure = malloc(sizeof(Object) + sizeof(Closure));
     closure->proto = closureProto;
+    closure->closure->scope = scope; // scope where closure was defined
     return closure;
 }
 
@@ -104,11 +108,19 @@ Object *symbolNew(String string)
 
 Object *internalMethodNew(InternalFunction *function, Size argc)
 {
-    Object *closure = closureNew();
+    Object *closure = closureNew(NULL);
     closure->closure->type = internalClosure;
     closure->closure->argc = argc;
     closure->closure->function = function;
     return closure;
+}
+
+Object *arrayNew(Size s)
+{
+    Object *array = malloc(sizeof(Object) + sizeof(Array) + sizeof(Object*) * s);
+    array->proto = arrayProto;
+    array->array->size = s;
+    return array;
 }
 
 void vDoesNotUnderstand(Object *process)
@@ -121,10 +133,12 @@ void vApply(Object *process);
 
 void vPrint(Object *process)
 {
-    push(bind(arg(0), symbolNew("asString")));
-    printf("A\n");
-    vApply(process); // in vApply, we should jump back into the main loop
-    printf("B\n");
+    Object *method = bind(arg(0), symbolNew("asString"));
+    stackDebug(process->process->valueStack);
+    printf("%x", arg(0));
+    printf("Method %x\n", method);
+    push(method);
+    vApply(process);
     printf("%s", pop()->string->string);
     push(NULL);
 }
@@ -134,7 +148,7 @@ Object *lookupVar(Object *scope, Object *symbol)
     Object *value;
     do
         value = symbolMapGet(scope->scope->variables, symbol);
-    while (value == NULL && (scope = scope->scope->parent) != NULL);
+    while (value == NULL && (scope = scope->scope->containing) != NULL);
     return value;
 }
 
@@ -145,9 +159,9 @@ void setVar(Object *scope, Object *symbol, Object *value)
         if (symbolMapSet(scope->scope->variables, symbol, value))
             return;
         else
-            scope = scope->scope->parent;
+            scope = scope->scope->containing;
     }
-    panic("Variable not found in scope");
+    panic("Variable %s not found in scope", symbol->data[0]);
 }
 
 void processPushScope(Object *process, Object *scope)
@@ -172,12 +186,12 @@ Object *processPopScope(Object *process)
 void vApply(Object *process)
 {
     Object *block = pop();
+    assert(block != NULL, "Internal error; method does not exist");
     Closure *closure = block->closure;
     // if we are calling from an internal function, save this state
     bool fromInternal = currentClosure->closure->type == internalClosure;
     // create a new scope
-    Object *scope = scopeNew();
-    scope->scope->block = block;
+    Object *scope = scopeNew(block, block->closure->scope);
     processPushScope(process, scope);
     switch (closure->type)
     {
@@ -198,8 +212,10 @@ void vApply(Object *process)
                 }
                 else
                 {
+                    currentIP = currentClosure->closure->bytecode;
                     printf("re-entering main loop\n");
                     longjmp(process->process->mainLoop, true);
+                    panic("catch");
                 }
             }
         } break;
@@ -221,17 +237,20 @@ void processMainLoop(Object *process)
 {
     Size depth = 0;
     bool inScope = true;
-    Object *closure = closureNew();
+    u8 *IP = NULL;
+    Object *closure = closureNew(NULL);
     closure->closure->bytecode = process->process->bytecode;
-    Object *scope = scopeNew();
+    closure->closure->type = userDefinedClosure;
+    Object *scope = scopeNew(closure, closure->closure->scope);
+    scope->scope->containing = globalScope;
     
     scope->scope->IP = closure->closure->bytecode;
-    currentScope = globalScope;
+    currentScope = NULL;
     processPushScope(process, scope);
     currentClosure = closure;
     
     /* setup the translation table */
-    u8 *IP = currentIP;
+    IP = currentIP;
     Size symcount = *IP++;
     closure->closure->translationTable = mapNewSize(symcount);
     Map *table = closure->closure->translationTable;
@@ -256,28 +275,23 @@ void processMainLoop(Object *process)
             keys[i] = translate(*IP++);
             values[i] = NULL;
         }
-        currentScope->scope->variables =
-            symbolMapNew(varcount, (void**)keys, (void**)values);
-        currentIP = IP;
+        symbolMapInit(currentScope->scope->variables,
+            varcount, (void**)keys, (void**)values);
     }
     
     void setupArguments()
     {
-        u8 *IP = currentIP;
+        u8 *IP = currentIP + 1;
         Size argcount = *IP++;
         Size i = 0;
         for (; i < argcount; i++)
-        {
-            /// todo currentClosure
-            IP++;
-        }
-        currentIP = IP;
+            setVar(currentScope, translate(*IP++), pop());
+        currentIP += *currentIP + 2;
     }
     
     while (true)
     {
-        if (currentClosure->closure->type == internalClosure)
-            longjmp(currentScope->scope->env, 1);
+        setjmp(process->process->mainLoop);
         setupVariables();
         setupArguments();
         /* Begin looking at the block. First byte is the number of variables
@@ -286,7 +300,8 @@ void processMainLoop(Object *process)
         inScope = true;
         while (inScope)
         {
-            setjmp(process->process->mainLoop);
+            if (currentClosure->closure->type == internalClosure)
+                longjmp(currentScope->scope->env, 1);
             printf("Bytecode %x at %x\n", *currentIP, currentIP);
             switch (*currentIP++)
             {
@@ -319,12 +334,16 @@ void processMainLoop(Object *process)
                 } break;
                 case 0x86: // array literal
                 {
-                    panic("Not implemented");
+                    Size size = (Size)*currentIP++;
+                    Object *newArray = arrayNew(size);
+                    while (size --> 0)
+                        newArray->array->array[size] = pop();
+                    push(newArray);
                 } break;
                 case 0x87: // block literal
                 {
                     u8 *IP = currentIP;
-                    Object *newClosure = closureNew();
+                    Object *newClosure = closureNew(currentScope);
                     newClosure->closure->type = userDefinedClosure;
                     newClosure->closure->bytecode = IP;
                     newClosure->closure->translationTable =
@@ -359,21 +378,23 @@ void processMainLoop(Object *process)
                     Object *message, *receiver, *method;
                     /* Get the message symbol from the stack */
                     message = pop();
+                    printf("sending message %s argc %x\n", message->data[0], argc);
                     receiver = stackGet(process->process->valueStack, argc);
                     /* Find the corresponding method by using bind() */
                     method = bind(receiver, message);
                     /* if the method is apply, the receiver becomes the method */
-                    if (method->closure->function == vApply)
+                    if (unlikely(method->closure->function == &vApply))
                     {
                         method = receiver;
                     }
-                    if (method == NULL) /* Bind failed, send DoesNotUnderstand */
+                    if (unlikely(method == NULL)) /* Bind failed, send DoesNotUnderstand */
                     {
                         while (argc --> 0)
                             stackPop(process->process->valueStack);
                         push(message);
                         method = bind(receiver, doesNotUnderstandSymbol);
-                        assert(method != NULL, "VM Error");
+                        assert(method != NULL, "VM Error; object at %x, proto %x %x does not delegate to Object %x",
+                            receiver, receiver->proto, receiver->proto->proto, objectProto);
                         push(method);
                         vApply(process);
                         return; // exit due to error.
@@ -381,7 +402,9 @@ void processMainLoop(Object *process)
                     else if (method->closure->type == internalClosure)
                     {
                         push(method);
+                        depth++;
                         vApply(process);
+                        depth--;
                     }
                     else
                     {
@@ -407,10 +430,14 @@ void processMainLoop(Object *process)
                 } break;
                 case 0x8D: // end
                 {
+                    printf("? %x\n", currentClosure->closure->type == internalClosure);
+                    printf("? %x\n", currentScope->scope->parent->scope->block->closure->type == internalClosure);
                     processPopScope(process);
                     if (depth == 0) // process done
                         return;
                     depth--;
+                    printf("depth %x\n", depth);
+                    printf("? %x\n", currentClosure->closure->type == internalClosure);
                 } break;
                 default:
                 {
@@ -434,9 +461,75 @@ void stringAsString(Object *process)
     return;
 }
 
+void arrayAsString(Object *process)
+{
+    Object *array = pop();
+    StringBuilder *sb = stringBuilderNew("[");
+    Size i;
+    for (i = 0; i < array->array->size; i++)
+    {
+        Object *object = array->array->array[i];
+        Object *method = bind(object, symbolNew("asString"));
+        push(object);
+        push(method);
+        vApply(process);
+        Object *string = pop();
+        stringBuilderAppend(sb, string->string->string);
+        if (i < array->array->size)
+            stringBuilderAppend(sb, ", ");
+    }
+    stringBuilderAppend(sb, "]");
+    Size size = sb->size;
+    Object *string = stringNew(size, stringBuilderToString(sb));
+    push(string);
+}
+
+
+/* This method creates a new user-defined object. The internal data of a
+ * user-defined object is an array of scope objects, which each hold instance
+ * variables either defined at the object's level, or at the level of one
+ * of its super-objects (prototypes). */
 void vObjectNewMethods(Object *process)
 {
+    /* Acquire arguments */
+    Object *methods = pop();
+    Object *methodNames = pop();
+    Object *variables = pop();
+    Object *variableNames = pop();
+    Object *proto = pop();
+    //Size newVarCount = variables->array->size;
+    //Size newMethodCount = methods->array->size;
     
+    /* Determine size of allocation */
+    Size size = sizeof(Object);
+    Object *current = proto;
+    do
+        size += sizeof(Object*);
+    while ((current = current->proto) != NULL);
+    size += sizeof(Object*);
+    
+    /* Allocate object */
+    Object *self = malloc(size);
+    self->object[0] = scopeNew(NULL, currentScope);
+    Object *scope = self->object[0];
+    
+    /* Add new methods and variables */
+    scope->scope->variables = symbolMapNew(variableNames->array->size,
+        (void**)variableNames->array->array, (void**)variables->array->array);
+    self->methods = symbolMapNew(methodNames->array->size,
+        (void**)methodNames->array->array, (void**)methods->array->array);
+    
+    /* Allocate private super variables */
+    Size superLevel;
+    current = self->proto;
+    for (superLevel = 1; current != NULL; current = current->proto, superLevel++)
+    {
+        self->object[superLevel] = scopeNew(NULL, scope);
+        self->object[superLevel]->scope->variables =
+            symbolMapCopy(current->object[0]->scope->variables);
+    }
+    
+    push(self);
 }
 
 void bootstrap()
@@ -458,8 +551,8 @@ void bootstrap()
     Object *objectMethodSymbols[objectMethodCount];
     Object *objectMethods[objectMethodCount];
     
-    ///objectMethodSymbols[0] = newMethodsSymbol;
-    ///objectMethods[0] = internalMethodNew(vObjectNewMethods, 1);
+    objectMethodSymbols[0] = symbolNew("new:values:methods:def:");
+    objectMethods[0] = internalMethodNew(vObjectNewMethods, 5);
     
     doesNotUnderstandSymbol = symbolNew("doesNotUnderstand:");
     objectMethodSymbols[1] = doesNotUnderstandSymbol;
@@ -492,11 +585,11 @@ void bootstrap()
     Object *closureMethodSymbols[closureMethodCount];
     Object *closureMethods[closureMethodCount];
     
-    ///closureMethodSymbols[0] = cloneSymbol;
-    ///closureMethods[0] = internalMethodNew(closureClone, 1);
+    closureMethodSymbols[0] = symbolNew("apply");
+    closureMethods[0] = internalMethodNew(vApply, 1);
     
-    closureMethodSymbols[1] = symbolNew("apply");
-    closureMethods[1] = internalMethodNew(vApply, 1);
+    closureMethodSymbols[1] = symbolNew("apply:");
+    closureMethods[1] = internalMethodNew(vApply, 2);
     
     closureProto->methods = symbolMapNew(closureMethodCount,
         (void**)closureMethodSymbols, (void**)closureMethods);
@@ -525,6 +618,22 @@ void bootstrap()
     stringProto->methods = symbolMapNew(1, (void**)stringMethodNames,
         (void**)stringMethods);
     
+    /* Setting up arrayProto */
+    
+    arrayProto = objectNew();
+    
+    Object *arrayMethodNames[] =
+    {
+        symbolNew("asString"),
+    };
+    Object *arrayMethods[] =
+    {
+        internalMethodNew(arrayAsString, 1),
+    };
+    
+    arrayProto->methods = symbolMapNew(1, (void**)arrayMethodNames,
+        (void**)arrayMethods);
+    
     /* Setting up console */
     
     console = objectNew();
@@ -542,7 +651,9 @@ void bootstrap()
     
     /* Setting up Global Scope */
     
-    globalScope = scopeNew();
+    globalScope = scopeNew(NULL, NULL);
+    globalScope->scope->containing = NULL;
+    printf("global scope at %x\n", globalScope);
     
     Size globalVarCount = 2;
     Object *globalKeys[] =
@@ -557,7 +668,7 @@ void bootstrap()
         console,
     };
     
-    globalScope->scope->variables = symbolMapNew(globalVarCount,
+    symbolMapInit(globalScope->scope->variables, globalVarCount,
         (void**)globalKeys, (void**)globalValues);
 }
 

@@ -231,10 +231,21 @@ u8 *compile(String source)
             { | x, y, z | ... }
             { a, b, c | ... }
             { ... }
+        
+        The bytecode output is as follows, byte-by-byte
+        
+            n = number of local variables, including arguments
+            m = number of arguments, where first m varibles are arguments.
+                index of variable 0
+                index of variable 1
+                  &c
+                index of variable n  
     */
     
     void parseBlockHeader()
     {
+        Size varCountByte = getPos();
+        outByte('\0');
         Size argCountByte = getPos();
         outByte('\0');
         Size arguments = 0;
@@ -254,11 +265,9 @@ u8 *compile(String source)
                 arguments++;
                 nextToken();
             }
-            setPos(argCountByte, arguments);
         }
+        setPos(argCountByte, arguments);
         Size variables = 0;
-        Size varCountByte = getPos();
-        outByte('\0');
         if (curToken->type == pipeToken)
         {
             nextToken();
@@ -280,9 +289,9 @@ u8 *compile(String source)
                 }
                 parserRequire(curToken->type == pipeToken, "Expected '|' token");
                 nextToken();
-                setPos(varCountByte, (u8)variables);
             }
         }
+        setPos(varCountByte, (u8)(variables + arguments));
     }
     
     void parseValue()
@@ -322,13 +331,17 @@ u8 *compile(String source)
             case openBracketToken: // array
             {
                 Size elements = 0;
-                do
+                nextToken();
+                if (curToken->type != closeBracketToken) while (true)
                 {
-                    nextToken();
                     parseStmt();
                     elements++;
-                } while (curToken->type == commaToken);
-                parserRequire(curToken->type == closeBracketToken, "Expected ']' token");
+                    if (curToken->type == closeBracketToken)
+                        break;
+                    parserRequire(curToken->type == commaToken,
+                        "Expected ',' token");
+                    nextToken();
+                }
                 nextToken();
                 outByte(arrayBC);
                 outByte(elements);

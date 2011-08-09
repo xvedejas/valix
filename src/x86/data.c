@@ -497,6 +497,7 @@ void **stackArgs(Stack *stack, Size count)
 /* Get value n from top */
 void *stackGet(Stack *stack, Size index)
 {
+    assert((index + 1) <= stack->entries, "Out of bounds");
     return stack->bottom[stack->entries - (index + 1)];
 }
 
@@ -600,37 +601,55 @@ extern void *dequeue(Queue *queue)
 
 inline Size symbolHash(void *key, Size tableSize)
 {
-    return (((Size)key >> 2) ^ ((Size)key << 2)) % tableSize;
+    return (((Size)key >> 2) ^ ((Size)key >> 4)) % tableSize;
+}
+
+Size symbolMapSize(Size entries)
+{
+    Size buckets = symbolMapBuckets(entries);
+    return sizeof(SymbolMap) + buckets * 2 * sizeof(void*);
+}
+
+SymbolMap *symbolMapCopy(SymbolMap *map)
+{
+    SymbolMap *newMap = malloc(symbolMapSize(map->entries));
+    memcpyd(newMap->hashTable, map->hashTable, symbolMapBuckets(map->entries));
+    return newMap;
+}
+
+SymbolMap *symbolMapInit(SymbolMap *symbolMap, Size size, void **keys, void **values)
+{
+    Size buckets = symbolMapBuckets(size);
+    memsetd(&symbolMap->hashTable, 0, buckets * 2);
+    symbolMap->entries = size;
+    register Size *hashTable = symbolMap->hashTable;
+    register Size i = size;
+    while (i --> 0)
+    {
+        register Size hashIndex = symbolHash(keys[i], buckets) * 2;
+        while (hashTable[hashIndex] != 0)
+        {
+            if (hashIndex == 0)
+                hashIndex = (buckets - 1) * 2;
+            else
+                hashIndex -= 2;
+        }
+        hashTable[hashIndex] = (Size)keys[i];
+        hashTable[hashIndex + 1] = (Size)values[i];
+    }
+    return symbolMap;
 }
 
 SymbolMap *symbolMapNew(Size size, void **keys, void **values)
 {
-    Size buckets = (size + (size >> 1)) + 1;
-    SymbolMap *symbolMap = malloc(sizeof(SymbolMap) + buckets * 2 * sizeof(void*));
-    memsetd(&symbolMap->hashTable, 0, buckets * 2);
-    symbolMap->buckets = buckets;
-    register Size i = size;
-    while (i --> 0)
-    {
-        register Size hashIndex = symbolHash(keys[i], buckets);
-        register Size *hashTable = symbolMap->hashTable;
-        while (hashTable[hashIndex * 2] != 0)
-        {
-            if (hashIndex == 0)
-                hashIndex = size - 1;
-            else
-                hashIndex--;
-        }
-        hashTable[hashIndex * 2] = (Size)keys[i];
-        hashTable[hashIndex * 2 + 1] = (Size)values[i];
-    }
-    return symbolMap;
+    return symbolMapInit(malloc(symbolMapSize(size)), size, keys, values);
 }
 
 void symbolMapDebug(SymbolMap *map)
 {
     Size i;
-    for (i = 0; i < map->buckets; i++)
+    Size buckets = symbolMapBuckets(map->entries);
+    for (i = 0; i < buckets; i++)
     {
         printf("Key: %x ", map->hashTable[i * 2]);
         printf("Value: %x\n", map->hashTable[i * 2 + 1]);
@@ -650,7 +669,7 @@ void symbolMapDebug(SymbolMap *map)
 
 void *symbolMapGet(SymbolMap *map, void *key)
 {
-    Size buckets = map->buckets;
+    Size buckets = symbolMapBuckets(map->entries);
     register Size hashIndex = symbolHash(key, buckets) * 2;
     register Size *hashTable = map->hashTable;
     while (true)
@@ -676,7 +695,7 @@ void *symbolMapGet(SymbolMap *map, void *key)
 
 bool symbolMapHasKey(SymbolMap *map, void *key)
 {
-    Size buckets = map->buckets;
+    Size buckets = symbolMapBuckets(map->entries);
     register Size hashIndex = symbolHash(key, buckets) * 2;
     register Size *hashTable = map->hashTable;
     while (true)
@@ -704,7 +723,7 @@ bool symbolMapHasKey(SymbolMap *map, void *key)
 /* returns 'true' if success, otherwise 'false' */
 bool symbolMapSet(SymbolMap *map, void *key, void *value)
 {
-    Size buckets = map->buckets;
+    Size buckets = symbolMapBuckets(map->entries);
     register Size hashIndex = symbolHash(key, buckets) * 2;
     register Size *hashTable = map->hashTable;
     while (true)

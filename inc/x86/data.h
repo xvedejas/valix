@@ -144,11 +144,16 @@ extern void *dequeue(Queue *queue);
 
 typedef struct
 {
-    Size buckets;
+    Size entries;
     Size hashTable[0];
 } SymbolMap;
 
-SymbolMap *symbolMapNew(Size size, void **keys, void **values);
+#define symbolMapBuckets(entries) ((entries + (entries >> 1)) + 1)
+
+extern Size symbolMapSize(Size entries);
+extern SymbolMap *symbolMapInit(SymbolMap *symbolMap, Size size, void **keys, void **values);
+extern SymbolMap *symbolMapNew(Size size, void **keys, void **values);
+extern SymbolMap *symbolMapCopy(SymbolMap *map);
 extern void *symbolMapGet(SymbolMap *map, void *key);
 extern void symbolMapDebug(SymbolMap *map);
 extern bool symbolMapHasKey(SymbolMap *map, void *key);

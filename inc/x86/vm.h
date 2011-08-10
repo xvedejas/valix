@@ -100,6 +100,7 @@ typedef struct process
     Stack *valueStack;
     PermissionLevel permissions;
     jmp_buf mainLoop;
+    Size depth;
 } Process;
 
 typedef struct stringData

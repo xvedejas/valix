@@ -19,9 +19,9 @@
 #ifndef __setjmp_h__
 #define __setjmp_h__
 
-typedef void *jmp_buf[4];
+typedef void *jmp_buf[5];
 
-#define setjmp(env) __builtin_setjmp(env)
-#define longjmp(env, val) __builtin_longjmp(env, val)
+extern bool __attribute__((fastcall)) setjmp(jmp_buf env);
+extern void __attribute__((fastcall)) longjmp(jmp_buf env, bool val);
 
 #endif

@@ -1,3 +1,22 @@
+/*  Copyright (C) 2010 Xander Vedejas <xvedejas@gmail.com>
+ *
+ *  This program is free software: you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation, either version 3 of the License, or
+ *  (at your option) any later version.
+ *
+ *  This program is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License
+ *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ *
+ *  Maintained by:
+ *      Xander Vedėjas <xvedejas@gmail.com>
+ */
+
 #include <vm.h>
 #include <threading.h>
 #include <mm.h>
@@ -232,7 +251,7 @@ void processSetBytecode(Object *process, u8 *bytecode)
 
 void processMainLoop(Object *process)
 {
-    Size depth = 0;
+    process->process->depth = 1;
     bool inScope = true;
     u8 *IP = NULL;
     Object *closure = closureNew(NULL);
@@ -402,9 +421,9 @@ void processMainLoop(Object *process)
                     else if (method->closure->type == internalClosure)
                     {
                         push(method);
-                        depth++;
+                        process->process->depth++;
                         vApply(process);
-                        depth--;
+                        process->process->depth--;
                     }
                     else
                     {
@@ -412,7 +431,7 @@ void processMainLoop(Object *process)
                         push(method);
                         vApply(process);
                         inScope = false;
-                        depth++;
+                        process->process->depth++;
                     }
                 } break;
                 case 0x8A: // stop
@@ -435,10 +454,10 @@ void processMainLoop(Object *process)
                     printf("?scope %x\n", currentScope);
                     processPopScope(process);
                     printf("?scope %x\n", currentScope);
-                    if (depth == 0) // process done
+                    printf("depth %x\n", process->process->depth);
+                    if (process->process->depth == 0) // process done
                         return;
-                    depth--;
-                    printf("depth %x\n", depth);
+                    process->process->depth--;
                     printf("? %x\n", currentClosure->closure->type == internalClosure);
                 } break;
                 default:

@@ -167,7 +167,8 @@ void faultHandler(Regs *r)
 {
     dumpRegs(r);
     if (r->intNo < 32)
-    {   printf("----\n%s\n", exceptionMessages[r->intNo]);
+    {
+        printf("----\n%s\n", exceptionMessages[r->intNo]);
         _panic("unknown", 0);
     }
 }

@@ -59,6 +59,7 @@ inline Object *bind(Object *target, Object *symbol)
         /* Some loop unwinding here; this is a pretty important function so
          * optimization is necessary. */
         bindLoop(); bindLoop(); bindLoop(); bindLoop(); bindLoop(); bindLoop();
+        bindLoop(); bindLoop(); bindLoop(); bindLoop(); bindLoop(); bindLoop();
     }
 }
 
@@ -66,6 +67,7 @@ Object *objectNew()
 {
     Object *object = malloc(sizeof(Object));
     object->proto = objectProto;
+    object->object = NULL;
     return object;
 }
 
@@ -148,9 +150,6 @@ void vPrint(Object *process)
 {
     Object *method = bind(arg(0), symbolNew("asString"));
     stackDebug(process->process->valueStack);
-    printf("%x\n", arg(0));
-    printf("Method %x\n", method);
-    printf("attempting to call asString method\n");
     push(method);
     vApply(process);
     printf("%s", pop()->string->string);
@@ -305,6 +304,32 @@ void processMainLoop(Object *process)
         currentIP += *currentIP + 2;
     }
     
+    void blockLiteral()
+    {
+        u8 *IP = currentIP;
+        Object *newClosure = closureNew(currentScope);
+        newClosure->closure->type = userDefinedClosure;
+        newClosure->closure->bytecode = IP;
+        newClosure->closure->translationTable =
+            currentClosure->closure->translationTable;
+        push(newClosure);
+        // increment IP until after this block
+        Size defdepth = 1;
+        while (defdepth > 0)
+        {
+            switch (*IP++)
+            {
+                case 0x87: // start block
+                    defdepth++;
+                break;
+                case 0x8D: // end block
+                    defdepth--;
+                break;
+            }
+        }
+        currentIP = IP;
+    }
+    
     while (true)
     {
         setjmp(process->process->mainLoop);
@@ -361,28 +386,7 @@ void processMainLoop(Object *process)
                 } break;
                 case 0x87: // block literal
                 {
-                    u8 *IP = currentIP;
-                    Object *newClosure = closureNew(currentScope);
-                    newClosure->closure->type = userDefinedClosure;
-                    newClosure->closure->bytecode = IP;
-                    newClosure->closure->translationTable =
-                        currentClosure->closure->translationTable;
-                    push(newClosure);
-                    // increment IP until after this block
-                    Size defdepth = 1;
-                    while (defdepth > 0)
-                    {
-                        switch (*IP++)
-                        {
-                            case 0x87: // start block
-                                defdepth++;
-                            break;
-                            case 0x8D: // end block
-                                defdepth--;
-                            break;
-                        }
-                    }
-                    currentIP = IP;
+                    blockLiteral();
                 } break;
                 case 0x88: // variable
                 {
@@ -398,6 +402,7 @@ void processMainLoop(Object *process)
                     /* Get the message symbol from the stack */
                     message = pop();
                     printf("sending message %s argc %x\n", message->data[0], argc);
+                    stackDebug(process->process->valueStack);
                     receiver = stackGet(process->process->valueStack, argc);
                     /* Find the corresponding method by using bind() */
                     method = bind(receiver, message);
@@ -449,20 +454,47 @@ void processMainLoop(Object *process)
                 } break;
                 case 0x8D: // end
                 {
-                    printf("? %x\n", currentClosure->closure->type == internalClosure);
-                    printf("? %x\n", currentScope->scope->parent->scope->block->closure->type == internalClosure);
-                    printf("?scope %x\n", currentScope);
                     processPopScope(process);
-                    printf("?scope %x\n", currentScope);
-                    printf("depth %x\n", process->process->depth);
                     if (process->process->depth == 0) // process done
                         return;
                     process->process->depth--;
-                    printf("? %x\n", currentClosure->closure->type == internalClosure);
+                } break;
+                case 0x8E: // object init
+                {
+                    Object *self = stackTop(process->process->valueStack);
+                    assert(self->object[0] == NULL, "Object already initialized");
+                    assert(self->methods == NULL, "Object already initialized");
+                    
+                    /* Setup variables */
+                    Size varc = *currentIP++;
+                    Object *varNames[varc];
+                    Size i = varc;
+                    while (i --> 0)
+                        varNames[i] = translate(*currentIP++);
+                    self->object[0] = scopeNew(NULL, currentScope);
+                    Object *scope = self->object[0];
+                    scope->scope->variables = symbolMapNew(varc,
+                        (void**)varNames, (void**)NULL);
+                    
+                    Size methodCount = *currentIP++;
+                    Object *methodNames[methodCount];
+                    Object *methodClosures[methodCount];
+                    i = methodCount;
+                    /* Setup methods */
+                    while (i --> 0)
+                    {
+                        methodNames[i] = translate(*currentIP++);
+                        assert(*currentIP++ == blockBC, "Malformed Bytecode");
+                        blockLiteral();
+                        methodClosures[i] = pop();
+                    }
+                    
+                    self->methods = symbolMapNew(methodCount,
+                        (void**)methodNames, (void**)methodClosures);
                 } break;
                 default:
                 {
-                    panic("Unknown Bytecode");
+                    panic("Unknown Bytecode %x", currentIP[-1]);
                 }
             }
             if (!inScope) break;
@@ -505,52 +537,29 @@ void arrayAsString(Object *process)
     push(string);
 }
 
-
-/* This method creates a new user-defined object. The internal data of a
- * user-defined object is an array of scope objects, which each hold instance
- * variables either defined at the object's level, or at the level of one
- * of its super-objects (prototypes). */
-void vObjectNewMethods(Object *process)
+void vObjectNew(Object *process)
 {
-    /* Acquire arguments */
-    Object *methods = pop();
-    Object *methodNames = pop();
-    Object *variables = pop();
-    Object *variableNames = pop();
-    Object *proto = pop();
-    //Size newVarCount = variables->array->size;
-    //Size newMethodCount = methods->array->size;
+    Object *self = pop();
+    Object *object = malloc(sizeof(Object));
     
-    /* Determine size of allocation */
-    Size size = sizeof(Object);
-    Object *current = proto;
+    Size protoChainLen = 0;
+    Object *current = self->proto;
     do
-        size += sizeof(Object*);
+        protoChainLen++;
     while ((current = current->proto) != NULL);
-    size += sizeof(Object*);
     
-    /* Allocate object */
-    Object *self = malloc(size);
-    self->object[0] = scopeNew(NULL, currentScope);
-    Object *scope = self->object[0];
+    /// todo; initialize all super scopes
     
-    /* Add new methods and variables */
-    scope->scope->variables = symbolMapNew(variableNames->array->size,
-        (void**)variableNames->array->array, (void**)variables->array->array);
-    self->methods = symbolMapNew(methodNames->array->size,
-        (void**)methodNames->array->array, (void**)methods->array->array);
-    
-    /* Allocate private super variables */
-    Size superLevel;
-    current = self->proto;
-    for (superLevel = 1; current != NULL; current = current->proto, superLevel++)
-    {
-        self->object[superLevel] = scopeNew(NULL, scope);
-        self->object[superLevel]->scope->variables =
-            symbolMapCopy(current->object[0]->scope->variables);
-    }
-    
-    push(self);
+    object->object = malloc(sizeof(Object*) * protoChainLen);
+    object->object[0] = NULL;
+    object->proto = self;
+    object->methods = NULL;
+    push(object);
+}
+
+void vReturnFalse(Object *process)
+{
+    push(falseObject);
 }
 
 void bootstrap()
@@ -572,15 +581,15 @@ void bootstrap()
     Object *objectMethodSymbols[objectMethodCount];
     Object *objectMethods[objectMethodCount];
     
-    objectMethodSymbols[0] = symbolNew("new:values:methods:def:");
-    objectMethods[0] = internalMethodNew(vObjectNewMethods, 5);
-    
     doesNotUnderstandSymbol = symbolNew("doesNotUnderstand:");
-    objectMethodSymbols[1] = doesNotUnderstandSymbol;
-    objectMethods[1] = internalMethodNew(vDoesNotUnderstand, 2);
+    objectMethodSymbols[0] = doesNotUnderstandSymbol;
+    objectMethods[0] = internalMethodNew(vDoesNotUnderstand, 2);
     
-    ///objectMethodSymbols[2] = isNilSymbol;
-    ///objectMethods[2] = internalMethodNew(vReturnFalse, 1);
+    objectMethodSymbols[1] = isNilSymbol;
+    objectMethods[1] = internalMethodNew(vReturnFalse, 1);
+    
+    objectMethodSymbols[2] = symbolNew("new");
+    objectMethods[2] = internalMethodNew(vObjectNew, 1);
     
     objectProto->methods = symbolMapNew(objectMethodCount,
         (void**)objectMethodSymbols, (void**)objectMethods);

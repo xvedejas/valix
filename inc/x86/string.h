@@ -34,4 +34,7 @@ String strchr(const String s, char c);
 String strncpy(String dest, const String src, Size count);
 String strncat(String dest, String src, Size count);
 
+bool startswith(String string, String substring);
+bool endswith(String string, String substring);
+
 #endif

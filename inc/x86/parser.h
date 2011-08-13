@@ -44,6 +44,7 @@ typedef enum
     setBC      = 0x8B, // set variable (next byte) to data on stack
     returnBC   = 0x8C, // return-from
     endBC      = 0x8D, // ends a block or file
+    initBC     = 0x8E, // begin an object init
 } bytecodeCommand;
 
 extern const String bytecodes[];

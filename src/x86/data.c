@@ -642,6 +642,12 @@ SymbolMap *symbolMapInit(SymbolMap *symbolMap, Size size, void **keys, void **va
 
 SymbolMap *symbolMapNew(Size size, void **keys, void **values)
 {
+    if (values == (void**)NULL)
+    {
+        void *nullValues[size];
+        memsetd((void**)nullValues, 0, size);
+        return symbolMapInit(malloc(symbolMapSize(size)), size, keys, nullValues);
+    }
     return symbolMapInit(malloc(symbolMapSize(size)), size, keys, values);
 }
 

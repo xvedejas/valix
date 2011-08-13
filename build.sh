@@ -34,6 +34,7 @@ if [[ $1 == "clean" ]]; then
     exit 0
 fi
 
+compiletoasm=false
 if [[ $1 == "asm" ]]; then
     compiletoasm=true
 fi

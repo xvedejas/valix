@@ -62,10 +62,10 @@ typedef struct scope
 } Scope;
 
 #define arg(n) ((Object*)stackGet(process->process->valueStack, n))
-#define pop() ((Object*)stackPop(process->process->valueStack))
+#define pop() ({ ((Object*)stackPop(process->process->valueStack)); })
 #define popInt() ((Object*)stackPop(process->process->valueStack)->value[0])
 #define args(n) ((Object**)stackArgs(process->process->valueStack, n))
-#define push(v) (stackPush(process->process->valueStack, v))
+#define push(v) ({ (stackPush(process->process->valueStack, v)); })
 #define currentScope (process->process->scope)
 #define currentIP (currentScope->scope->IP)
 #define currentClosure (currentScope->scope->block)
@@ -127,9 +127,9 @@ struct object
         struct stringData string[0];
         struct array array[0];
         u8 byte[0];
-        void *data[0];
         Size value[0];
-        struct object *object[0];
+        void *data[0];
+        struct object **object;
     };
 };
 

@@ -279,8 +279,9 @@ void kmain(u32 magic, MultibootStructure *multiboot, void *stackPointer)
     
     u8 *bytecode = compile(
         " | myObject |\n"
-        " myObject = Object new: [] values: [] methods: [ #asString ] \n"
-        " def: [ { self | \"\n>>>Valix is Working!<<<\n\" } ]. \n"
+        " myObject = Object new. \n"
+        " myObject init: { asString \n"
+        " { \"\n>>>Valix is Working!<<<\n\" } }. \n"
         " Console print: myObject.\n"
         );
     

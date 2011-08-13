@@ -50,6 +50,7 @@ String tokenTypeNames[] =
     "symbolToken",
     "keywordToken",
     "specialCharToken",
+    "initToken",
 };
 
 void lexerError(String message)
@@ -285,8 +286,15 @@ Token *lex(String source, Token *lastToken)
                 strlcpy(data, source + i, length);
                 Token *token = tokenNew(undefToken, NULL, 0);
                 /* Reserved keywords go here; more to come */
-                switch(data[0])
+                switch (data[0])
                 {
+                    case 'i':
+                        if (unlikely(startswith(source + i, "init:")))
+                        {
+                            token->type = initToken;
+                            i++;
+                        }
+                    break;
                     case 'r':
                         // return
                         if (unlikely(strcmp(data + 1, "eturn") == 0))

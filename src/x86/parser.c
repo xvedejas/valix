@@ -28,8 +28,7 @@ const Size maxKeywordCount = 8;
 /*
  * This is a tail-recursive parser, which means it is designed to work with
  * left-recursive grammars. It uses less stack space than a recursive descent
- * parser, and is fairly easy to write. The following grammar is the current
- * desired subset of the final grammar.
+ * parser, and is fairly easy to write.
  */
 
 const String bytecodes[] =
@@ -75,7 +74,7 @@ u8 *compile(String source)
     InternTable *symbolTable = internTableNew();
     /* The method table must be saved */
     StringBuilder *symbolTableBytecode = stringBuilderNew(" ");
-    /* The very first byte tells the size of the method table. For now the
+    /* The very first byte tells the size of the symbol table. For now the
      * limit is 255 but it may very well change. that byte is reserved by
      * starting with a single character in the string builder. */
     
@@ -101,6 +100,27 @@ u8 *compile(String source)
             stringBuilderAppendChar(symbolTableBytecode, '\0');
         }
         return index;
+    }
+    
+    /* The following function takes an array of keywords and finds the
+     * corresponding message keyword's interned value. Does not work for unary
+     * messages. */
+    Size methodNameIntern(Size keywordCount, String *keywords)
+    {
+        Size i = keywordCount,
+             j = 0,
+             length = 0;
+        for (j = 0; j < i; j++)
+            length += strlen(keywords[j]) + 1;
+        String messageName = calloc(length + 1, sizeof(char));
+        for (j = 0; j < i; j++)
+        {
+            strcat(messageName, keywords[j]);
+            strcat(messageName, ":"); 
+        }
+        Size interned = intern(messageName);
+        free(messageName);
+        return interned;
     }
     
     Token *lookahead(u32 n)
@@ -167,11 +187,107 @@ u8 *compile(String source)
         }
     }
     
+    void parseObjectDef()
+    {
+        outByte(initBC);
+        Size varCountByte = getPos();
+        Size varCount = 0;
+        outByte('\0'); // number of variables
+        parserRequire(curToken->type == openBraceToken, "Expected '{' token");
+        nextToken();
+        /* variables, listed as | var, var | */
+        if (curToken->type == pipeToken)
+        {
+            nextToken();
+            parserRequire(curToken->type == symbolToken, "Expected variable name");
+            varCount++;
+            outByte(intern(curToken->data));
+            nextToken();
+            while (curToken->type == commaToken)
+            {
+                nextToken();
+                parserRequire(curToken->type == symbolToken, "Expected variable name");
+                varCount++;
+                outByte(intern(curToken->data));
+                nextToken();
+            }
+            parserRequire(curToken->type == pipeToken, "Expected '|' token");
+            nextToken();
+        }
+        setPos(varCountByte, varCount);
+        /* Method Declarations */
+        Size methodCountByte = getPos();
+        Size methodCount = 0;
+        outByte('\0'); // number of methods
+        while (curToken->type != closeBraceToken)
+        {
+            methodCount++;
+            parserRequire(curToken->type == keywordToken, "Expected method declaration");
+            String keywords[maxKeywordCount];
+            String args[maxKeywordCount + 1];
+            Size keywordc = 0,
+                 argc = 0;
+            args[argc++] = "self";
+            
+            keywords[keywordc++] = curToken->data;
+            nextToken();
+            if (curToken->type == semiToken) // not unary
+            {
+                nextToken();
+                args[argc++] = curToken->data;
+                nextToken();
+                while (curToken->type != openBraceToken)
+                {
+                    parserRequire(curToken->type == keywordToken, "Expected method keyword");
+                    parserRequire(keywordc < maxKeywordCount, "Message has too many keywords");
+                    keywords[keywordc++] = curToken->data;
+                    nextToken();
+                    parserRequire(curToken->type == semiToken, "Expected ':' token");
+                    nextToken();
+                    args[argc++] = curToken->data;
+                    nextToken();
+                }
+                outByte(methodNameIntern(keywordc, keywords));
+            }
+            else
+                outByte(intern(keywords[0]));
+            
+            /* Method closure */
+            outByte(blockBC);
+            parserRequire(curToken->type == openBraceToken, "Expected '{' token");
+            nextToken();
+            Size varCountByte = getPos();
+            outByte('\0');
+            outByte(argc);
+            outByte(intern("self")); // implicit argument
+            Size varc = 0;
+            if (curToken->type == pipeToken) // variables
+            {
+                do
+                {
+                    nextToken();
+                    parserRequire(curToken->type == keywordToken, "Expected variable name");
+                    varc++;
+                    outByte(intern(curToken->data));
+                    nextToken();
+                } while (curToken->type == commaToken);
+                parserRequire(curToken->type == pipeToken, "Expected '|' token");
+            }
+            setPos(varCountByte, (u8)(varc + argc));
+            parseStmt();
+            parserRequire(curToken->type == closeBraceToken, "Expected '}' token");
+            nextToken();
+            outByte(endBC);
+        }
+        nextToken();
+        setPos(methodCountByte, methodCount);
+    }
+    
     /* Value plus messages */
     void parseExpr()
     {
         parseValue();
-        while (curToken->type == keywordToken || curToken->type == specialCharToken)
+        while (curToken->type == initToken || curToken->type == keywordToken || curToken->type == specialCharToken)
         {
             if (curToken->type == keywordToken)
             {
@@ -198,19 +314,15 @@ u8 *compile(String source)
                 }
                 if (isUnary)
                     break;
-                Size j, length = 0;
-                for (j = 0; j < i; j++)
-                    length += strlen(keywords[j]) + 1;
-                String messageName = calloc(length + 1, sizeof(char));
-                for (j = 0; j < i; j++)
-                {
-                    strcat(messageName, keywords[j]);
-                    strcat(messageName, ":"); 
-                }
                 outByte(symbolBC);
-                outByte(intern(messageName));
+                outByte(methodNameIntern(i, keywords));
                 outByte(messageBC);
                 outByte(i);
+            }
+            else if (curToken->type == initToken)
+            {
+                nextToken();
+                parseObjectDef();
             }
             else
             {

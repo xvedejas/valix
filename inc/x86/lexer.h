@@ -49,6 +49,7 @@ typedef enum
     symbolToken,  // #symbolName
     keywordToken,
     specialCharToken,
+    initToken
 } TokenType;
 
 extern String tokenTypeNames[];

@@ -277,18 +277,33 @@ void kmain(u32 magic, MultibootStructure *multiboot, void *stackPointer)
     asm volatile("sti;");
     printf("Welcome to Valix Pre-Alpha 1. Type \"help\" for usage information.\n\n");
     
-    u8 *bytecode = compile(
-        " | myObject |\n"
+    String testcode = " | myObject |\n"
         " myObject = Object new. \n"
-        " myObject init: { asString \n"
-        " { \"\n>>>Valix is Working!<<<\n\" } }. \n"
-        " Console print: myObject.\n"
-        );
+        " myObject init: \n"
+        " { \n"
+        "     | myString | \n"
+        "     test \n"
+        "     { \n"
+        "         Console print: myString. \n"
+        "     } \n"
+        "     \n"
+        "     setString: s \n"
+        "     { \n"
+        "         myString = s. \n"
+        "     } \n"
+        " }. \n"
+        " \n "
+        " myObject setString: \"hello, world!\".\n"
+        " myObject test.\n";
+    
+    printf("Executing the following code: \n\n %s \n\n", testcode);
+    
+    u8 *bytecode = compile(testcode);
     
     Object *process = processNew();
     processSetBytecode(process, bytecode);
     processMainLoop(process);
-    printf("DONE\n");
+    printf("\nDONE\n");
     
     //pciinfo();
     return; /* kills kernel thread */

@@ -199,14 +199,14 @@ u8 *compile(String source)
         if (curToken->type == pipeToken)
         {
             nextToken();
-            parserRequire(curToken->type == symbolToken, "Expected variable name");
+            parserRequire(curToken->type == keywordToken, "Expected variable name");
             varCount++;
             outByte(intern(curToken->data));
             nextToken();
             while (curToken->type == commaToken)
             {
                 nextToken();
-                parserRequire(curToken->type == symbolToken, "Expected variable name");
+                parserRequire(curToken->type == keywordToken, "Expected variable name");
                 varCount++;
                 outByte(intern(curToken->data));
                 nextToken();
@@ -231,7 +231,7 @@ u8 *compile(String source)
             
             keywords[keywordc++] = curToken->data;
             nextToken();
-            if (curToken->type == semiToken) // not unary
+            if (curToken->type == colonToken) // not unary
             {
                 nextToken();
                 args[argc++] = curToken->data;
@@ -259,7 +259,10 @@ u8 *compile(String source)
             Size varCountByte = getPos();
             outByte('\0');
             outByte(argc);
-            outByte(intern("self")); // implicit argument
+            Size i;
+            for (i = 0; i < argc; i++)
+                outByte(intern(args[i]));
+            
             Size varc = 0;
             if (curToken->type == pipeToken) // variables
             {
@@ -524,12 +527,12 @@ u8 *compile(String source)
     internTableDel(symbolTable);
     
     // see the output
-    Size i;
-    for (i = 0; i < outputSize; i++)
-        printf("%x %c\n", finalBytecode[i], finalBytecode[i]);
-    printf("Parser done\n");
+    //Size i;
+    //for (i = 0; i < outputSize; i++)
+    //    printf("%x %c\n", finalBytecode[i], finalBytecode[i]);
+    //printf("Parser done\n");
     
-    printf("Bytecode size %i\n", outputSize);
+    //printf("Bytecode size %i\n", outputSize);
     return finalBytecode;
 }
 

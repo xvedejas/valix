@@ -86,7 +86,8 @@ Object *scopeNew(Object *block, Object *containing)
     self->proto = scopeProto;
     Scope *scope = self->scope;
     scope->block = block;
-    scope->containing = containing;
+    scope->containing = (containing == NULL)?
+        globalScope : containing;
     return self;
 }
 
@@ -149,7 +150,6 @@ void vApply(Object *process);
 void vPrint(Object *process)
 {
     Object *method = bind(arg(0), symbolNew("asString"));
-    stackDebug(process->process->valueStack);
     push(method);
     vApply(process);
     printf("%s", pop()->string->string);
@@ -162,6 +162,8 @@ Object *lookupVar(Object *scope, Object *symbol)
     do
         value = symbolMapGet(scope->scope->variables, symbol);
     while (value == NULL && (scope = scope->scope->containing) != NULL);
+    if (value == NULL)
+        printf("null value for variable %s\n", symbol->data[0]);
     return value;
 }
 
@@ -179,14 +181,12 @@ void setVar(Object *scope, Object *symbol, Object *value)
 
 void processPushScope(Object *process, Object *scope)
 {
-    printf("Push scope\n");
     scope->scope->parent = currentScope;
     currentScope = scope;
 }
 
 Object *processPopScope(Object *process)
 {
-    printf("Pop scope\n");
     Object *prevScope = currentScope;
     currentScope = currentScope->scope->parent;
     return prevScope;
@@ -198,22 +198,23 @@ Object *processPopScope(Object *process)
  * the scope of execution by pushing a new scope to the process. */
 void vApply(Object *process)
 {
-    Object *oldScope = NULL;
+    Object *oldScope = currentScope;
+    process->process->depth++;
     Object *block = pop();
     assert(block != NULL, "Internal error; method does not exist");
     Closure *closure = block->closure;
     // if we are calling from an internal function, save this state
     bool fromInternal = currentClosure->closure->type == internalClosure;
     // create a new scope
-    oldScope = process->process->scope;
     Object *scope = scopeNew(block, block->closure->scope);
     processPushScope(process, scope);
     switch (closure->type)
     {
         case internalClosure:
             closure->function(process);
+            process->process->depth--;
             processPopScope(process);
-        break;
+        return;
         case userDefinedClosure:
         {
             currentScope->scope->IP = closure->bytecode;
@@ -221,13 +222,13 @@ void vApply(Object *process)
             {
                 if (setjmp(oldScope->scope->env))
                 {
-                    printf("Returning from saved state");
+                    //printf("Returning from saved state");
                     return;
                 }
                 else
                 {
                     currentIP = currentClosure->closure->bytecode;
-                    printf("re-entering main loop\n");
+                    //printf("re-entering main loop\n");
                     longjmp(process->process->mainLoop, true);
                     panic("catch");
                 }
@@ -297,10 +298,11 @@ void processMainLoop(Object *process)
     void setupArguments()
     {
         u8 *IP = currentIP + 1;
-        Size argcount = *IP++;
+        Size argcount = *IP;
+        IP += argcount;
         Size i = 0;
-        for (; i < argcount; i++)
-            setVar(currentScope, translate(*IP++), pop());
+        for (; i < argcount; i++, IP--)
+            setVar(currentScope, translate(*IP), pop());
         currentIP += *currentIP + 2;
     }
     
@@ -346,7 +348,7 @@ void processMainLoop(Object *process)
                 longjmp(currentScope->scope->env, true);
                 panic("Failure");
             }
-            printf("Bytecode %x at %x\n", *currentIP, currentIP);
+            ///printf("Bytecode %x at %x\n", *currentIP, currentIP);
             switch (*currentIP++)
             {
                 case 0x81: // integer literal
@@ -401,8 +403,7 @@ void processMainLoop(Object *process)
                     Object *message, *receiver, *method;
                     /* Get the message symbol from the stack */
                     message = pop();
-                    printf("sending message %s argc %x\n", message->data[0], argc);
-                    stackDebug(process->process->valueStack);
+                    ///printf("sending message %s argc %x\n", message->data[0], argc);
                     receiver = stackGet(process->process->valueStack, argc);
                     /* Find the corresponding method by using bind() */
                     method = bind(receiver, message);
@@ -426,17 +427,14 @@ void processMainLoop(Object *process)
                     else if (method->closure->type == internalClosure)
                     {
                         push(method);
-                        process->process->depth++;
                         vApply(process);
-                        process->process->depth--;
                     }
-                    else
+                    else // user-defined method.
                     {
                         /* Apply, using the arguments on the stack */
                         push(method);
                         vApply(process);
                         inScope = false;
-                        process->process->depth++;
                     }
                 } break;
                 case 0x8A: // stop
@@ -455,9 +453,9 @@ void processMainLoop(Object *process)
                 case 0x8D: // end
                 {
                     processPopScope(process);
+                    process->process->depth--;
                     if (process->process->depth == 0) // process done
                         return;
-                    process->process->depth--;
                 } break;
                 case 0x8E: // object init
                 {
@@ -487,6 +485,8 @@ void processMainLoop(Object *process)
                         assert(*currentIP++ == blockBC, "Malformed Bytecode");
                         blockLiteral();
                         methodClosures[i] = pop();
+                        methodClosures[i]->closure->scope =
+                            self->object[0];
                     }
                     
                     self->methods = symbolMapNew(methodCount,

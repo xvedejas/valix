@@ -290,7 +290,8 @@ u8 *compile(String source)
     void parseExpr()
     {
         parseValue();
-        while (curToken->type == initToken || curToken->type == keywordToken || curToken->type == specialCharToken)
+        while (curToken->type == initToken || curToken->type == keywordToken ||
+            curToken->type == specialCharToken)
         {
             if (curToken->type == keywordToken)
             {
@@ -316,7 +317,7 @@ u8 *compile(String source)
                     parseValue();
                 }
                 if (isUnary)
-                    break;
+                    continue;
                 outByte(symbolBC);
                 outByte(methodNameIntern(i, keywords));
                 outByte(messageBC);

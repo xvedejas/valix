@@ -312,6 +312,7 @@ void processMainLoop(Object *process)
         Object *newClosure = closureNew(currentScope);
         newClosure->closure->type = userDefinedClosure;
         newClosure->closure->bytecode = IP;
+        newClosure->closure->argc = IP[1];
         newClosure->closure->translationTable =
             currentClosure->closure->translationTable;
         push(newClosure);
@@ -403,19 +404,25 @@ void processMainLoop(Object *process)
                     Object *message, *receiver, *method;
                     /* Get the message symbol from the stack */
                     message = pop();
-                    ///printf("sending message %s argc %x\n", message->data[0], argc);
                     receiver = stackGet(process->process->valueStack, argc);
+                    ///printf("sending %x message %s argc %x\n", receiver, message->data[0], argc);
                     /* Find the corresponding method by using bind() */
                     method = bind(receiver, message);
                     /* if the method is apply, the receiver becomes the method */
                     if (unlikely(method->closure->function == &vApply))
                     {
                         method = receiver;
+                        // remove extra unused receiver argument
+                        Stack *stack = process->process->valueStack;
+                        Size entries = process->process->valueStack->entries;
+                        memcpyd(stack->bottom + entries - argc - 1,
+                            stack->bottom + entries - argc, argc);
+                        pop();
                     }
                     if (unlikely(method == NULL)) /* Bind failed, send DoesNotUnderstand */
                     {
                         while (argc --> 0)
-                            stackPop(process->process->valueStack);
+                            pop();
                         push(message);
                         method = bind(receiver, doesNotUnderstandSymbol);
                         assert(method != NULL, "VM Error; object at %x, proto %x %x does not delegate to Object %x",
@@ -424,22 +431,21 @@ void processMainLoop(Object *process)
                         vApply(process);
                         return; // exit due to error.
                     }
-                    else if (method->closure->type == internalClosure)
+                    push(method);
+                    if (method->closure->type == internalClosure)
                     {
-                        push(method);
                         vApply(process);
                     }
                     else // user-defined method.
                     {
                         /* Apply, using the arguments on the stack */
-                        push(method);
                         vApply(process);
                         inScope = false;
                     }
                 } break;
                 case 0x8A: // stop
                 {
-                    stackPop(process->process->valueStack);
+                    pop();
                 } break;
                 case 0x8B: // set variable
                 {
@@ -460,6 +466,7 @@ void processMainLoop(Object *process)
                 case 0x8E: // object init
                 {
                     Object *self = stackTop(process->process->valueStack);
+                    assert(self != NULL, "Cannot initialize null object");
                     assert(self->object[0] == NULL, "Object already initialized");
                     assert(self->methods == NULL, "Object already initialized");
                     
@@ -611,7 +618,7 @@ void bootstrap()
     
     /* Setting up ClosureProto */
     
-    Size closureMethodCount = 2;
+    Size closureMethodCount = 3;
     Object *closureMethodSymbols[closureMethodCount];
     Object *closureMethods[closureMethodCount];
     
@@ -620,6 +627,9 @@ void bootstrap()
     
     closureMethodSymbols[1] = symbolNew("apply:");
     closureMethods[1] = internalMethodNew(vApply, 2);
+    
+    closureMethodSymbols[2] = symbolNew("apply:and:");
+    closureMethods[2] = internalMethodNew(vApply, 3);
     
     closureProto->methods = symbolMapNew(closureMethodCount,
         (void**)closureMethodSymbols, (void**)closureMethods);
@@ -697,6 +707,7 @@ void bootstrap()
         objectProto,
         console,
     };
+    printf("Console at %x\n", console);
     
     symbolMapInit(globalScope->scope->variables, globalVarCount,
         (void**)globalKeys, (void**)globalValues);

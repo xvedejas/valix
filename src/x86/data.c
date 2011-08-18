@@ -613,7 +613,7 @@ Size symbolMapSize(Size entries)
 SymbolMap *symbolMapCopy(SymbolMap *map)
 {
     SymbolMap *newMap = malloc(symbolMapSize(map->entries));
-    memcpyd(newMap->hashTable, map->hashTable, symbolMapBuckets(map->entries));
+    memcpyd(newMap, map, symbolMapSize(map->entries));
     return newMap;
 }
 

@@ -77,6 +77,7 @@ typedef struct closure
     closureType type;
     Size argc;
     struct object *scope; // the scope where this closure was defined
+    bool isMethod;
     union
     {
         struct // Internal function

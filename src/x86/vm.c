@@ -96,6 +96,7 @@ Object *closureNew(Object *scope)
     Object *closure = malloc(sizeof(Object) + sizeof(Closure));
     closure->proto = closureProto;
     closure->closure->scope = scope; // scope where closure was defined
+    closure->closure->isMethod = false;
     return closure;
 }
 
@@ -124,11 +125,13 @@ Object *symbolNew(String string)
 
 Object *internalMethodNew(InternalFunction *function, Size argc)
 {
-    Object *closure = closureNew(NULL);
-    closure->closure->type = internalClosure;
-    closure->closure->argc = argc;
-    closure->closure->function = function;
-    return closure;
+    Object *method = closureNew(NULL);
+    Closure *closure = method->closure;
+    closure->type = internalClosure;
+    closure->isMethod = true;
+    closure->argc = argc;
+    closure->function = function;
+    return method;
 }
 
 Object *arrayNew(Size s)
@@ -192,8 +195,7 @@ Object *processPopScope(Object *process)
     return prevScope;
 }
 
-/* arg(1) is the receiver of "block" if a method.
- * The return value is put on the process's value stack, supposedly. In the case
+/* The return value is put on the process's value stack, supposedly. In the case
  * of a user-defined closure, we don't immediately get a return value, we change
  * the scope of execution by pushing a new scope to the process. */
 void vApply(Object *process)
@@ -205,8 +207,29 @@ void vApply(Object *process)
     Closure *closure = block->closure;
     // if we are calling from an internal function, save this state
     bool fromInternal = currentClosure->closure->type == internalClosure;
-    // create a new scope
-    Object *scope = scopeNew(block, block->closure->scope);
+    
+    /* Here we see if we must correct for the scope of a method when the method
+     * is defined for a prototype instead of the given object */
+    
+    Object *scope;
+    if (closure->isMethod && closure->type == userDefinedClosure)
+    {
+        Object *methodScope = closure->scope;
+        Object *self = arg(closure->argc - 1);
+        Size i = 0;
+        Object *current = self;
+        for (; current->object[0] != methodScope; i++)
+        {
+            if ((current = current->proto) == NULL)
+                panic("Method parent scope not found");
+        }
+        scope = scopeNew(block, self->object[i]);
+    }
+    else
+    {
+        // create a new scope
+        scope = scopeNew(block, block->closure->scope);
+    }
     processPushScope(process, scope);
     switch (closure->type)
     {
@@ -221,7 +244,7 @@ void vApply(Object *process)
             if (fromInternal)
             {
                 if (setjmp(oldScope->scope->env))
-                {
+                { 
                     //printf("Returning from saved state");
                     return;
                 }
@@ -467,6 +490,7 @@ void processMainLoop(Object *process)
                 {
                     Object *self = stackTop(process->process->valueStack);
                     assert(self != NULL, "Cannot initialize null object");
+                    assert((void**)self->object != (void**)0, "Object already initialized");
                     assert(self->object[0] == NULL, "Object already initialized");
                     assert(self->methods == NULL, "Object already initialized");
                     
@@ -492,6 +516,7 @@ void processMainLoop(Object *process)
                         assert(*currentIP++ == blockBC, "Malformed Bytecode");
                         blockLiteral();
                         methodClosures[i] = pop();
+                        methodClosures[i]->closure->isMethod = true;
                         methodClosures[i]->closure->scope =
                             self->object[0];
                     }
@@ -546,21 +571,30 @@ void arrayAsString(Object *process)
 
 void vObjectNew(Object *process)
 {
-    Object *self = pop();
+    Object *proto = pop();
     Object *object = malloc(sizeof(Object));
-    
-    Size protoChainLen = 0;
-    Object *current = self->proto;
-    do
-        protoChainLen++;
-    while ((current = current->proto) != NULL);
-    
-    /// todo; initialize all super scopes
-    
-    object->object = malloc(sizeof(Object*) * protoChainLen);
-    object->object[0] = NULL;
-    object->proto = self;
+    object->proto = proto;
     object->methods = NULL;
+    
+    Size protoChainLen = 1;
+    Object *current = proto;
+    for (; current->object != 0 && current->proto != NULL; current = current->proto)
+        protoChainLen++;
+    
+    object->object = calloc(sizeof(Object*), protoChainLen);
+    
+    /* Initialize all the super scopes */
+    
+    Size i;
+    for (i = 1; i < protoChainLen; i++)
+    {
+        if ((void**)proto->object == (void**)0 || proto->object[i - 1] == NULL)
+            continue;
+        object->object[i] = scopeNew(NULL, currentScope->scope->parent);
+        Scope *scope = object->object[i]->scope;
+        scope->variables = symbolMapCopy(proto->object[i - 1]->scope->variables);
+    }
+    
     push(object);
 }
 
@@ -603,15 +637,12 @@ void bootstrap()
     
     /* Setting up SymbolProto */
     
-    Size symbolMethodCount = 2;
+    Size symbolMethodCount = 1;
     Object *symbolMethodSymbols[symbolMethodCount];
     Object *symbolMethods[symbolMethodCount];
     
-    ///symbolMethodSymbols[0] = cloneSymbol;
-    ///symbolMethods[0] = internalMethodNew(symbolClone, 1);
-    
-    symbolMethodSymbols[1] = symbolNew("asString");
-    symbolMethods[1] = internalMethodNew(symbolAsString, 1);
+    symbolMethodSymbols[0] = symbolNew("asString");
+    symbolMethods[0] = internalMethodNew(symbolAsString, 1);
     
     symbolProto->methods = symbolMapNew(symbolMethodCount,
         (void**)symbolMethodSymbols, (void**)symbolMethods);

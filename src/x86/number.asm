@@ -12,47 +12,16 @@
 ;
 ;  You should have received a copy of the GNU General Public License
 ;  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+format ELF
+section '.text'
+include '../../inc/x86/asm.inc'
 
-; This is a FASM include file, which is useful for common assembly macros.
-
-; The following macros allow easy calling of C functions and creation
-; of assembly functions that may be called by C code.
-
-extern fix extrn
-struct fix struc
-
-macro func name
-{
-    public name
-    name:
-    push ebp
-    mov ebp, esp
-    push ebx
-    push esi
-    push edi
-}
-
-macro endfunc
-{
-    pop edi
-    pop esi
-    pop ebx
-    pop ebp
+public mulOverflow
+mulOverflow:
+    ; ecx contains 'a', edx contains 'b'
+    mov eax, edx
+    mul ecx        ; multiply
+    pushfd         ; push flags onto stack to get at overflow flag
+    pop eax        ; get flags
+    and eax, 1024  ; overflow bit 11
     ret
-}
-
-macro invoke name,[arg]
-{
-    common
-        push ecx
-        push edx
-    reverse
-        push arg
-    common
-        call name
-    forward
-        add esp, 4
-    common
-        pop edx
-        pop ecx
-}

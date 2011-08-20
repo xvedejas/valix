@@ -277,35 +277,8 @@ void kmain(u32 magic, MultibootStructure *multiboot, void *stackPointer)
     asm volatile("sti;");
     printf("Welcome to Valix Pre-Alpha 1. Type \"help\" for usage information.\n\n");
     
-    String testcode = " | myObject, childObject |\n"
-        " myObject = Object new init: \n"
-        " { \n"
-        "     | myString | \n"
-        "     test \n"
-        "     { \n"
-        "         Console print: myString. \n"
-        "     } \n"
-        "     \n"
-        "     setString: s \n"
-        "     { \n"
-        "         myString = s. \n"
-        "     } \n"
-        " }. \n"
-        " \n"
-        " myObject setString: \"hello, world!\". \n"
-        " myObject test. \n"
-        " childObject = myObject new init: \n"
-        " { \n"
-        "     | anotherString | \n"
-        "     doStuff \n"
-        "     { \n"
-        "         self setString: \"abc\". \n"
-        "         self test. \n"
-        "     } \n"
-        " }. \n"
-        " childObject doStuff. \n"
-        " myObject test. \n"
-        ;
+    String testcode = " 1 to: 100 do: { i | Console print: i. }. \n";
+    //String testcode = " { i | Console print: i. } apply: \"a\". \n";
     
     printf("Executing the following code: \n\n%s\n\n", testcode);
     

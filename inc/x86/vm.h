@@ -1,4 +1,4 @@
- /*  Copyright (C) 2010 Xander Vedejas <xvedejas@gmail.com>
+ /*  Copyright (C) 2011 Xander Vedejas <xvedejas@gmail.com>
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -56,7 +56,6 @@ typedef struct scope
         };
         struct // if internal function
         {
-            jmp_buf env;
         };
     };
 } Scope;
@@ -96,11 +95,9 @@ typedef struct closure
 
 typedef struct process
 {
-    u8 *bytecode;
     Object *scope;
     Stack *valueStack;
     PermissionLevel permissions;
-    jmp_buf mainLoop;
     Size depth;
 } Process;
 
@@ -116,6 +113,20 @@ typedef struct array
     Object *array[0];
 } Array;
 
+typedef enum
+{
+    integer, /* 0 to 2^32-1  */
+    bigint,  /* -inf to +inf */
+    floating, /* float precision */
+    fraction, /* perfect precision, bigint / bigint */
+} NumberType;
+
+typedef struct number
+{
+    NumberType type;
+    u32 data[1];
+} Number;
+
 struct object
 {
     struct object *proto;
@@ -127,6 +138,7 @@ struct object
         struct process process[0];
         struct stringData string[0];
         struct array array[0];
+        struct number number[0];
         u8 byte[0];
         Size value[0];
         void *data[0];
@@ -138,6 +150,9 @@ struct object
 extern Object *processNew();
 extern void processSetBytecode(Object *process, u8 *bytecode);
 extern void processMainLoop(Object *process);
+extern void vApply(Object *process);
 extern void vmInstall();
+extern Object *integerNew(u32 value);
+extern Object *stringNew(Size len, String s);
 
 #endif

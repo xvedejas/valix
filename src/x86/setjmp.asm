@@ -1,4 +1,4 @@
-;  Copyright (C) 2010 Xander Vedėjas <xvedejas@gmail.com>
+;  Copyright (C) 2011 Xander Vedėjas <xvedejas@gmail.com>
 ;
 ;  This program is free software: you can redistribute it and/or modify
 ;  it under the terms of the GNU General Public License as published by
@@ -18,20 +18,23 @@ include '../../inc/x86/asm.inc'
 
 public setjmp
 setjmp:
-    mov [ecx], ebp
-    mov [ecx+4], esi
-    mov [ecx+8], edi
-    mov [ecx+12], ebx
-    mov eax, [esp]
-    mov [ecx+16], eax
+    mov [ecx+4], ebx
+    mov [ecx+8], esi
+    mov [ecx+12], edi
+    mov [ecx+16], ebp
+    mov [ecx+20], esp
+    mov eax, [esp] ; return address
+    mov dword [ecx], eax
     xor eax, eax
     ret
-
+ 
 public longjmp
 longjmp:
-    mov ebp, [ecx]
-    mov esi, [ecx+4]
-    mov edi, [ecx+8]
-    mov ebx, [ecx+12]
-    mov [esp+8], eax
-    jmp dword [ecx+16]
+    mov ebx, [ecx+4]
+    mov esi, [ecx+8]
+    mov edi, [ecx+12]
+    mov ebp, [ecx+16]
+    mov esp, [ecx+20]
+    add esp, 4 ; fix esp to account for ignored return address on stack
+    mov eax, edx
+    jmp dword [ecx]

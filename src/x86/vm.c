@@ -1,4 +1,4 @@
-/*  Copyright (C) 2010 Xander Vedejas <xvedejas@gmail.com>
+/*  Copyright (C) 2011 Xander Vedejas <xvedejas@gmail.com>
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -26,13 +26,14 @@
 #include <parser.h>
 #include <stdarg.h>
 #include <list.h>
+#include <number.h>
 
 Map *globalSymbolTable;
 
 Object *globalScope;
 
 Object *objectProto, *symbolProto, *closureProto, *scopeProto, *processProto,
-       *byteArrayProto, *stringProto, *arrayProto;
+       *byteArrayProto, *stringProto, *arrayProto, *integerProto;
 
 Object *trueObject, *falseObject, *console;
 
@@ -69,15 +70,6 @@ Object *objectNew()
     object->proto = objectProto;
     object->object = NULL;
     return object;
-}
-
-Object *processNew()
-{
-    Object *process = malloc(sizeof(Object) + sizeof(Process));
-    process->proto = processProto;
-    process->process->scope = NULL;
-    process->process->valueStack = stackNew();
-    return process;
 }
 
 Object *scopeNew(Object *block, Object *containing)
@@ -142,6 +134,16 @@ Object *arrayNew(Size s)
     return array;
 }
 
+Object *integerNew(u32 value)
+{
+    Object *object = malloc(sizeof(Object) + sizeof(Number));
+    object->proto = integerProto;
+    object->object = NULL;
+    object->number->type = integer;
+    object->number->data[0] = value;
+    return object;
+}
+
 void vDoesNotUnderstand(Object *process)
 {
     panic("Object at %x does not understand symbol '%s'\n", arg(1), arg(0)->data[0]);
@@ -156,7 +158,6 @@ void vPrint(Object *process)
     push(method);
     vApply(process);
     printf("%s", pop()->string->string);
-    push(NULL);
 }
 
 Object *lookupVar(Object *scope, Object *symbol)
@@ -200,13 +201,13 @@ Object *processPopScope(Object *process)
  * the scope of execution by pushing a new scope to the process. */
 void vApply(Object *process)
 {
-    Object *oldScope = currentScope;
     process->process->depth++;
     Object *block = pop();
     assert(block != NULL, "Internal error; method does not exist");
     Closure *closure = block->closure;
     // if we are calling from an internal function, save this state
     bool fromInternal = currentClosure->closure->type == internalClosure;
+    
     
     /* Here we see if we must correct for the scope of a method when the method
      * is defined for a prototype instead of the given object */
@@ -234,27 +235,19 @@ void vApply(Object *process)
     switch (closure->type)
     {
         case internalClosure:
+        {
             closure->function(process);
             process->process->depth--;
             processPopScope(process);
+        }
         return;
         case userDefinedClosure:
         {
             currentScope->scope->IP = closure->bytecode;
             if (fromInternal)
             {
-                if (setjmp(oldScope->scope->env))
-                { 
-                    //printf("Returning from saved state");
-                    return;
-                }
-                else
-                {
-                    currentIP = currentClosure->closure->bytecode;
-                    //printf("re-entering main loop\n");
-                    longjmp(process->process->mainLoop, true);
-                    panic("catch");
-                }
+                processMainLoop(process);
+                /// more stuff?
             }
         } break;
         default: panic("VM Error");
@@ -267,31 +260,37 @@ void vApply(Object *process)
         assert(table != NULL, "VM Error");\
     mapGetVal(table, (void*)(Size)internedValue); }))
 
-void processSetBytecode(Object *process, u8 *bytecode)
+Object *processNew()
 {
-    process->process->bytecode = bytecode;
-}
-
-void processMainLoop(Object *process)
-{
-    process->process->depth = 1;
-    bool inScope = true;
-    u8 *IP = NULL;
+    Object *process = malloc(sizeof(Object) + sizeof(Process));
+    process->proto = processProto;
+    process->process->scope = NULL;
+    process->process->valueStack = stackNew();
+    
+    process->process->depth = 0;
     Object *closure = closureNew(NULL);
-    closure->closure->bytecode = process->process->bytecode;
     closure->closure->type = userDefinedClosure;
     Object *scope = scopeNew(closure, globalScope);
     
-    scope->scope->IP = closure->closure->bytecode;
     currentScope = NULL;
     processPushScope(process, scope);
     currentClosure = closure;
     
+    return process;
+}
+
+/* The following function sets a bytecode for the process and generates the
+ * corresponding transation table */
+void processSetBytecode(Object *process, u8 *bytecode)
+{
+    currentClosure->closure->bytecode = bytecode;
+    currentIP = bytecode;
+    
     /* setup the translation table */
-    IP = currentIP;
+    u8 *IP = currentIP;
     Size symcount = *IP++;
-    closure->closure->translationTable = mapNewSize(symcount);
-    Map *table = closure->closure->translationTable;
+    Map *table = mapNewSize(symcount);
+    currentClosure->closure->translationTable = table;
     Size i = 0;
     for (; i < symcount; i++)
     {
@@ -301,235 +300,235 @@ void processMainLoop(Object *process)
     }
     currentIP = IP;
     
-    void setupVariables() // variables includes arguments
+    process->process->depth = 1;
+}
+
+/* This function is called by processMainLoop to create a block object from
+ * bytecode generated whenever a block literal is encountered in the source. */
+void blockLiteral(Object *process)
+{
+    u8 *IP = currentIP;
+    Object *newClosure = closureNew(currentScope);
+    newClosure->closure->type = userDefinedClosure;
+    newClosure->closure->bytecode = IP;
+    newClosure->closure->argc = IP[1];
+    newClosure->closure->translationTable =
+        currentClosure->closure->translationTable;
+    push(newClosure);
+    // increment IP until after this block
+    Size defdepth = 1;
+    while (defdepth > 0)
     {
-        u8 *IP = currentIP;
-        Size varcount = *IP++;
-        IP += 1; // skip over arg count
-        Object *keys[varcount],
-            *values[varcount];
-        Size i;
-        for (i = 0; i < varcount; i++)
+        switch (*IP++)
         {
-            keys[i] = translate(*IP++);
-            values[i] = NULL;
+            case 0x87: // start block
+                defdepth++;
+            break;
+            case 0x8D: // end block
+                defdepth--;
+            break;
         }
-        currentScope->scope->variables = symbolMapNew(varcount, (void**)keys,
-            (void**)values);
     }
-    
-    void setupArguments()
+    currentIP = IP;
+}
+
+/* This function is called by processMainLoop at the beginning of executing a
+ * closure, to account for the header which tells info about the variables and
+ * arguments available to the closure */
+void closureSetup(Object *process)
+{
+    /* setup variables */
+    u8 *IP = currentIP;
+    Size varcount = *IP++;
+    IP += 1; // skip over arg count
+    Object *keys[varcount],
+        *values[varcount];
+    Size i;
+    for (i = 0; i < varcount; i++)
     {
-        u8 *IP = currentIP + 1;
-        Size argcount = *IP;
-        IP += argcount;
-        Size i = 0;
-        for (; i < argcount; i++, IP--)
-            setVar(currentScope, translate(*IP), pop());
-        currentIP += *currentIP + 2;
+        keys[i] = translate(*IP++);
+        values[i] = NULL;
     }
-    
-    void blockLiteral()
-    {
-        u8 *IP = currentIP;
-        Object *newClosure = closureNew(currentScope);
-        newClosure->closure->type = userDefinedClosure;
-        newClosure->closure->bytecode = IP;
-        newClosure->closure->argc = IP[1];
-        newClosure->closure->translationTable =
-            currentClosure->closure->translationTable;
-        push(newClosure);
-        // increment IP until after this block
-        Size defdepth = 1;
-        while (defdepth > 0)
-        {
-            switch (*IP++)
-            {
-                case 0x87: // start block
-                    defdepth++;
-                break;
-                case 0x8D: // end block
-                    defdepth--;
-                break;
-            }
-        }
-        currentIP = IP;
-    }
+    currentScope->scope->variables = symbolMapNew(varcount, (void**)keys,
+        (void**)values);
+        
+    /* setup arguments */
+    IP = currentIP + 1;
+    Size argcount = *IP;
+    IP += argcount;
+    i = 0;
+    for (; i < argcount; i++, IP--)
+        setVar(currentScope, translate(*IP), pop());
+    currentIP += *currentIP + 2;
+}
+
+void processMainLoop(Object *process)
+{
+    closureSetup(process);
     
     while (true)
     {
-        setjmp(process->process->mainLoop);
-        setupVariables();
-        setupArguments();
-        /* Begin looking at the block. First byte is the number of variables
-         * used in the scope, followed by their interned values. The next
-         * byte is the number of arguments. */
-        inScope = true;
-        while (inScope)
+        ///printf("Bytecode %x at %x\n", *currentIP, currentIP);
+        switch (*currentIP++)
         {
-            if (currentClosure->closure->type == internalClosure)
+            case integerBC: // integer literal
             {
-                longjmp(currentScope->scope->env, true);
-                panic("Failure");
-            }
-            ///printf("Bytecode %x at %x\n", *currentIP, currentIP);
-            switch (*currentIP++)
+                Size value = strtoul((String)currentIP, NULL, 10);
+                currentIP += strlen((String)currentIP) + 1;
+                push(integerNew(value));
+            } break;
+            case doubleBC: // double literal
             {
-                case 0x81: // integer literal
+                panic("Not implemented");
+            } break;
+            case stringBC: // string literal
+            {
+                Size len = strlen((String)currentIP);
+                Object *string = stringNew(len, (String)currentIP);
+                currentIP += len + 1;
+                push(string);
+            } break;
+            case charBC: // character literal
+            {
+                panic("Not implemented");
+            } break;
+            case symbolBC: // symbol literal
+            {
+                Object *newSymbol = translate(*currentIP++);
+                push(newSymbol);
+            } break;
+            case arrayBC: // array literal
+            {
+                Size size = (Size)*currentIP++;
+                Object *newArray = arrayNew(size);
+                while (size --> 0)
+                    newArray->array->array[size] = pop();
+                push(newArray);
+            } break;
+            case blockBC: // block literal
+            {
+                blockLiteral(process);
+            } break;
+            case variableBC: // variable
+            {
+                Size index = (Size)*currentIP++;
+                Object *symbol = translate(index);
+                Object *value = lookupVar(currentScope, symbol);
+                push(value);
+            } break;
+            case messageBC: // message
+            {
+                Size argc = (Size)*currentIP++;
+                Object *message, *receiver, *method;
+                /* Get the message symbol from the stack */
+                message = pop();
+                receiver = stackGet(process->process->valueStack, argc);
+                ///printf("sending %x message %s argc %x\n", receiver, message->data[0], argc);
+                /* Find the corresponding method by using bind() */
+                method = bind(receiver, message);
+                /* if the method is apply, the receiver becomes the method */
+                if (unlikely(method->closure->function == &vApply))
                 {
-                    panic("Not implemented");
-                    //Object *integer = integerClone(integerProto);
-                    //integer->data = (Size)*IP++;
-                    //stackPush(scope->scope->valueStack, integer);
-                } break;
-                case 0x82: // double literal
-                {
-                    panic("Not implemented");
-                } break;
-                case 0x83: // string literal
-                {
-                    Size len = strlen((String)currentIP);
-                    Object *string = stringNew(len, (String)currentIP);
-                    currentIP += len + 1;
-                    push(string);
-                } break;
-                case 0x84: // character literal
-                {
-                    panic("Not implemented");
-                } break;
-                case 0x85: // symbol literal
-                {
-                    Object *newSymbol = translate(*currentIP++);
-                    push(newSymbol);
-                } break;
-                case 0x86: // array literal
-                {
-                    Size size = (Size)*currentIP++;
-                    Object *newArray = arrayNew(size);
-                    while (size --> 0)
-                        newArray->array->array[size] = pop();
-                    push(newArray);
-                } break;
-                case 0x87: // block literal
-                {
-                    blockLiteral();
-                } break;
-                case 0x88: // variable
-                {
-                    Size index = (Size)*currentIP++;
-                    Object *symbol = translate(index);
-                    Object *value = lookupVar(currentScope, symbol);
-                    push(value);
-                } break;
-                case 0x89: // message
-                {
-                    Size argc = (Size)*currentIP++;
-                    Object *message, *receiver, *method;
-                    /* Get the message symbol from the stack */
-                    message = pop();
-                    receiver = stackGet(process->process->valueStack, argc);
-                    ///printf("sending %x message %s argc %x\n", receiver, message->data[0], argc);
-                    /* Find the corresponding method by using bind() */
-                    method = bind(receiver, message);
-                    /* if the method is apply, the receiver becomes the method */
-                    if (unlikely(method->closure->function == &vApply))
-                    {
-                        method = receiver;
-                        // remove extra unused receiver argument
-                        Stack *stack = process->process->valueStack;
-                        Size entries = process->process->valueStack->entries;
-                        memcpyd(stack->bottom + entries - argc - 1,
-                            stack->bottom + entries - argc, argc);
-                        pop();
-                    }
-                    if (unlikely(method == NULL)) /* Bind failed, send DoesNotUnderstand */
-                    {
-                        while (argc --> 0)
-                            pop();
-                        push(message);
-                        method = bind(receiver, doesNotUnderstandSymbol);
-                        assert(method != NULL, "VM Error; object at %x, proto %x %x does not delegate to Object %x",
-                            receiver, receiver->proto, receiver->proto->proto, objectProto);
-                        push(method);
-                        vApply(process);
-                        return; // exit due to error.
-                    }
-                    push(method);
-                    if (method->closure->type == internalClosure)
-                    {
-                        vApply(process);
-                    }
-                    else // user-defined method.
-                    {
-                        /* Apply, using the arguments on the stack */
-                        vApply(process);
-                        inScope = false;
-                    }
-                } break;
-                case 0x8A: // stop
-                {
+                    method = receiver;
+                    // remove extra unused receiver argument
+                    Stack *stack = process->process->valueStack;
+                    Size entries = process->process->valueStack->entries;
+                    memcpyd(stack->bottom + entries - argc - 1,
+                        stack->bottom + entries - argc, argc);
                     pop();
-                } break;
-                case 0x8B: // set variable
-                {
-                    setVar(currentScope, translate(*currentIP++),
-                        pop());
-                } break;
-                case 0x8C: // return-from
-                {
-                    panic("Not implemented");
-                } break;
-                case 0x8D: // end
-                {
-                    processPopScope(process);
-                    process->process->depth--;
-                    if (process->process->depth == 0) // process done
-                        return;
-                } break;
-                case 0x8E: // object init
-                {
-                    Object *self = stackTop(process->process->valueStack);
-                    assert(self != NULL, "Cannot initialize null object");
-                    assert((void**)self->object != (void**)0, "Object already initialized");
-                    assert(self->object[0] == NULL, "Object already initialized");
-                    assert(self->methods == NULL, "Object already initialized");
-                    
-                    /* Setup variables */
-                    Size varc = *currentIP++;
-                    Object *varNames[varc];
-                    Size i = varc;
-                    while (i --> 0)
-                        varNames[i] = translate(*currentIP++);
-                    self->object[0] = scopeNew(NULL, currentScope);
-                    Object *scope = self->object[0];
-                    scope->scope->variables = symbolMapNew(varc,
-                        (void**)varNames, (void**)NULL);
-                    
-                    Size methodCount = *currentIP++;
-                    Object *methodNames[methodCount];
-                    Object *methodClosures[methodCount];
-                    i = methodCount;
-                    /* Setup methods */
-                    while (i --> 0)
-                    {
-                        methodNames[i] = translate(*currentIP++);
-                        assert(*currentIP++ == blockBC, "Malformed Bytecode");
-                        blockLiteral();
-                        methodClosures[i] = pop();
-                        methodClosures[i]->closure->isMethod = true;
-                        methodClosures[i]->closure->scope =
-                            self->object[0];
-                    }
-                    
-                    self->methods = symbolMapNew(methodCount,
-                        (void**)methodNames, (void**)methodClosures);
-                } break;
-                default:
-                {
-                    panic("Unknown Bytecode %x", currentIP[-1]);
                 }
+                if (unlikely(method == NULL))
+                {
+                    /* Bind failed, send DoesNotUnderstand */
+                    while (argc --> 0)
+                        pop();
+                    push(message);
+                    method = bind(receiver, doesNotUnderstandSymbol);
+                    assert(method != NULL,
+                        "VM Error; object at %x, proto %x %x"
+                        "does not delegate to Object %x",
+                        receiver, receiver->proto,
+                        receiver->proto->proto, objectProto);
+                    push(method);
+                    vApply(process);
+                    return; // exit due to error.
+                }
+                push(method);
+                if (method->closure->type == internalClosure)
+                {
+                    vApply(process);
+                }
+                else // user-defined method.
+                {
+                    /* Apply, using the arguments on the stack */
+                    vApply(process);
+                    closureSetup(process);
+                }
+            } break;
+            case stopBC: // stop
+            {
+                pop();
+            } break;
+            case setBC: // set variable
+            {
+                setVar(currentScope, translate(*currentIP++),
+                    pop());
+            } break;
+            case returnBC: // return-from
+            {
+                panic("Not implemented");
+            } break;
+            case endBC: // end
+            {
+                processPopScope(process);
+                process->process->depth--;
+                if (process->process->depth == 0) // process done
+                    return;
+                if (currentClosure->closure->type == internalClosure)
+                    return; // return to vApply()
+            } break;
+            case initBC: // object init
+            {
+                Object *self = stackTop(process->process->valueStack);
+                assert(self != NULL, "Cannot initialize null object");
+                assert((void**)self->object != (void**)0, "Object already initialized");
+                assert(self->object[0] == NULL, "Object already initialized");
+                assert(self->methods == NULL, "Object already initialized");
+                
+                /* Setup variables */
+                Size varc = *currentIP++;
+                Object *varNames[varc];
+                Size i = varc;
+                while (i --> 0)
+                    varNames[i] = translate(*currentIP++);
+                self->object[0] = scopeNew(NULL, currentScope);
+                Object *scope = self->object[0];
+                scope->scope->variables = symbolMapNew(varc,
+                    (void**)varNames, (void**)NULL);
+                
+                Size methodCount = *currentIP++;
+                Object *methodNames[methodCount];
+                Object *methodClosures[methodCount];
+                i = methodCount;
+                /* Setup methods */
+                while (i --> 0)
+                {
+                    methodNames[i] = translate(*currentIP++);
+                    assert(*currentIP++ == blockBC, "Malformed Bytecode");
+                    blockLiteral(process);
+                    methodClosures[i] = pop();
+                    methodClosures[i]->closure->isMethod = true;
+                    methodClosures[i]->closure->scope =
+                        self->object[0];
+                }
+                
+                self->methods = symbolMapNew(methodCount,
+                    (void**)methodNames, (void**)methodClosures);
+            } break;
+            default:
+            {
+                panic("Unknown Bytecode %x", currentIP[-1]);
             }
-            if (!inScope) break;
         }
     }
 }
@@ -603,7 +602,7 @@ void vReturnFalse(Object *process)
     push(falseObject);
 }
 
-void bootstrap()
+void vmInstall()
 {
     globalSymbolTable = mapNew();
     
@@ -720,6 +719,43 @@ void bootstrap()
     
     console->methods = symbolMapNew(1, (void**)consoleKeys, (void**)consoleValues);
     
+    /* Setting up integer */
+    
+    integerProto = objectNew();
+    
+    Object *integerKeys[] =
+    {
+        symbolNew("+"),
+        symbolNew("-"),
+        symbolNew("*"),
+        symbolNew("/"),
+        symbolNew("%"),
+        symbolNew("asString"),
+        symbolNew("and:"),
+        symbolNew("or:"),
+        symbolNew("xor:"),
+        symbolNew("^"),
+        symbolNew("factorial"),
+        symbolNew("to:do:"),
+    };
+    Object *integerValues[] =
+    {
+        internalMethodNew(integerAdd, 2),
+        internalMethodNew(integerSub, 2),
+        internalMethodNew(integerMul, 2),
+        internalMethodNew(integerDiv, 2),
+        internalMethodNew(integerMod, 2),
+        internalMethodNew(integerAsString, 1),
+        internalMethodNew(integerAnd, 2),
+        internalMethodNew(integerOr, 2),
+        internalMethodNew(integerXor, 2),
+        internalMethodNew(integerExp, 2),
+        internalMethodNew(integerFactorial, 1),
+        internalMethodNew(integerToDo, 3),
+    };
+    
+    integerProto->methods = symbolMapNew(12, (void**)integerKeys, (void**)integerValues);
+    
     /* Setting up Global Scope */
     
     globalScope = scopeNew(NULL, NULL);
@@ -742,9 +778,4 @@ void bootstrap()
     
     symbolMapInit(globalScope->scope->variables, globalVarCount,
         (void**)globalKeys, (void**)globalValues);
-}
-
-void vmInstall()
-{
-    bootstrap();
 }

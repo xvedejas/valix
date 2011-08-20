@@ -16,25 +16,22 @@
  *  Maintained by:
  *      Xander Vedėjas <xvedejas@gmail.com>
  */
- #ifndef __keyboard_h__
-#define __keyboard_h__
+#ifndef __number_h__
+#define __number_h__
 #include <main.h>
-#include <data.h>
-#include <interrupts.h>
+#include <vm.h>
 
-typedef struct
-{
-    u8 scancode;
-    /* For the following "flags" field,
-     * 
-     * bit 0 - is key being released?
-     * bit 1 - is key after a 0xE0 escape code?
-     */
-    u8 flags;
-} Keystroke;
-
-void keyboardInstall();
-void keyboardHandler(Regs *r);
-String getstring();
+extern void integerAdd(Object *process);
+extern void integerSub(Object *process);
+extern void integerMul(Object *process);
+extern void integerDiv(Object *process);
+extern void integerMod(Object *process);
+extern void integerAsString(Object *process);
+extern void integerAnd(Object *process);
+extern void integerOr(Object *process);
+extern void integerXor(Object *process);
+extern void integerExp(Object *process);
+extern void integerFactorial(Object *process);
+extern void integerToDo(Object *process);
 
 #endif

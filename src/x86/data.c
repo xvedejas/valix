@@ -1,4 +1,4 @@
-/*  Copyright (C) 2010 Xander Vedejas <xvedejas@gmail.com>
+/*  Copyright (C) 2011 Xander Vedejas <xvedejas@gmail.com>
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -460,9 +460,8 @@ void stackPush(Stack *stack, void *element)
     stack->entries++;
     if (stack->entries >= stack->capacity) // embiggen, it's full
     {
-        printf("previous %x next %x\n", stack->capacity, stackNextSize(stack->capacity));
         stack->capacity = stackNextSize(stack->capacity);
-        stack->bottom = realloc(stack->bottom, stack->capacity);
+        stack->bottom = realloc(stack->bottom, stack->capacity * sizeof(void*));
     }
 }
 

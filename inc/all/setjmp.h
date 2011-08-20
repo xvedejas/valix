@@ -1,4 +1,4 @@
- /*  Copyright (C) 2010 Xander Vedejas <xvedejas@gmail.com>
+ /*  Copyright (C) 2011 Xander Vedejas <xvedejas@gmail.com>
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -19,9 +19,18 @@
 #ifndef __setjmp_h__
 #define __setjmp_h__
 
-typedef void *jmp_buf[5];
+typedef void *jmp_buf[6];
 
 extern bool __attribute__((fastcall)) setjmp(jmp_buf env);
 extern void __attribute__((fastcall)) longjmp(jmp_buf env, bool val);
 
+#define jmpBufDebug(env) \
+    printf("JMP BUF:\n%x\n%x\n%x\n%x\n%x\n%x\n----\n", \
+        env[0], env[1], env[2], env[3], env[4], env[5]);
+
+//#define setjmp(env) __builtin_setjmp(env)
+//#define longjmp(env, val) __builtin_longjmp(env, val)
+
 #endif
+
+

@@ -16,25 +16,11 @@
  *  Maintained by:
  *      Xander Vedėjas <xvedejas@gmail.com>
  */
- #ifndef __keyboard_h__
-#define __keyboard_h__
+#ifndef __math_h__
+#define __math_h__
 #include <main.h>
-#include <data.h>
-#include <interrupts.h>
 
-typedef struct
-{
-    u8 scancode;
-    /* For the following "flags" field,
-     * 
-     * bit 0 - is key being released?
-     * bit 1 - is key after a 0xE0 escape code?
-     */
-    u8 flags;
-} Keystroke;
-
-void keyboardInstall();
-void keyboardHandler(Regs *r);
-String getstring();
+u32 floorlog2(u32 value);
+u32 floorlog10(u32 value);
 
 #endif

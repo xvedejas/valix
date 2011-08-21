@@ -25,7 +25,6 @@
 #include <types.h>
 #include <parser.h>
 #include <stdarg.h>
-#include <list.h>
 #include <number.h>
 
 Map *globalSymbolTable;
@@ -199,9 +198,16 @@ Object *lookupVar(Object *scope, Object *symbol)
     
     /* Here we've found our value. If this was found in a world that
      * isn't the current world, then we must add the entry for the
-     * current world because we read the value. */
+     * current world because we read the value. Also we keep track of the value
+     * that was read, and put it in the world's "reads" map. */
+    ///printf("found.\n");
     if (world != startingWorld)
+    {
+        ///printf("creating new entry for this world.\n");
         mapSetVal(values, startingWorld, value);
+        if (startingWorld->world->reads != NULL)
+            mapSetVal(startingWorld->world->reads, values, value);
+    }
     return value;
 }
 
@@ -229,6 +235,10 @@ void setVar(Object *scope, Object *symbol, Object *newValue)
             break;
         }
     }
+    
+    ///printf("found, adding to modified list for this world\n");
+    if (startingWorld->world->modifies != NULL)
+        listAdd(startingWorld->world->modifies, values);
     mapSetVal(values, startingWorld, newValue);
 }
 
@@ -469,7 +479,7 @@ void processMainLoop(Object *process)
                 Object *value = lookupVar(currentScope, symbol);
                 push(value);
             } break;
-            case messageBC: // message
+            case messageBC: // message 0x89
             {
                 Size argc = (Size)*currentIP++;
                 Object *message, *receiver, *method;
@@ -692,6 +702,16 @@ Object *worldNew(Object *parent)
     Object *world = malloc(sizeof(Object) + sizeof(World));
     world->proto = globalWorld;
     world->world->parent = parent;
+    if (parent != NULL)
+    {
+        world->world->reads = mapNew();
+        world->world->modifies = listNew();
+    }
+    else
+    {
+        world->world->reads = NULL;
+        world->world->modifies = NULL;
+    }
     return world;
 }
 
@@ -710,9 +730,42 @@ void worldDo(Object *process)
     push(NULL);
 }
 
+/* true returns if successful, false otherwise */
 void worldCommit(Object *process)
 {
-    panic("Not implemented");
+    Object *world = pop();
+    Object *parentWorld = world->world->parent;
+    Map *reads = world->world->reads;
+    MapIterator iter;
+    mapIteratorInit(&iter);
+    
+    /* We iterate through the world's reads. If they are consistent with the
+     * values found in the parent world, we can commit. The commit fails if the
+     * state of the child world might be out of date due to changes made in the
+     * parent world. */
+    Association *assoc;
+    while ((assoc = mapNext(reads, &iter)) != NULL)
+    {
+        Object *readValue = (Object*)assoc->value;
+        Object *parentCurrentValue = mapGetVal((Map*)assoc->key, parentWorld);
+        if (readValue != parentCurrentValue)
+        {
+            printf("commit failed\n");
+            push(falseObject);
+            return;
+        }
+    }
+    
+    /* Now we can commit */
+    List *list = world->world->modifies;
+    Size i;
+    for (i = 0; i < list->entries; i++)
+    {
+        Map *values = list->array[i];
+        mapSetVal(values, parentWorld, mapGetVal(values, world));
+    }
+    
+    push(trueObject);
 }
 
 void vmInstall()

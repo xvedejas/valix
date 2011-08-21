@@ -288,7 +288,10 @@ void kmain(u32 magic, MultibootStructure *multiboot, void *stackPointer)
         " A = thisWorld spawn. \n"
         " A do: { point set: 8 and: 9. }. \n"
         " point print. \n"
-        " A do: { point print. }. \n";
+        " point set: 1 and: 2. \n"
+        " A do: { point print. }. \n"
+        " A commit. \n"
+        " point print. \n";
     
     printf("Executing the following code: \n\n%s\n\n", testcode);
     

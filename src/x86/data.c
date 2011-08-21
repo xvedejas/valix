@@ -818,3 +818,33 @@ bool symbolMapSet(SymbolMap *map, void *key, void *value)
     }
     return false;
 }
+
+/////////////////////////
+// List Implementation //
+/////////////////////////
+
+#define listNextSize(currentSize) (currentSize + (currentSize >> 1) + 1)
+
+List *listNew()
+{
+    List *list = malloc(sizeof(List) + 4 * sizeof(void*));
+    list->capacity = 4;
+    list->entries = 0;
+    memsetd(list->array, 0, list->capacity);
+    return list;
+}
+
+void listExpand(List *list, Size newCapacity)
+{
+    assert(newCapacity > list->capacity, "list error");
+    list = realloc(list, sizeof(list) + newCapacity * sizeof(void*));
+    list->capacity = newCapacity;
+}
+
+void listAdd(List *list, void *value)
+{
+    if (list->capacity == list->entries)
+        listExpand(list, listNextSize(list->capacity));
+    list->array[list->entries++] = value;
+}
+

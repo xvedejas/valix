@@ -175,4 +175,18 @@ extern bool symbolMapHasKey(SymbolMap *map, void *key);
 /* returns 'true' if success, otherwise 'false' */
 extern bool symbolMapSet(SymbolMap *map, void *key, void *value);
 
+////////////////////
+// List Interface //
+////////////////////
+
+typedef struct
+{
+    Size entries;
+    Size capacity;
+    void *array[0];
+} List;
+
+extern List *listNew();
+extern void listAdd(List *list, void *value);
+
 #endif

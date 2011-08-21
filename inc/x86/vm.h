@@ -125,6 +125,8 @@ typedef struct number
 typedef struct world
 {
     Object *parent;
+    Map *reads; /* map<map<world, var>, initial_value> */
+    List *modifies; /* list<map<world, var>> */
 } World;
 
 struct object

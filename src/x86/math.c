@@ -59,6 +59,7 @@ u32 floorlog2(u32 value)
  * representation of the value. */
 u32 floorlog10(u32 value)
 {
+    if (value == 0) return value;
     u32 register v = value; // non-zero 32-bit integer value to compute the log base 10 of 
     u32 t;          // temporary
 

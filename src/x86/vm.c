@@ -32,9 +32,6 @@ Map *globalSymbolTable;
 
 Object *globalScope;
 
-Object *objectProto, *symbolProto, *closureProto, *scopeProto, *processProto,
-       *byteArrayProto, *stringProto, *arrayProto, *integerProto;
-
 Object *trueObject, *falseObject, *console;
 
 Object *isNilSymbol, *doesNotUnderstandSymbol;
@@ -78,8 +75,16 @@ Object *scopeNew(Object *block, Object *containing)
     self->proto = scopeProto;
     Scope *scope = self->scope;
     scope->block = block;
-    scope->containing = (containing == NULL)?
-        globalScope : containing;
+    scope->thisWorld = NULL;
+    if (containing == NULL)
+    {
+        scope->containing = globalScope;
+    }
+    else
+    {
+        scope->containing = containing;
+    }
+    
     return self;
 }
 
@@ -160,32 +165,83 @@ void vPrint(Object *process)
     printf("%s", pop()->string->string);
 }
 
+/* This following two functions, lookupVar and setVar, first try to find the
+ * variable in the current scope and world. If not found, they search the
+ * current scope but with a parent world until all parent worlds are exhausted.
+ * Then they look at the containing scope with the current world, and then
+ * parent worlds, etc. */
 Object *lookupVar(Object *scope, Object *symbol)
 {
     Object *value;
-    do
-        value = symbolMapGet(scope->scope->variables, symbol);
-    while (value == NULL && (scope = scope->scope->containing) != NULL);
-    if (value == NULL)
-        printf("null value for variable %s\n", symbol->data[0]);
-    return value;
+    SymbolMap *worldVariables;
+    Object *world = scope->scope->thisWorld;
+
+    while (true)
+    {
+        /* Find the variables for the current world */
+        worldVariables = mapGet(scope->scope->variables,
+            world, valueKey);
+        if (worldVariables != NULL)
+        {
+            /* Now search this world's variables */
+            value = symbolMapGet(worldVariables, symbol);
+            if (value != NULL)
+                return value;
+        }
+        /* We have exhausted worlds, go to next scope */
+        if ((world = world->world->parent) == NULL)
+        {
+            /* Start back at the first world */
+            world = scope->scope->thisWorld;
+            /* We have exhausted scopes, return NULL */
+            if ((scope = scope->scope->containing) == NULL)
+            {
+                printf("not found, returning NULL\n");
+                return NULL;
+            }
+        }
+    }
 }
 
 void setVar(Object *scope, Object *symbol, Object *value)
 {
-    while (scope != NULL)
+    SymbolMap *worldVariables;
+    Object *world = scope->scope->thisWorld;
+
+    while (true)
     {
-        if (symbolMapSet(scope->scope->variables, symbol, value))
-            return;
-        else
-            scope = scope->scope->containing;
+        /* Find the variables for the current world */
+        worldVariables = mapGet(scope->scope->variables,
+            world, valueKey);
+        if (worldVariables != NULL)
+        {
+            /* Now modify this world's variables. If the value is true,
+             * this was successful. */
+            if (symbolMapSet(worldVariables, symbol, value))
+                return;
+        }
+        /* We have exhausted worlds, go to next scope */
+        if ((world = world->world->parent) == NULL)
+        {
+            /* Start back at the first world */
+            world = scope->scope->thisWorld;
+            /* We have exhausted scopes, return NULL */
+            if ((scope = scope->scope->containing) == NULL)
+                panic("Variable %s not found in scope", symbol->data[0]);
+        }
     }
-    panic("Variable %s not found in scope", symbol->data[0]);
 }
 
+/* Note that what world we are in is determined by which scope calls the current
+ * scope, not which scope defines the current scope. It is the exact opposite
+ * when dealing with variable delegation. */
 void processPushScope(Object *process, Object *scope)
 {
     scope->scope->parent = currentScope;
+    if (scope->scope->thisWorld == NULL)
+    {
+        scope->scope->thisWorld = currentScope->scope->thisWorld;
+    }
     currentScope = scope;
 }
 
@@ -272,7 +328,7 @@ Object *processNew()
     closure->closure->type = userDefinedClosure;
     Object *scope = scopeNew(closure, globalScope);
     
-    currentScope = NULL;
+    currentScope = globalScope;
     processPushScope(process, scope);
     currentClosure = closure;
     
@@ -349,8 +405,9 @@ void closureSetup(Object *process)
         keys[i] = translate(*IP++);
         values[i] = NULL;
     }
-    currentScope->scope->variables = symbolMapNew(varcount, (void**)keys,
-        (void**)values);
+    currentScope->scope->variables = mapNew();
+    mapSetVal(currentScope->scope->variables, currentScope->scope->thisWorld,
+        symbolMapNew(varcount, (void**)keys, (void**)values));
         
     /* setup arguments */
     IP = currentIP + 1;
@@ -445,7 +502,7 @@ void processMainLoop(Object *process)
                     push(message);
                     method = bind(receiver, doesNotUnderstandSymbol);
                     assert(method != NULL,
-                        "VM Error; object at %x, proto %x %x"
+                        "VM Error; object at %x, proto %x %x "
                         "does not delegate to Object %x",
                         receiver, receiver->proto,
                         receiver->proto->proto, objectProto);
@@ -503,13 +560,15 @@ void processMainLoop(Object *process)
                     varNames[i] = translate(*currentIP++);
                 self->object[0] = scopeNew(NULL, currentScope);
                 Object *scope = self->object[0];
-                scope->scope->variables = symbolMapNew(varc,
-                    (void**)varNames, (void**)NULL);
+                scope->scope->variables = mapNew();
+                mapSetVal(scope->scope->variables, scope->scope->thisWorld,
+                    symbolMapNew(varc, (void**)varNames, (void**)NULL));
                 
                 Size methodCount = *currentIP++;
                 Object *methodNames[methodCount];
                 Object *methodClosures[methodCount];
                 i = methodCount;
+                
                 /* Setup methods */
                 while (i --> 0)
                 {
@@ -568,6 +627,21 @@ void arrayAsString(Object *process)
     push(string);
 }
 
+/* Does a copy of the Map<world, SymbolMap<variable, value>> structure used to
+ * store variables. */
+Map *variablesCopy(Map *vars)
+{
+    Map *map = mapNew();
+    MapIterator iter;
+    Association *assoc;
+    mapIteratorInit(&iter);
+    while ((assoc = mapNext(map, &iter)) != NULL)
+    {
+        mapSetVal(map, assoc->key, symbolMapCopy((SymbolMap*)assoc->value));
+    }
+    return map;
+}
+
 void vObjectNew(Object *process)
 {
     Object *proto = pop();
@@ -591,7 +665,7 @@ void vObjectNew(Object *process)
             continue;
         object->object[i] = scopeNew(NULL, currentScope->scope->parent);
         Scope *scope = object->object[i]->scope;
-        scope->variables = symbolMapCopy(proto->object[i - 1]->scope->variables);
+        scope->variables = variablesCopy(proto->object[i - 1]->scope->variables);
     }
     
     push(object);
@@ -600,6 +674,36 @@ void vObjectNew(Object *process)
 void vReturnFalse(Object *process)
 {
     push(falseObject);
+}
+
+void exceptionRaise(Object *process)
+{
+    Object *symbol = pop();
+    pop(); // exception proto
+    panic("Raising %s error Not implemented", symbol->data[0]);
+}
+
+Object *worldNew(Object *parent)
+{
+    Object *world = malloc(sizeof(Object) + sizeof(World));
+    world->proto = globalWorld;
+    world->world->parent = parent;
+    return world;
+}
+
+void worldSpawn(Object *process)
+{
+    
+}
+
+void worldDo(Object *process)
+{
+    
+}
+
+void worldCommit(Object *process)
+{
+    
 }
 
 void vmInstall()
@@ -719,6 +823,21 @@ void vmInstall()
     
     console->methods = symbolMapNew(1, (void**)consoleKeys, (void**)consoleValues);
     
+    /* Setting up Exception */
+    
+    exceptionProto = objectNew();
+    
+    Object *exceptionKeys[] =
+    {
+        symbolNew("raise:"),
+    };
+    Object *exceptionValues[] =
+    {
+        internalMethodNew(exceptionRaise, 2),
+    };
+    
+    exceptionProto->methods = symbolMapNew(1, (void**)exceptionKeys, (void**)exceptionValues);
+    
     /* Setting up integer */
     
     integerProto = objectNew();
@@ -756,10 +875,30 @@ void vmInstall()
     
     integerProto->methods = symbolMapNew(12, (void**)integerKeys, (void**)integerValues);
     
+    /* Setting up global world */
+    
+    globalWorld = worldNew(NULL);
+    
+    Object *worldKeys[] =
+    {
+        symbolNew("spawn"),
+        symbolNew("do:"),
+        symbolNew("commit"),
+    };
+    Object *worldValues[] =
+    {
+        internalMethodNew(worldSpawn, 1),
+        internalMethodNew(worldDo, 1),
+        internalMethodNew(worldCommit, 1),
+    };
+    
+    globalWorld->methods = symbolMapNew(3, (void**)worldKeys, (void**)worldValues);
+    
     /* Setting up Global Scope */
     
     globalScope = scopeNew(NULL, NULL);
     globalScope->scope->containing = NULL;
+    globalScope->scope->thisWorld = globalWorld;
     printf("global scope at %x\n", globalScope);
     
     Size globalVarCount = 2;
@@ -776,6 +915,7 @@ void vmInstall()
     };
     printf("Console at %x\n", console);
     
-    symbolMapInit(globalScope->scope->variables, globalVarCount,
-        (void**)globalKeys, (void**)globalValues);
+    globalScope->scope->variables = mapNew();
+    mapSetVal(globalScope->scope->variables, globalWorld, 
+        symbolMapNew(globalVarCount, (void**)globalKeys, (void**)globalValues));
 }

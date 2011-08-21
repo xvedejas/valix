@@ -403,6 +403,59 @@ void mapDebug(Map *map)
     }
 }
 
+void mapIteratorInit(MapIterator *iter)
+{
+    iter->tableA = true;
+    iter->index = 0;
+    iter->chainIndex = 0;
+}
+
+/* Use to iterate through a map. Don't modify the map when iterating! */
+Association *mapNext(Map *map, MapIterator *iter)
+{
+    Association *assoc;
+    do
+    {
+        Size chainIndex = iter->chainIndex;
+        Size index = iter->index;
+        assoc = (iter->tableA)? &map->A[index] : &map->B[index];
+        while (chainIndex --> 0) assoc = assoc->next;
+        if (assoc == NULL)
+            return NULL;
+        /* Association got. Now increment. */
+        if (assoc->next == NULL)
+        {
+            if (iter->tableA)
+            {
+                if (index + 1 > map->capacityA)
+                {
+                    iter->tableA = false;
+                    iter->index = 0;
+                    iter->chainIndex = 0;
+                    return assoc;
+                }
+            }
+            else
+            {
+                if (index > map->capacityB)
+                {
+                    /* Do nothing but increment chainIndex. Next call will
+                     * return NULL, signaling that iteration is over. */
+                    iter->chainIndex++;
+                    return assoc;
+                }
+            }
+            iter->index++;
+            iter->chainIndex = 0;
+        }
+        else
+        {
+            iter->chainIndex++;
+        }
+    } while (assoc->key == NULL);
+    return assoc;
+}
+
 ////////////////////////////////
 // InternTable Implementation //
 ////////////////////////////////

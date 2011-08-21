@@ -47,17 +47,10 @@ typedef struct scope
     struct object *parent; // for stack purposes only
     struct object *block; // the corresponding closure
     struct object *containing; // parent scope is where the closure was defined
-    union
-    {
-        struct // if user-defined closure
-        {
-            u8 *IP;
-            SymbolMap *variables;
-        };
-        struct // if internal function
-        {
-        };
-    };
+    // The following fields only apply if user-defined closure
+    u8 *IP;
+    struct object *thisWorld;
+    Map *variables; // Map<world, SymbolMap<symbol, variable>>
 } Scope;
 
 #define arg(n) ((Object*)stackGet(process->process->valueStack, n))
@@ -68,6 +61,7 @@ typedef struct scope
 #define currentScope (process->process->scope)
 #define currentIP (currentScope->scope->IP)
 #define currentClosure (currentScope->scope->block)
+#define currentWorld (currentScope->scope->thisWorld)
 
 typedef void (InternalFunction)(Object*);
 
@@ -127,6 +121,11 @@ typedef struct number
     u32 data[1];
 } Number;
 
+typedef struct world
+{
+    Object *parent;
+} World;
+
 struct object
 {
     struct object *proto;
@@ -139,6 +138,7 @@ struct object
         struct stringData string[0];
         struct array array[0];
         struct number number[0];
+        struct world world[0];
         u8 byte[0];
         Size value[0];
         void *data[0];
@@ -146,6 +146,9 @@ struct object
     };
 };
 
+Object *objectProto, *symbolProto, *closureProto, *scopeProto, *processProto,
+       *byteArrayProto, *stringProto, *arrayProto, *integerProto,
+       *exceptionProto, *globalWorld;
 
 extern Object *processNew();
 extern void processSetBytecode(Object *process, u8 *bytecode);
@@ -154,5 +157,7 @@ extern void vApply(Object *process);
 extern void vmInstall();
 extern Object *integerNew(u32 value);
 extern Object *stringNew(Size len, String s);
+extern Object *symbolNew(String string);
+extern inline Object *bind(Object *target, Object *symbol);
 
 #endif

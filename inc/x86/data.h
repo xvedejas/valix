@@ -64,6 +64,16 @@ extern bool mapRemove(Map *map, void *key, MapKeyType type);
 extern void mapDel(Map *map);
 extern void mapDebug(Map *map);
 
+typedef struct
+{
+    bool tableA;
+    Size index, chainIndex;
+} MapIterator;
+
+extern void mapIteratorInit(MapIterator *iter);
+/* Use to iterate through a map. Don't modify the map when iterating! */
+extern Association *mapNext(Map *map, MapIterator *iter);
+
 ///////////////////////////
 // InternTable Interface //
 ///////////////////////////

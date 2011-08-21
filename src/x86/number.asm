@@ -21,7 +21,5 @@ mulOverflow:
     ; ecx contains 'a', edx contains 'b'
     mov eax, edx
     mul ecx        ; multiply
-    pushfd         ; push flags onto stack to get at overflow flag
-    pop eax        ; get flags
-    and eax, 1024  ; overflow bit 11
+    mov eax, edx   ; upper half of mul instruction is put in edx
     ret

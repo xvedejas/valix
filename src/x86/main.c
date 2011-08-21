@@ -277,17 +277,18 @@ void kmain(u32 magic, MultibootStructure *multiboot, void *stackPointer)
     asm volatile("sti;");
     printf("Welcome to Valix Pre-Alpha 1. Type \"help\" for usage information.\n\n");
     
-    String testcode = " 1 to: 100 do: { i | Console print: i. }. \n";
-    //String testcode = " { i | Console print: i. } apply: \"a\". \n";
+    String testcode =
+        "| a, b | \n"
+        "a = 10. b = 20. \n"
+        "Console print: (b / a). \n";
     
     printf("Executing the following code: \n\n%s\n\n", testcode);
     
-    u8 *bytecode = compile(testcode);
-    
     Object *process = processNew();
+    
+    u8 *bytecode = compile(testcode);
     processSetBytecode(process, bytecode);
     processMainLoop(process);
-    printf("\nDONE\n");
     
     //pciinfo();
     return; /* kills kernel thread */

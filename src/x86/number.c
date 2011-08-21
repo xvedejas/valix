@@ -26,8 +26,8 @@ extern bool __attribute__((fastcall)) mulOverflow(u32 a, u32 b);
 
 void integerAdd(Object *process)
 {
-    u32 a = pop()->number->data[0];
     u32 b = pop()->number->data[0];
+    u32 a = pop()->number->data[0];
     a += b;
     if (a < b) // overflow
         panic("Integer overflow; Not implemented");
@@ -36,8 +36,8 @@ void integerAdd(Object *process)
 
 void integerSub(Object *process)
 {
-    u32 a = pop()->number->data[0];
     u32 b = pop()->number->data[0];
+    u32 a = pop()->number->data[0];
     a -= b;
     if (a > b) // underflow
         panic("Integer underflow; Not implemented");
@@ -46,8 +46,8 @@ void integerSub(Object *process)
 
 void integerMul(Object *process)
 {
-    u32 a = pop()->number->data[0];
     u32 b = pop()->number->data[0];
+    u32 a = pop()->number->data[0];
     
     /* mulOverflow returns whether there was an overflow */
     if (mulOverflow(a, b))
@@ -55,13 +55,21 @@ void integerMul(Object *process)
     push(integerNew(a * b));
 }
 
+void divisionByZeroError(Object *process)
+{
+    push(exceptionProto);
+    push(symbolNew("DivideByZero"));
+    push(bind(exceptionProto, symbolNew("raise:")));
+    vApply(process);
+}
+
 void integerDiv(Object *process)
 {
-    u32 a = pop()->number->data[0];
     u32 b = pop()->number->data[0];
+    u32 a = pop()->number->data[0];
     
     if (b == 0)
-        panic("division by 0");
+        divisionByZeroError(process);
     
     if ((double)(a / b) == (double)a / (double)b)
         push(integerNew(a / b));
@@ -71,11 +79,11 @@ void integerDiv(Object *process)
 
 void integerMod(Object *process)
 {
-    u32 a = pop()->number->data[0];
     u32 b = pop()->number->data[0];
+    u32 a = pop()->number->data[0];
     
     if (b == 0)
-        panic("division by 0");
+        divisionByZeroError(process);
     
     push(integerNew(a % b));
 }

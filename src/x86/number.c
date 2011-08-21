@@ -94,7 +94,8 @@ void integerAsString(Object *process)
     Size digits = 1 + floorlog10(integer);
     String buffer = malloc(sizeof(char) * digits);
     itoa(integer, buffer, 10);
-    push(stringNew(strlen(buffer), buffer));
+    Object *result = stringNew(strlen(buffer), buffer);
+    push(result);
 }
 
 void integerAnd(Object *process)

@@ -242,7 +242,7 @@ u8 *compile(String source)
                     parserRequire(keywordc < maxKeywordCount, "Message has too many keywords");
                     keywords[keywordc++] = curToken->data;
                     nextToken();
-                    parserRequire(curToken->type == semiToken, "Expected ':' token");
+                    parserRequire(curToken->type == colonToken, "Expected ':' token");
                     nextToken();
                     args[argc++] = curToken->data;
                     nextToken();

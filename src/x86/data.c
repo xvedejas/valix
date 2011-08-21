@@ -229,12 +229,16 @@ void *mapGet(Map *map, void *key, MapKeyType type)
     bool inTableA;
     Association *previous;
     Association *assoc = _mapFindBucket(map, key, type, &inTableA, &previous);
-    void *value;
-    if (assoc == NULL)
-        value = NULL;
-    else
-        value = assoc->value;
-    return value;
+    return (assoc == NULL)? NULL : assoc->value;
+}
+
+bool mapHas(Map *map, void *key, MapKeyType type)
+{
+    // Find the key
+    bool inTableA;
+    Association *previous;
+    Association *assoc = _mapFindBucket(map, key, type, &inTableA, &previous);
+    return assoc != NULL;
 }
 
 /* The incrementally resize variable is needed to avoid resizing all at
@@ -454,6 +458,27 @@ Association *mapNext(Map *map, MapIterator *iter)
         }
     } while (assoc->key == NULL);
     return assoc;
+}
+
+Map *mapCopy(Map *map)
+{
+    Map *new = malloc(sizeof(Map));
+    new->entriesA = map->entriesA;
+    new->entriesB = map->entriesB;
+    new->capacityA = map->capacityA;
+    new->capacityB = map->capacityB;
+    new->A = malloc(map->capacityA * sizeof(Association));
+    memcpy(new->A, map->A, map->capacityA * sizeof(Association));
+    if (map->B != NULL)
+    {
+        new->B = malloc(map->capacityA * sizeof(Association));
+        memcpy(new->B, map->B, map->capacityB * sizeof(Association));
+    }
+    else
+    {
+        new->B = NULL;
+    }
+    return new;
 }
 
 ////////////////////////////////

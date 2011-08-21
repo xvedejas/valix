@@ -50,7 +50,7 @@ typedef struct scope
     // The following fields only apply if user-defined closure
     u8 *IP;
     struct object *thisWorld;
-    Map *variables; // Map<world, SymbolMap<symbol, variable>>
+    SymbolMap *variables; // SymbolMap<variable, Map<world, value>>
 } Scope;
 
 #define arg(n) ((Object*)stackGet(process->process->valueStack, n))
@@ -90,6 +90,7 @@ typedef struct closure
 typedef struct process
 {
     Object *scope;
+    Object *world;
     Stack *valueStack;
     PermissionLevel permissions;
     Size depth;

@@ -61,8 +61,13 @@ void _mapSet(Map *map, void *key, void *value, MapKeyType type, bool incremental
 #define mapSetVal(map, key, value) mapSet(map, (void*)key, (void*)value, valueKey)
 extern bool mapRemove(Map *map, void *key, MapKeyType type);
 #define mapRemoveVal(map, key) mapRemove(map, (void*)key, valueKey)
+bool mapHas(Map *map, void *key, MapKeyType type);
+#define mapHasVal(map, key) mapHas(map, (void*)key, valueKey)
 extern void mapDel(Map *map);
 extern void mapDebug(Map *map);
+extern Map *mapCopy(Map *map);
+#define mapNewWith(key, val)\
+    ({ Map *_map = mapNew(); mapSetVal(_map, (void*)key, (void*)val); _map; })
 
 typedef struct
 {

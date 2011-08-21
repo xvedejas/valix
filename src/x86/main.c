@@ -278,9 +278,17 @@ void kmain(u32 magic, MultibootStructure *multiboot, void *stackPointer)
     printf("Welcome to Valix Pre-Alpha 1. Type \"help\" for usage information.\n\n");
     
     String testcode =
-        "| a, b | \n"
-        "a = 10. b = 20. \n"
-        "Console print: (b / a). \n";
+        "| point, A | \n"
+        "point = Object new init: \n"
+        "{ | x, y | set: _x and: _y { x = _x. y = _y. } \n"
+        "    print { Console print: x. Console print: \" \". \n"
+        "            Console print: y. Console print: \"\n\". } }. \n"
+        " point set: 5 and: 6. \n"
+        " point print. \n"
+        " A = thisWorld spawn. \n"
+        " A do: { point set: 8 and: 9. }. \n"
+        " point print. \n"
+        " A do: { point print. }. \n";
     
     printf("Executing the following code: \n\n%s\n\n", testcode);
     

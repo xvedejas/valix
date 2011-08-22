@@ -143,6 +143,14 @@ void printf(const char *format, ...)
                     else
                         put(s);
                 } break;
+                case 'S': // vm string object
+                {
+                    Object *str = va_arg(argptr, Object*);
+                    Size i;
+                    Size len = str->string->len;
+                    for (i = 0; i < len; i++)
+                        putch(str->string->string[i]);
+                } break;
                 case 'c':
                 {   
                     u8 c = va_arg(argptr, u32);
@@ -278,20 +286,14 @@ void kmain(u32 magic, MultibootStructure *multiboot, void *stackPointer)
     printf("Welcome to Valix Pre-Alpha 1. Type \"help\" for usage information.\n\n");
     
     String testcode =
-        "| point, A | \n"
-        "point = Object new init: \n"
-        "{ | x, y | set: _x and: _y { x = _x. y = _y. } \n"
-        "    print { Console print: x. Console print: \" \". \n"
-        "            Console print: y. Console print: \"\n\". } }. \n"
-        " point set: 5 and: 6. \n"
-        " point print. \n"
-        " A = thisWorld spawn. \n"
-        " A do: { point set: 8 and: 9. }. \n"
-        " point print. \n"
-        " point set: 1 and: 2. \n"
-        " A do: { point print. }. \n"
-        " A commit. \n"
-        " point print. \n";
+        "thisWorld spawn eval: \n"
+        "{\n"
+        "    Console print: (1 / 0). \n"
+        "} on: [ #DivideByZero ] \n"
+        "do: \n"
+        "{ error |\n"
+        "    Console print: \"can't do that!\". \n"
+        "}.\n";
     
     printf("Executing the following code: \n\n%s\n\n", testcode);
     

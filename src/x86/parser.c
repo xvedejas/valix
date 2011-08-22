@@ -47,6 +47,7 @@ const String bytecodes[] =
     "set",
     "return",
     "end",
+    "init",
 };
 
 /*

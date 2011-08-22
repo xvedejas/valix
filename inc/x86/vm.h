@@ -47,17 +47,20 @@ typedef struct scope
     struct object *parent; // for stack purposes only
     struct object *block; // the corresponding closure
     struct object *containing; // parent scope is where the closure was defined
-    // The following fields only apply if user-defined closure
+    Stack *valueStack;
+    bool fromInternal;
     u8 *IP;
     struct object *thisWorld;
     SymbolMap *variables; // SymbolMap<variable, Map<world, value>>
+    jmp_buf errorCatch; // active if errorCatch[0] not null
 } Scope;
 
-#define arg(n) ((Object*)stackGet(process->process->valueStack, n))
-#define pop() ({ ((Object*)stackPop(process->process->valueStack)); })
-#define popInt() ((Object*)stackPop(process->process->valueStack)->value[0])
-#define args(n) ((Object**)stackArgs(process->process->valueStack, n))
-#define push(v) ({ (stackPush(process->process->valueStack, v)); })
+#define arg(n) ((Object*)stackGet(currentScope->scope->valueStack, n))
+#define pop() ({ ((Object*)stackPop(currentScope->scope->valueStack)); })
+#define popFrom(_scope) ({ ((Object*)stackPop(_scope->scope->valueStack)); })
+#define args(n) ((Object**)stackArgs(currentScope->scope->valueStack, n))
+#define push(v) ({ (stackPush(currentScope->scope->valueStack, v)); })
+#define pushTo(v, _scope) ({ (stackPush(_scope->scope->valueStack, v)); })
 #define currentScope (process->process->scope)
 #define currentIP (currentScope->scope->IP)
 #define currentClosure (currentScope->scope->block)
@@ -91,9 +94,9 @@ typedef struct process
 {
     Object *scope;
     Object *world;
-    Stack *valueStack;
     PermissionLevel permissions;
     Size depth;
+    bool inInternal;
 } Process;
 
 typedef struct stringData

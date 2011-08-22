@@ -75,6 +75,9 @@ Object *scopeNew(Object *block, Object *containing)
     Scope *scope = self->scope;
     scope->block = block;
     scope->thisWorld = NULL;
+    scope->valueStack = stackNew();
+    scope->errorCatch[0] = NULL;
+    scope->fromInternal = false;
     if (containing == NULL)
         scope->containing = globalScope;
     else
@@ -157,7 +160,7 @@ void vPrint(Object *process)
     Object *method = bind(arg(0), symbolNew("asString"));
     push(method);
     vApply(process);
-    printf("%s", pop()->string->string);
+    printf("%S", pop());
 }
 
 /* This following two functions, lookupVar and setVar, first try to find the
@@ -266,52 +269,56 @@ Object *processPopScope(Object *process)
  * the scope of execution by pushing a new scope to the process. */
 void vApply(Object *process)
 {
-    process->process->depth++;
     Object *block = pop();
     assert(block != NULL, "Internal error; method does not exist");
     Closure *closure = block->closure;
     // if we are calling from an internal function, save this state
-    bool fromInternal = currentClosure->closure->type == internalClosure;
+    bool fromInternal = process->process->inInternal;
     
-    /* Here we see if we must correct for the scope of a method when the method
-     * is defined for a prototype instead of the given object */
-    
-    Object *scope;
-    if (closure->isMethod && closure->type == userDefinedClosure)
+    if (closure->type == internalClosure)
     {
-        Object *methodScope = closure->scope;
-        Object *self = arg(closure->argc - 1);
-        Size i = 0;
-        Object *current = self;
-        for (; current->object[0] != methodScope; i++)
-        {
-            if ((current = current->proto) == NULL)
-                panic("Method parent scope not found");
-        }
-        scope = scopeNew(block, self->object[i]);
+        process->process->inInternal = true;
+        closure->function(process);
+        process->process->inInternal = fromInternal;
     }
-    else
+    else /* we create a new scope if the closure is a user-defined closure. */
     {
-        // create a new scope
-        scope = scopeNew(block, block->closure->scope);
-    }
-    processPushScope(process, scope);
-    switch (closure->type)
-    {
-        case internalClosure:
+        process->process->depth++;
+        process->process->inInternal = false;
+        Object *scope;
+        /* Here we see if we must correct for the scope of a method when the
+         * method is defined for a prototype instead of the given object */
+        if (closure->isMethod)
         {
-            closure->function(process);
-            process->process->depth--;
-            processPopScope(process);
+            Object *methodScope = closure->scope;
+            Object *self = arg(closure->argc - 1);
+            Size i = 0;
+            Object *current = self;
+            for (; current->object[0] != methodScope; i++)
+            {
+                if ((current = current->proto) == NULL)
+                    panic("Method parent scope not found");
+            }
+            scope = scopeNew(block, self->object[i]);
         }
-        return;
-        case userDefinedClosure:
+        else
         {
-            currentScope->scope->IP = closure->bytecode;
-            if (fromInternal)
-                processMainLoop(process);
-        } break;
-        default: panic("VM Error");
+            // create a new scope
+            scope = scopeNew(block, block->closure->scope);
+        }
+        
+        Size i;
+        for (i = 0; i < closure->argc; i++)
+            pushTo(pop(), scope); // move arguments to new scope's stack
+            
+        processPushScope(process, scope);
+        currentScope->scope->IP = closure->bytecode;
+        if (fromInternal)
+        {
+            scope->scope->fromInternal = true;
+            processMainLoop(process);
+            process->process->inInternal = true;
+        }
     }
 }
 
@@ -326,13 +333,13 @@ Object *processNew()
     Object *process = malloc(sizeof(Object) + sizeof(Process));
     process->proto = processProto;
     process->process->scope = NULL;
-    process->process->valueStack = stackNew();
     
     process->process->depth = 0;
     Object *closure = closureNew(NULL);
     closure->closure->type = userDefinedClosure;
     Object *scope = scopeNew(closure, globalScope);
     process->process->world = globalWorld;
+    process->process->inInternal = false;
     
     currentScope = globalScope;
     processPushScope(process, scope);
@@ -362,7 +369,7 @@ void processSetBytecode(Object *process, u8 *bytecode)
     }
     currentIP = IP;
     
-    process->process->depth = 1;
+    process->process->depth = 0;
 }
 
 /* This function is called by processMainLoop to create a block object from
@@ -431,7 +438,7 @@ void processMainLoop(Object *process)
     
     while (true)
     {
-        ///printf("Bytecode %x at %x\n", *currentIP, currentIP);
+        ///printf("Bytecode %s at %x\n", bytecodes[*currentIP - 0x80], currentIP);
         switch (*currentIP++)
         {
             case integerBC: // integer literal
@@ -485,7 +492,7 @@ void processMainLoop(Object *process)
                 Object *message, *receiver, *method;
                 /* Get the message symbol from the stack */
                 message = pop();
-                receiver = stackGet(process->process->valueStack, argc);
+                receiver = stackGet(currentScope->scope->valueStack, argc);
                 ///printf("sending %x message %s argc %x\n", receiver, message->data[0], argc);
                 /* Find the corresponding method by using bind() */
                 method = bind(receiver, message);
@@ -494,8 +501,8 @@ void processMainLoop(Object *process)
                 {
                     method = receiver;
                     // remove extra unused receiver argument
-                    Stack *stack = process->process->valueStack;
-                    Size entries = process->process->valueStack->entries;
+                    Stack *stack = currentScope->scope->valueStack;
+                    Size entries = stack->entries;
                     memcpyd(stack->bottom + entries - argc - 1,
                         stack->bottom + entries - argc, argc);
                     pop();
@@ -543,16 +550,20 @@ void processMainLoop(Object *process)
             } break;
             case endBC: // end
             {
+                Object *oldScope = currentScope;
                 processPopScope(process);
+                push(popFrom(oldScope)); // return value
+                
+                if (oldScope->scope->fromInternal)
+                    return; // return to vApply()
+                
                 process->process->depth--;
                 if (process->process->depth == 0) // process done
                     return;
-                if (currentClosure->closure->type == internalClosure)
-                    return; // return to vApply()
             } break;
             case initBC: // object init
             {
-                Object *self = stackTop(process->process->valueStack);
+                Object *self = arg(0);
                 assert(self != NULL, "Cannot initialize null object");
                 assert((void**)self->object != (void**)0, "Object already initialized");
                 assert(self->object[0] == NULL, "Object already initialized");
@@ -693,8 +704,21 @@ void vReturnFalse(Object *process)
 void exceptionRaise(Object *process)
 {
     Object *symbol = pop();
-    pop(); // exception proto
-    panic("Raising %s error Not implemented", symbol->data[0]);
+    pop(); // self
+    
+    /* Search through scope to find one that's catching errors. */
+    Object *scope = currentScope;
+    
+    while (scope->scope->errorCatch[0] == NULL)
+    {
+        process->process->depth--;
+        if ((scope = scope->scope->parent) == NULL)
+            panic("Error %s not handled!", symbol->data[0]);
+    }
+    currentScope = scope;
+    push(symbol);
+    longjmp(scope->scope->errorCatch, true);
+    panic("catch");
 }
 
 Object *worldNew(Object *parent)
@@ -720,13 +744,42 @@ void worldSpawn(Object *process)
     push(worldNew(pop()));
 }
 
-void worldDo(Object *process)
+void worldEval(Object *process)
 {
     Object *block = pop();
     Object *self = pop();
     process->process->world = self;
     push(block);
     vApply(process);
+    push(NULL);
+}
+
+void worldEvalOnDo(Object *process)
+{
+    Object *catchBlock = pop();
+    /*Object *errors = */pop();
+    Object *self = arg(1);
+    
+    if (setjmp(currentScope->scope->errorCatch))
+    {
+        currentScope->scope->errorCatch[0] = NULL;
+        Object *errorSymbol = pop();
+        //if (!inArray(errors, errorSymbol))
+        //{
+        //    push(errorSymbol);
+        //    exceptionRaise(process);
+        //}
+        process->process->world = self;
+        push(errorSymbol);
+        push(catchBlock);
+        vApply(process);
+    }
+    else
+    {
+        worldEval(process);
+        return;
+    }
+    
     push(NULL);
 }
 
@@ -946,13 +999,15 @@ void vmInstall()
     Object *worldKeys[] =
     {
         symbolNew("spawn"),
-        symbolNew("do:"),
+        symbolNew("eval:"),
+        symbolNew("eval:on:do:"),
         symbolNew("commit"),
     };
     Object *worldValues[] =
     {
         internalMethodNew(worldSpawn, 1),
-        internalMethodNew(worldDo, 1),
+        internalMethodNew(worldEval, 2),
+        internalMethodNew(worldEvalOnDo, 4),
         internalMethodNew(worldCommit, 1),
     };
     

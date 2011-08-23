@@ -481,6 +481,13 @@ Map *mapCopy(Map *map)
     return new;
 }
 
+void mapEmpty(Map *map)
+{
+    memsetd(map->A, 0, map->capacityA * sizeof(Association));
+    if (map->B != NULL)
+        memsetd(map->B, 0, map->capacityB * sizeof(Association));
+}
+
 ////////////////////////////////
 // InternTable Implementation //
 ////////////////////////////////

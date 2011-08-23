@@ -104,5 +104,8 @@ extern void *realloc(void *memory, Size size);
 extern void meminfo();
 extern void coreDump();
 extern void freeThread(struct thread *thread);
+/* Given a pointer to allocated memory, find the size of the allocated block.
+ * Returns zero if given a pointer that does not point to allocated memory. */
+extern Size memBlockSize(void *memptr);
 
 #endif

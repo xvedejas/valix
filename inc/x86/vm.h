@@ -154,8 +154,24 @@ struct object
 
 Object *objectProto, *symbolProto, *closureProto, *scopeProto, *processProto,
        *byteArrayProto, *stringProto, *arrayProto, *integerProto,
-       *exceptionProto, *globalWorld;
+       *globalWorld;
 
+Object *throwable, *exceptionProto, *errorProto, *divideByZeroException,
+    *notImplementedException, *doesNotUnderstandException;
+
+/* this call() macro assumes a variable exists in the scope called 'process',
+ * referring to the current process. */
+#define call(_object, _message, ...)\
+({\
+    Object *method = bind(_object, symbolNew(_message));\
+    Size argc = method->closure->argc;\
+    pushargs(process, argc, _object, ##__VA_ARGS__);\
+    push(method);\
+    vApply(process);\
+    pop();\
+})
+
+extern void pushargs(Object *process, Size argc, ...);
 extern Object *processNew();
 extern void processSetBytecode(Object *process, u8 *bytecode);
 extern void processMainLoop(Object *process);

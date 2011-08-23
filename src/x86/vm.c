@@ -493,7 +493,7 @@ void processMainLoop(Object *process)
                 /* Get the message symbol from the stack */
                 message = pop();
                 receiver = stackGet(currentScope->scope->valueStack, argc);
-                ///printf("sending %x message %s argc %x\n", receiver, message->data[0], argc);
+                ///printf("sending %x %s\n", receiver, message->data[0]);
                 /* Find the corresponding method by using bind() */
                 method = bind(receiver, message);
                 /* if the method is apply, the receiver becomes the method */
@@ -541,8 +541,7 @@ void processMainLoop(Object *process)
             } break;
             case setBC: // set variable
             {
-                setVar(currentScope, translate(*currentIP++),
-                    pop());
+                setVar(currentScope, translate(*currentIP++), pop());
             } break;
             case returnBC: // return-from
             {
@@ -565,7 +564,8 @@ void processMainLoop(Object *process)
             {
                 Object *self = arg(0);
                 assert(self != NULL, "Cannot initialize null object");
-                assert((void**)self->object != (void**)0, "Object already initialized");
+                assert((void**)self->object != (void**)0,
+                    "Object already initialized");
                 assert(self->object[0] == NULL, "Object already initialized");
                 assert(self->methods == NULL, "Object already initialized");
                 
@@ -701,7 +701,7 @@ void vReturnFalse(Object *process)
     push(falseObject);
 }
 
-void exceptionRaise(Object *process)
+void throw(Object *process)
 {
     Object *symbol = pop();
     pop(); // self
@@ -754,23 +754,50 @@ void worldEval(Object *process)
     push(NULL);
 }
 
+bool delegatesTo(Object *obj, Object *proto)
+{
+    while (obj != proto)
+    {
+        if ((obj = obj->proto) == NULL)
+            return false;
+    }
+    return true;
+}
+
+bool delegatesToAny(Object *obj, Object *arrayObject)
+{
+    Object **array = arrayObject->array->array;
+    Size i = arrayObject->array->size;
+    while (i --> 0)
+    {
+        if (delegatesTo(obj, array[i]))
+            return true;
+    }
+    return false;
+}
+
+void worldEvalOnErrorDo(Object *process)
+{
+    panic("not implemented\n");
+}
+
 void worldEvalOnDo(Object *process)
 {
     Object *catchBlock = pop();
-    /*Object *errors = */pop();
+    Object *errors = pop();
     Object *self = arg(1);
     
     if (setjmp(currentScope->scope->errorCatch))
     {
         currentScope->scope->errorCatch[0] = NULL;
-        Object *errorSymbol = pop();
-        //if (!inArray(errors, errorSymbol))
-        //{
-        //    push(errorSymbol);
-        //    exceptionRaise(process);
-        //}
+        Object *error = arg(0);
+        if (!delegatesToAny(error, errors))
+        {
+            printf("nope\n");
+            push(bind(error, symbolNew("raise")));
+            vApply(process);
+        }
         process->process->world = self;
-        push(errorSymbol);
         push(catchBlock);
         vApply(process);
     }
@@ -788,6 +815,7 @@ void worldCommit(Object *process)
 {
     Object *world = pop();
     Object *parentWorld = world->world->parent;
+    assert(parentWorld != NULL, "error");
     Map *reads = world->world->reads;
     MapIterator iter;
     mapIteratorInit(&iter);
@@ -821,6 +849,100 @@ void worldCommit(Object *process)
     push(trueObject);
 }
 
+/* Similar to commit, revert works in the opposite direction. thisWorld is
+ * restored to the state of its parent as it currently is. This operation is
+ * pretty much equivalent to spawning a new world from the parent, except that
+ * another object does not need to be instantiated. */
+void worldRevert(Object *process)
+{
+    Object *world = pop();
+    Object *parentWorld = world->world->parent;
+    assert(parentWorld != NULL, "error");
+    Map *reads = world->world->reads;
+    
+    mapEmpty(reads);
+    
+    List *list = world->world->modifies;
+    Size i;
+    for (i = 0; i < list->entries; i++)
+    {
+        Map *values = list->array[i];
+        mapRemoveVal(values, world);
+    }
+    
+    push(NULL);
+}
+
+void vObjectProto(Object *process)
+{
+    Object *self = pop();
+    push(self->proto);
+}
+
+/* Returns an array of symbols representing the messages that the object
+ * responds to, including those defined by its prototype */
+void vObjectRespondsToAll(Object *process)
+{
+    Object *self = pop();
+    Size size = 0;
+    Object *current = self;
+    do
+        size += current->methods->entries;
+    while ((current = current->proto) != NULL);
+    Object *arrayObject = arrayNew(size);
+    Object **array = arrayObject->array->array;
+    current = self;
+    Size arrayIndex = 0;
+    
+    do
+    {
+        Size entries = current->methods->entries;
+        Size i;
+        Object *value;
+        for (i = 0; entries > 0; i += 2)
+        {
+            if ((value = (Object*)current->methods->hashTable[i]) != NULL)
+            {
+                entries--;
+                array[arrayIndex++] = value;
+            }
+        } 
+    }
+    while ((current = current->proto) != NULL);
+    push(arrayObject);
+}
+
+Object *exceptionNew(String message)
+{
+    Object *exception = objectNew();
+    exception->data[0] = message;
+    exception->proto = exceptionProto;
+    return exception;
+}
+
+/* Symbol argument to the following function */
+void vExceptionNew(Object *process)
+{
+    Object *symbol = pop();
+    pop(); // self
+    push(exceptionNew(symbol->data[0]));
+}
+
+void throwableAsString(Object *process)
+{
+    Object *self = pop();
+    push(stringNew(strlen(self->data[0]), self->data[0]));
+}
+
+void pushargs(Object *process, Size argc, ...)
+{
+    va_list argptr;
+    va_start(argptr, argc);
+    while (argc --> 0)
+        push(va_arg(argptr, Object*));
+    va_end(argptr);
+}
+
 void vmInstall()
 {
     globalSymbolTable = mapNew();
@@ -836,20 +958,25 @@ void vmInstall()
     
     /* Setting up ObjectProto */
     
-    Size objectMethodCount = 3;
-    Object *objectMethodSymbols[objectMethodCount];
-    Object *objectMethods[objectMethodCount];
-    
-    doesNotUnderstandSymbol = symbolNew("doesNotUnderstand:");
-    objectMethodSymbols[0] = doesNotUnderstandSymbol;
-    objectMethods[0] = internalMethodNew(vDoesNotUnderstand, 2);
-    
-    objectMethodSymbols[1] = isNilSymbol;
-    objectMethods[1] = internalMethodNew(vReturnFalse, 1);
-    
-    objectMethodSymbols[2] = symbolNew("new");
-    objectMethods[2] = internalMethodNew(vObjectNew, 1);
-    
+    Size objectMethodCount = 5;
+    Object *objectMethodSymbols[] =
+    {
+        doesNotUnderstandSymbol = symbolNew("doesNotUnderstand:"),
+        isNilSymbol,
+        symbolNew("new"),
+        symbolNew("proto"),
+        symbolNew("respondsToAll"),
+        
+    };
+    Object *objectMethods[] =
+    {
+        internalMethodNew(vDoesNotUnderstand, 2),
+        internalMethodNew(vReturnFalse, 1),
+        internalMethodNew(vObjectNew, 1),
+        internalMethodNew(vObjectProto, 1),
+        internalMethodNew(vObjectRespondsToAll, 1),
+    };
+
     objectProto->methods = symbolMapNew(objectMethodCount,
         (void**)objectMethodSymbols, (void**)objectMethods);
     
@@ -940,20 +1067,39 @@ void vmInstall()
     
     console->methods = symbolMapNew(1, (void**)consoleKeys, (void**)consoleValues);
     
-    /* Setting up Exception */
+    /* Setting up Throwable (exception/error) */
+    
+    throwable = objectNew();
+    
+    Object *throwableKeys[] =
+    {
+        symbolNew("raise"),
+        symbolNew("asString"),
+    };
+    Object *throwableValues[] =
+    {
+        internalMethodNew(throw, 1),
+        internalMethodNew(throwableAsString, 1),
+    };
+    throwable->methods = symbolMapNew(2, (void**)throwableKeys, (void**)throwableValues);
     
     exceptionProto = objectNew();
-    
+    exceptionProto->proto = throwable;
     Object *exceptionKeys[] =
     {
-        symbolNew("raise:"),
+        symbolNew("new:"),
     };
     Object *exceptionValues[] =
     {
-        internalMethodNew(exceptionRaise, 2),
+        internalMethodNew(vExceptionNew, 2),
     };
-    
     exceptionProto->methods = symbolMapNew(1, (void**)exceptionKeys, (void**)exceptionValues);
+    
+    errorProto = objectNew();
+    errorProto->proto = throwable;
+    
+    divideByZeroException = exceptionNew("divideByZero");
+    doesNotUnderstandException = exceptionNew("doesNotUnderstand"); 
     
     /* Setting up integer */
     
@@ -1001,38 +1147,44 @@ void vmInstall()
         symbolNew("spawn"),
         symbolNew("eval:"),
         symbolNew("eval:on:do:"),
+        symbolNew("eval:onErrorDo:"),
         symbolNew("commit"),
+        symbolNew("revert"),
     };
     Object *worldValues[] =
     {
         internalMethodNew(worldSpawn, 1),
         internalMethodNew(worldEval, 2),
         internalMethodNew(worldEvalOnDo, 4),
+        internalMethodNew(worldEvalOnErrorDo, 3),
         internalMethodNew(worldCommit, 1),
+        internalMethodNew(worldRevert, 1),
     };
     
-    globalWorld->methods = symbolMapNew(3, (void**)worldKeys, (void**)worldValues);
+    globalWorld->methods = symbolMapNew(6, (void**)worldKeys, (void**)worldValues);
     
     /* Setting up Global Scope */
     
     globalScope = scopeNew(NULL, NULL);
     globalScope->scope->containing = NULL;
     globalScope->scope->thisWorld = globalWorld;
-    printf("global scope at %x\n", globalScope);
     
-    Size globalVarCount = 2;
+    Size globalVarCount = 4;
     Object *globalKeys[] =
     {
         symbolNew("Object"),
         symbolNew("Console"),
+        symbolNew("Exception"),
+        symbolNew("DivideByZero"),
     };
     
     Map *globalValues[] =
     {
         mapNewWith(globalWorld, objectProto),
         mapNewWith(globalWorld, console),
+        mapNewWith(globalWorld, exceptionProto),
+        mapNewWith(globalWorld, divideByZeroException),
     };
-    printf("Console at %x\n", console);
     
     globalScope->scope->variables = symbolMapNew(globalVarCount,
         (void**)globalKeys, (void**)globalValues);

@@ -486,3 +486,16 @@ void sweep() // quick tests
     } while ((currentBlock = currentBlock->next) >= (MemoryHeader*)0x100000);
     mutexReleaseLock(&mmLockMutex);
 }
+
+Size memBlockSize(void *memptr)
+{
+    MemoryHeader *header = (MemoryHeader*)(memory - sizeof(MemoryHeader));
+    
+    if (unlikely(header->startMagic != mmMagic || header->endMagic != mmMagic))
+    {
+        // This is not allocated memory, return 0
+        return 0;
+    }
+    
+    return header->size;
+}

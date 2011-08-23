@@ -55,21 +55,13 @@ void integerMul(Object *process)
     push(integerNew(a * b));
 }
 
-void divisionByZeroError(Object *process)
-{
-    push(exceptionProto);
-    push(symbolNew("DivideByZero"));
-    push(bind(exceptionProto, symbolNew("raise:")));
-    vApply(process);
-}
-
 void integerDiv(Object *process)
 {
     u32 b = pop()->number->data[0];
     u32 a = pop()->number->data[0];
     
     if (b == 0)
-        divisionByZeroError(process);
+        call(divideByZeroException, "raise");
     
     if ((double)(a / b) == (double)a / (double)b)
         push(integerNew(a / b));
@@ -83,7 +75,7 @@ void integerMod(Object *process)
     u32 a = pop()->number->data[0];
     
     if (b == 0)
-        divisionByZeroError(process);
+        call(divideByZeroException, "raise");
     
     push(integerNew(a % b));
 }

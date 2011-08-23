@@ -66,6 +66,7 @@ bool mapHas(Map *map, void *key, MapKeyType type);
 extern void mapDel(Map *map);
 extern void mapDebug(Map *map);
 extern Map *mapCopy(Map *map);
+extern void mapEmpty(Map *map); // reset the map, removing all keys
 #define mapNewWith(key, val)\
     ({ Map *_map = mapNew(); mapSetVal(_map, (void*)key, (void*)val); _map; })
 

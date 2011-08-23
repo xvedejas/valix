@@ -285,14 +285,17 @@ void kmain(u32 magic, MultibootStructure *multiboot, void *stackPointer)
     asm volatile("sti;");
     printf("Welcome to Valix Pre-Alpha 1. Type \"help\" for usage information.\n\n");
     
-    String testcode =
+    String testcode = "| a |\n"
+        "a = 2.\n"
         "thisWorld spawn eval: \n"
         "{\n"
-        "    Console print: (1 / 0). \n"
-        "} on: [ #DivideByZero ] \n"
+        "    a = 5.\n"
+        "    Console print: (1234 / 0). \n"
+        "} on: [ Exception ] \n"
         "do: \n"
         "{ error |\n"
-        "    Console print: \"can't do that!\". \n"
+        "    Console print: error. \n"
+        "    thisWorld revert. \n"
         "}.\n";
     
     printf("Executing the following code: \n\n%s\n\n", testcode);

@@ -93,16 +93,16 @@ void irqUninstallHandler(int irq)
 
 void irqRemap(void)
 {
-    outportb(0x20, 0x11); // PIC1: Initialization Command
-    outportb(0xA0, 0x11); // PIC2: Initialization Command
-    outportb(0x21, 0x20); // PIC1: IRQ0-7 starts at 0x20 (Interrupt 32)
-    outportb(0xA1, 0x28); // PCI2: IRQ8-15 starts at 0x28 (Intterupt 40)
-    outportb(0x21, 0x04); // PCI1:
-    outportb(0xA1, 0x02); // PIC2:
-    outportb(0x21, 0x01); // PIC1: x86 Mode
-    outportb(0xA1, 0x01); // PCI2: x86 Mode
-    outportb(0x21, 0x0);
-    outportb(0xA1, 0x0);
+    outb(0x20, 0x11); // PIC1: Initialization Command
+    outb(0xA0, 0x11); // PIC2: Initialization Command
+    outb(0x21, 0x20); // PIC1: IRQ0-7 starts at 0x20 (Interrupt 32)
+    outb(0xA1, 0x28); // PCI2: IRQ8-15 starts at 0x28 (Intterupt 40)
+    outb(0x21, 0x04); // PCI1:
+    outb(0xA1, 0x02); // PIC2:
+    outb(0x21, 0x01); // PIC1: x86 Mode
+    outb(0xA1, 0x01); // PCI2: x86 Mode
+    outb(0x21, 0x0);
+    outb(0xA1, 0x0);
 }
 
 #define idtSetIrqGate(n, m) idtSetGate(n, (unsigned)irq##m, 0x08, 0x8E)
@@ -119,15 +119,13 @@ void irqInstall()
 
 void irqHandler(Regs *r)
 {
-    /* This is a blank function pointer */
-    void (*handler)(Regs *r);
-    handler = irqRoutines[r->intNo - 32];
-    if (handler)
+    void (*handler)(Regs *r) = irqRoutines[r->intNo - 32];
+    if (handler != NULL)
         handler(r);
     if (r->intNo >= 40)
-        outportb(0xA0, 0x20);
+        outb(0xA0, 0x20);
     /* send an EOI to the master interrupt controller */
-    outportb(0x20, 0x20);
+    outb(0x20, 0x20);
 }
 
 #define idtSetIsrGate(n) idtSetGate(n, (unsigned)isr##n, 0x08, 0x8E)

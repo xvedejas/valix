@@ -28,8 +28,8 @@ u8 pciConfigReadByte(u8 bus, u8 slot, u8 func, u8 offset)
 {
     u32 address = ((u32)bus << 16) | ((u32)slot << 11) | ((u32)func << 8) |
         (offset & 0xFC) | ((u32)0x80000000);
-    outportd(pciConfigAddressPort, address);
-    return (u8)((inportd(pciConfigDataPort) >> ((offset & 3) << 3)) & 0xFF);
+    outd(pciConfigAddressPort, address);
+    return (u8)((ind(pciConfigDataPort) >> ((offset & 3) << 3)) & 0xFF);
 }
 
 
@@ -37,16 +37,16 @@ u16 pciConfigReadWord(u8 bus, u8 slot, u8 func, u8 offset)
 {
     u32 address = ((u32)bus << 16) | ((u32)slot << 11) | ((u32)func << 8) |
         (offset & 0xFC) | ((u32)0x80000000);
-    outportd(pciConfigAddressPort, address);
-    return (u16)((inportd(pciConfigDataPort) >> ((offset & 2) << 3)) & 0xFFFF);
+    outd(pciConfigAddressPort, address);
+    return (u16)((ind(pciConfigDataPort) >> ((offset & 2) << 3)) & 0xFFFF);
 }
 
 u32 pciConfigReadDword(u8 bus, u8 slot, u8 func, u8 offset)
 {
     u32 address = ((u32)bus << 16) | ((u32)slot << 11) | ((u32)func << 8) |
         (offset & 0xFC) | ((u32)0x80000000);
-    outportd(pciConfigAddressPort, (u32)address);
-    return (u32)inportd(pciConfigDataPort);
+    outd(pciConfigAddressPort, (u32)address);
+    return (u32)ind(pciConfigDataPort);
 }
 
 

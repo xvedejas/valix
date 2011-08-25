@@ -63,12 +63,14 @@ volatile umax timerTicks;
 const Size systemStackSize;
 void timerWait(int ticks);
 
-extern u8 inportb(u16 port);
-extern void outportb(u16 port, u8 data);
-extern u16 inportw(u16 port);
-extern void outportw(u16 port, u16 data);
-extern u32 inportd(u16 port);
-extern void outportd(u16 port, u32 data);
+extern u8 inb(u16 port);
+extern void outb(u16 port, u8 data);
+extern u16 inw(u16 port);
+extern void inws(u16 port, u16 *buffer, Size size);
+extern void outw(u16 port, u16 data);
+extern void outws(u16 port, u16 *data, Size size);
+extern u32 ind(u16 port);
+extern void outd(u16 port, u32 data);
 
 extern void printf(const char *format, ...);
 extern void putch(u8 c);

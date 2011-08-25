@@ -149,7 +149,7 @@ Object *integerNew(u32 value)
 
 void vDoesNotUnderstand(Object *process)
 {
-    panic("Object at %x does not understand symbol '%s'\n", arg(1), arg(0)->data[0]);
+    call(process, doesNotUnderstandException, "raise");
     push(NULL);
 }
 
@@ -157,10 +157,8 @@ void vApply(Object *process);
 
 void vPrint(Object *process)
 {
-    Object *method = bind(arg(0), symbolNew("asString"));
-    push(method);
-    vApply(process);
-    printf("%S", pop());
+    Object *str = call(process, pop(), "asString");
+    printf("%S", str);
 }
 
 /* This following two functions, lookupVar and setVar, first try to find the
@@ -172,7 +170,6 @@ Object *lookupVar(Object *scope, Object *symbol)
 {
     if (symbol == thisWorldSymbol)
         return scope->scope->thisWorld;
-    ///printf("looking up %s\n", symbol->data[0]);
     Object *value = NULL;
     Map *values;
     Object *startingWorld = scope->scope->thisWorld;
@@ -183,10 +180,7 @@ Object *lookupVar(Object *scope, Object *symbol)
         while ((values = symbolMapGet(scope->scope->variables, symbol)) == NULL)
         {
             if ((scope = scope->scope->containing) == NULL)
-            {
-                ///printf("not found -- returning NULL\n");
                 return NULL;
-            }
         }
         while ((value = mapGetVal(values, world)) == NULL)
         {
@@ -203,10 +197,8 @@ Object *lookupVar(Object *scope, Object *symbol)
      * isn't the current world, then we must add the entry for the
      * current world because we read the value. Also we keep track of the value
      * that was read, and put it in the world's "reads" map. */
-    ///printf("found.\n");
     if (world != startingWorld)
     {
-        ///printf("creating new entry for this world.\n");
         mapSetVal(values, startingWorld, value);
         if (startingWorld->world->reads != NULL)
             mapSetVal(startingWorld->world->reads, values, value);
@@ -216,7 +208,6 @@ Object *lookupVar(Object *scope, Object *symbol)
 
 void setVar(Object *scope, Object *symbol, Object *newValue)
 {
-    ///printf("for setting, looking up %s\n", symbol->data[0]);
     Map *values;
     Object *startingWorld = scope->scope->thisWorld;
     Object *world = startingWorld;
@@ -239,7 +230,7 @@ void setVar(Object *scope, Object *symbol, Object *newValue)
         }
     }
     
-    ///printf("found, adding to modified list for this world\n");
+    // note that this value has been modified in the current world
     if (startingWorld->world->modifies != NULL)
         listAdd(startingWorld->world->modifies, values);
     mapSetVal(values, startingWorld, newValue);
@@ -432,6 +423,79 @@ void closureSetup(Object *process)
     currentIP += *currentIP + 2;
 }
 
+/* with callArgsOnStack, the topmost item on the stack should be the argcount,
+ * then the symbol of the message */
+void callArgsOnStack(Object *process)
+{
+    Size argc = pop()->number->data[0];
+    Object *message = pop();
+    Object *receiver = stackGet(currentScope->scope->valueStack, argc);
+    Object *method = bind(receiver, message);
+    ///printf("sending %x %s\n", receiver, message->data[0]);
+    /* if the method is apply, the receiver becomes the method */
+    if (unlikely(method->closure->function == &vApply))
+    {
+        method = receiver;
+        // remove extra unused receiver argument
+        Stack *stack = currentScope->scope->valueStack;
+        Size entries = stack->entries;
+        memcpyd(stack->bottom + entries - argc - 1,
+            stack->bottom + entries - argc, argc);
+        pop();
+    }
+    if (unlikely(method == NULL))
+    {
+        /* Bind failed, send DoesNotUnderstand */
+        while (argc --> 0)
+            pop();
+        push(message);
+        method = bind(receiver, doesNotUnderstandSymbol);
+        assert(method != NULL,
+            "VM Error; object at %x, proto %x %x "
+            "does not delegate to Object %x",
+            receiver, receiver->proto,
+            receiver->proto->proto, objectProto);
+        push(method);
+        vApply(process);
+        return; // exit due to error.
+    }
+    push(method);
+    if (method->closure->type == internalClosure)
+    {
+        vApply(process);
+    }
+    else // user-defined method.
+    {
+        /* Apply, using the arguments on the stack */
+        vApply(process);
+        closureSetup(process);
+    }
+}
+
+/* Syntactic argument count, does not include receiver, so might need to add one
+ * if dealing with the real argument count of methods */
+Size getArgc(String message)
+{
+    return (strchr("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_",
+        message[0]))? chrcount(message, ':') : 1;
+}
+
+Object *call(Object *process, Object *object, String message, ...)
+{
+    Size argc = getArgc(message);
+    push(object);
+    va_list argptr;
+    va_start(argptr, message);
+    Size i = argc;
+    while (i --> 0)
+        push(va_arg(argptr, Object*));
+    va_end(argptr);
+    push(symbolNew(message));
+    push(integerNew(argc));
+    callArgsOnStack(process);
+    return pop();
+}
+
 void processMainLoop(Object *process)
 {
     closureSetup(process);
@@ -445,7 +509,8 @@ void processMainLoop(Object *process)
             {
                 Size value = strtoul((String)currentIP, NULL, 10);
                 currentIP += strlen((String)currentIP) + 1;
-                push(integerNew(value));
+                Object *integer = integerNew(value);
+                push(integer);
             } break;
             case doubleBC: // double literal
             {
@@ -489,51 +554,8 @@ void processMainLoop(Object *process)
             case messageBC: // message 0x89
             {
                 Size argc = (Size)*currentIP++;
-                Object *message, *receiver, *method;
-                /* Get the message symbol from the stack */
-                message = pop();
-                receiver = stackGet(currentScope->scope->valueStack, argc);
-                ///printf("sending %x %s\n", receiver, message->data[0]);
-                /* Find the corresponding method by using bind() */
-                method = bind(receiver, message);
-                /* if the method is apply, the receiver becomes the method */
-                if (unlikely(method->closure->function == &vApply))
-                {
-                    method = receiver;
-                    // remove extra unused receiver argument
-                    Stack *stack = currentScope->scope->valueStack;
-                    Size entries = stack->entries;
-                    memcpyd(stack->bottom + entries - argc - 1,
-                        stack->bottom + entries - argc, argc);
-                    pop();
-                }
-                if (unlikely(method == NULL))
-                {
-                    /* Bind failed, send DoesNotUnderstand */
-                    while (argc --> 0)
-                        pop();
-                    push(message);
-                    method = bind(receiver, doesNotUnderstandSymbol);
-                    assert(method != NULL,
-                        "VM Error; object at %x, proto %x %x "
-                        "does not delegate to Object %x",
-                        receiver, receiver->proto,
-                        receiver->proto->proto, objectProto);
-                    push(method);
-                    vApply(process);
-                    return; // exit due to error.
-                }
-                push(method);
-                if (method->closure->type == internalClosure)
-                {
-                    vApply(process);
-                }
-                else // user-defined method.
-                {
-                    /* Apply, using the arguments on the stack */
-                    vApply(process);
-                    closureSetup(process);
-                }
+                push(integerNew(argc));
+                callArgsOnStack(process);
             } break;
             case stopBC: // stop
             {
@@ -934,14 +956,23 @@ void throwableAsString(Object *process)
     push(stringNew(strlen(self->data[0]), self->data[0]));
 }
 
-void pushargs(Object *process, Size argc, ...)
+void setInternalMethods(Object *object, Size entries, void **entry)
 {
-    va_list argptr;
-    va_start(argptr, argc);
-    while (argc --> 0)
-        push(va_arg(argptr, Object*));
-    va_end(argptr);
+    void *keys[entries];
+    void *values[entries];
+    Size i;
+    for (i = 0; i / 2 < entries; i += 2)
+    {
+        String methodName = entry[i];
+        keys[i / 2] = symbolNew(methodName);
+        Size argc = getArgc(methodName);
+        printf("new symbol %s argc %x\n", methodName, argc);
+        values[i / 2] = internalMethodNew(entry[i + 1], argc + 1);
+    }
+    object->methods = symbolMapNew(entries, (void**)keys, (void**)values);
 }
+
+typedef void *methodList[];
 
 void vmInstall()
 {
@@ -958,59 +989,38 @@ void vmInstall()
     
     /* Setting up ObjectProto */
     
-    Size objectMethodCount = 5;
-    Object *objectMethodSymbols[] =
+    methodList objectEntries =
     {
-        doesNotUnderstandSymbol = symbolNew("doesNotUnderstand:"),
-        isNilSymbol,
-        symbolNew("new"),
-        symbolNew("proto"),
-        symbolNew("respondsToAll"),
-        
-    };
-    Object *objectMethods[] =
-    {
-        internalMethodNew(vDoesNotUnderstand, 2),
-        internalMethodNew(vReturnFalse, 1),
-        internalMethodNew(vObjectNew, 1),
-        internalMethodNew(vObjectProto, 1),
-        internalMethodNew(vObjectRespondsToAll, 1),
+        "doesNotUnderstand:", vDoesNotUnderstand,
+        "isNil", vReturnFalse,
+        "new", vObjectNew,
+        "proto", vObjectProto,
+        "respondsToAll", vObjectRespondsToAll
     };
 
-    objectProto->methods = symbolMapNew(objectMethodCount,
-        (void**)objectMethodSymbols, (void**)objectMethods);
+    setInternalMethods(objectProto, 5, objectEntries);
     
     /* Setting up SymbolProto */
     
-    Size symbolMethodCount = 1;
-    Object *symbolMethodSymbols[symbolMethodCount];
-    Object *symbolMethods[symbolMethodCount];
+    methodList symbolEntries =
+    {
+        "asString", symbolAsString,
+    };
     
-    symbolMethodSymbols[0] = symbolNew("asString");
-    symbolMethods[0] = internalMethodNew(symbolAsString, 1);
-    
-    symbolProto->methods = symbolMapNew(symbolMethodCount,
-        (void**)symbolMethodSymbols, (void**)symbolMethods);
+    setInternalMethods(symbolProto, 1, symbolEntries);
     
     thisWorldSymbol = symbolNew("thisWorld");
     
     /* Setting up ClosureProto */
     
-    Size closureMethodCount = 3;
-    Object *closureMethodSymbols[closureMethodCount];
-    Object *closureMethods[closureMethodCount];
+    methodList closureEntries =
+    {
+        "apply", vApply,
+        "apply:", vApply,
+        "apply:and:", vApply,
+    };
     
-    closureMethodSymbols[0] = symbolNew("apply");
-    closureMethods[0] = internalMethodNew(vApply, 1);
-    
-    closureMethodSymbols[1] = symbolNew("apply:");
-    closureMethods[1] = internalMethodNew(vApply, 2);
-    
-    closureMethodSymbols[2] = symbolNew("apply:and:");
-    closureMethods[2] = internalMethodNew(vApply, 3);
-    
-    closureProto->methods = symbolMapNew(closureMethodCount,
-        (void**)closureMethodSymbols, (void**)closureMethods);
+    setInternalMethods(closureProto, 3, closureEntries);
     
     /* ProcessProto */
     
@@ -1024,76 +1034,56 @@ void vmInstall()
     
     stringProto = objectNew();
     
-    Object *stringMethodNames[] =
+    methodList stringEntries =
     {
-        symbolNew("asString"),
-    };
-    Object *stringMethods[] =
-    {
-        internalMethodNew(stringAsString, 1),
+        "asString", stringAsString,
     };
     
-    stringProto->methods = symbolMapNew(1, (void**)stringMethodNames,
-        (void**)stringMethods);
+    setInternalMethods(stringProto, 1, stringEntries);
     
     /* Setting up arrayProto */
     
     arrayProto = objectNew();
     
-    Object *arrayMethodNames[] =
+    methodList arrayEntries =
     {
-        symbolNew("asString"),
-    };
-    Object *arrayMethods[] =
-    {
-        internalMethodNew(arrayAsString, 1),
+        "asString", arrayAsString,
     };
     
-    arrayProto->methods = symbolMapNew(1, (void**)arrayMethodNames,
-        (void**)arrayMethods);
+    setInternalMethods(arrayProto, 1, arrayEntries);
     
     /* Setting up console */
     
     console = objectNew();
     
-    Object *consoleKeys[] =
+    methodList consoleEntries =
     {
-        symbolNew("print:"),
-    };
-    Object *consoleValues[] =
-    {
-        internalMethodNew(vPrint, 2),
+        "print:", vPrint,
     };
     
-    console->methods = symbolMapNew(1, (void**)consoleKeys, (void**)consoleValues);
+    setInternalMethods(console, 1, consoleEntries);
     
     /* Setting up Throwable (exception/error) */
     
     throwable = objectNew();
     
-    Object *throwableKeys[] =
+    methodList throwableEntries =
     {
-        symbolNew("raise"),
-        symbolNew("asString"),
+        "raise", throw,
+        "asString", throwableAsString,
     };
-    Object *throwableValues[] =
-    {
-        internalMethodNew(throw, 1),
-        internalMethodNew(throwableAsString, 1),
-    };
-    throwable->methods = symbolMapNew(2, (void**)throwableKeys, (void**)throwableValues);
+    
+    setInternalMethods(throwable, 2, throwableEntries);
     
     exceptionProto = objectNew();
     exceptionProto->proto = throwable;
-    Object *exceptionKeys[] =
+    
+    methodList exceptionEntries =
     {
-        symbolNew("new:"),
+        "new:", vExceptionNew,
     };
-    Object *exceptionValues[] =
-    {
-        internalMethodNew(vExceptionNew, 2),
-    };
-    exceptionProto->methods = symbolMapNew(1, (void**)exceptionKeys, (void**)exceptionValues);
+    
+    setInternalMethods(exceptionProto, 1, exceptionEntries);
     
     errorProto = objectNew();
     errorProto->proto = throwable;
@@ -1105,63 +1095,38 @@ void vmInstall()
     
     integerProto = objectNew();
     
-    Object *integerKeys[] =
+    methodList integerEntries =
     {
-        symbolNew("+"),
-        symbolNew("-"),
-        symbolNew("*"),
-        symbolNew("/"),
-        symbolNew("%"),
-        symbolNew("asString"),
-        symbolNew("and:"),
-        symbolNew("or:"),
-        symbolNew("xor:"),
-        symbolNew("^"),
-        symbolNew("factorial"),
-        symbolNew("to:do:"),
-    };
-    Object *integerValues[] =
-    {
-        internalMethodNew(integerAdd, 2),
-        internalMethodNew(integerSub, 2),
-        internalMethodNew(integerMul, 2),
-        internalMethodNew(integerDiv, 2),
-        internalMethodNew(integerMod, 2),
-        internalMethodNew(integerAsString, 1),
-        internalMethodNew(integerAnd, 2),
-        internalMethodNew(integerOr, 2),
-        internalMethodNew(integerXor, 2),
-        internalMethodNew(integerExp, 2),
-        internalMethodNew(integerFactorial, 1),
-        internalMethodNew(integerToDo, 3),
+        "+", integerAdd,
+        "-", integerSub,
+        "*", integerMul,
+        "/", integerDiv,
+        "%", integerMod,
+        "asString", integerAsString,
+        "and:", integerAnd,
+        "or:", integerOr,
+        "xor:", integerXor,
+        "^", integerExp,
+        "factorial", integerFactorial,
+        "to:do:", integerToDo,
     };
     
-    integerProto->methods = symbolMapNew(12, (void**)integerKeys, (void**)integerValues);
+    setInternalMethods(integerProto, 12, integerEntries);
     
     /* Setting up global world */
     
     globalWorld = worldNew(NULL);
     
-    Object *worldKeys[] =
+    methodList worldEntries =
     {
-        symbolNew("spawn"),
-        symbolNew("eval:"),
-        symbolNew("eval:on:do:"),
-        symbolNew("eval:onErrorDo:"),
-        symbolNew("commit"),
-        symbolNew("revert"),
+        "spawn", worldSpawn,
+        "eval:", worldEval,
+        "eval:on:do:", worldEvalOnDo,
+        "eval:onErrorDo:", worldEvalOnErrorDo,
+        "commit", worldCommit,
+        "revert", worldRevert
     };
-    Object *worldValues[] =
-    {
-        internalMethodNew(worldSpawn, 1),
-        internalMethodNew(worldEval, 2),
-        internalMethodNew(worldEvalOnDo, 4),
-        internalMethodNew(worldEvalOnErrorDo, 3),
-        internalMethodNew(worldCommit, 1),
-        internalMethodNew(worldRevert, 1),
-    };
-    
-    globalWorld->methods = symbolMapNew(6, (void**)worldKeys, (void**)worldValues);
+    setInternalMethods(globalWorld, 6, worldEntries);
     
     /* Setting up Global Scope */
     

@@ -35,58 +35,72 @@
 bool withinISR = false;
 const Size systemStackSize = 0x1000;
 
-u8 inportb(u16 port)
+u8 inb(u16 port)
 {
     u8 rv;
     asm volatile("inb %1, %0" : "=a" (rv) : "dN" (port));
     return rv;
 }
 
-void outportb(u16 port, u8 data)
+void outb(u16 port, u8 data)
 {
     asm volatile("outb %1, %0" :: "dN" (port), "a" (data));
 }
 
-u16 inportw(u16 port)
+u16 inw(u16 port)
 {
     u16 rv;
     asm volatile("inw %1, %0" : "=a" (rv) : "dN" (port));
     return rv;
 }
 
-void outportw(u16 port, u16 data)
+void inws(u16 port, u16 *buffer, Size size)
+{
+    Size i;
+    for (i = 0; i < size; i++)
+        buffer[i] = inw(port);
+}
+
+void outw(u16 port, u16 data)
 {
     asm volatile("outw %1, %0" :: "dN" (port), "a" (data));
 }
 
-u32 inportd(u16 port)
+void outws(u16 port, u16 *data, Size size)
+{
+    Size i;
+    for (i = 0; i < size; i++)
+        outw(port, data[i]);
+}
+
+u32 ind(u16 port)
 {
     u32 rv;
     asm volatile("inl %1, %0" : "=a" (rv) : "dN" (port));
     return rv;
 }
 
-void outportd(u16 port, u32 data)
+void outd(u16 port, u32 data)
 {
     asm volatile("outl %1, %0" :: "dN" (port), "a" (data));
 }
 
 void debugInstall()
 {   
-    outportb(0x3f8 + 1, 0x00);
-    outportb(0x3f8 + 3, 0x80);
-    outportb(0x3f8 + 0, 0x03);
-    outportb(0x3f8 + 1, 0x00);
-    outportb(0x3f8 + 3, 0x03);
-    outportb(0x3f8 + 2, 0xC7);
-    outportb(0x3f8 + 4, 0x0B);
+    outb(0x3f8 + 1, 0x00);
+    outb(0x3f8 + 3, 0x80);
+    outb(0x3f8 + 0, 0x03);
+    outb(0x3f8 + 1, 0x00);
+    outb(0x3f8 + 3, 0x03);
+    outb(0x3f8 + 2, 0xC7);
+    outb(0x3f8 + 4, 0x0B);
 }
 
 void putch(u8 c)
 {   
-    while ((inportb(0x3f8 + 5) & 0x20) == 0);
+    while ((inb(0x3f8 + 5) & 0x20) == 0);
     if (c < 0x80)
-        outportb(0x3f8, c);
+        outb(0x3f8, c);
     else
         printf("[%x]", c);
     if (videoInstalled)
@@ -177,6 +191,7 @@ void _panic(String file, u32 line)
     endThread();
 }
 
+extern void schedule();
 void timerHandler(Regs *r)
 {
     timerTicks++;
@@ -186,9 +201,9 @@ void timerHandler(Regs *r)
 void timerPhase(int hz)
 {   
     int divisor = 1193180 / hz;       /* Calculate our divisor */
-    outportb(0x43, 0x36);             /* Set our command byte 0x36 */
-    outportb(0x40, divisor & 0xFF);   /* Set low byte of divisor */
-    outportb(0x40, divisor >> 8);     /* Set high byte of divisor */
+    outb(0x43, 0x36);             /* Set our command byte 0x36 */
+    outb(0x40, divisor & 0xFF);   /* Set low byte of divisor */
+    outb(0x40, divisor >> 8);     /* Set high byte of divisor */
 }
 
 u32 time()
@@ -295,7 +310,9 @@ void kmain(u32 magic, MultibootStructure *multiboot, void *stackPointer)
         "do: \n"
         "{ error |\n"
         "    Console print: error. \n"
+        "    Console print: a. \n"
         "    thisWorld revert. \n"
+        "    Console print: a. \n"
         "}.\n";
     
     printf("Executing the following code: \n\n%s\n\n", testcode);

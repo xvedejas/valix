@@ -487,7 +487,7 @@ void sweep() // quick tests
     mutexReleaseLock(&mmLockMutex);
 }
 
-Size memBlockSize(void *memptr)
+Size memBlockSize(void *memory)
 {
     MemoryHeader *header = (MemoryHeader*)(memory - sizeof(MemoryHeader));
     

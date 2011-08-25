@@ -61,7 +61,7 @@ void integerDiv(Object *process)
     u32 a = pop()->number->data[0];
     
     if (b == 0)
-        call(divideByZeroException, "raise");
+        call(process, divideByZeroException, "raise", 0);
     
     if ((double)(a / b) == (double)a / (double)b)
         push(integerNew(a / b));
@@ -75,7 +75,7 @@ void integerMod(Object *process)
     u32 a = pop()->number->data[0];
     
     if (b == 0)
-        call(divideByZeroException, "raise");
+        call(process, divideByZeroException, "raise", 0);
     
     push(integerNew(a % b));
 }

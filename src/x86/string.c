@@ -52,7 +52,7 @@ Size chrcount(String s, char c)
 
 String strchr(String s, char c)
 {
-    for(; *s != c; s++)
+    for (; *s != c; s++)
         if (*s == '\0')
             return NULL;
     return (String)s;

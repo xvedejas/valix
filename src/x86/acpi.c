@@ -114,7 +114,7 @@ void acpiInstall()
     else
     {
         // Enable ACPI
-        outportb(fadt->smiCommandPort, fadt->acpiEnable);
+        outb(fadt->smiCommandPort, fadt->acpiEnable);
         printf("ACPI Enabled\n");
     }
     

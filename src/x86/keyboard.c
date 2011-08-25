@@ -38,11 +38,11 @@ void keyboardHandler(Regs *r)
 {
     Keystroke *key = malloc(sizeof(Keystroke));
     key->flags = 0;
-    key->scancode = inportb(0x60);
+    key->scancode = inb(0x60);
     
     if (key->scancode == 0xE0)
     {
-        key->scancode = inportb(0x60);
+        key->scancode = inb(0x60);
         key->flags |= bit(isEscaped);
     }
     

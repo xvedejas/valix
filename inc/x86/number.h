@@ -33,5 +33,8 @@ extern void integerXor(Object *process);
 extern void integerExp(Object *process);
 extern void integerFactorial(Object *process);
 extern void integerToDo(Object *process);
+extern void integerToByDo(Object *process);
+extern void integerEq(Object *process);
+extern void integerSetup();
 
 #endif

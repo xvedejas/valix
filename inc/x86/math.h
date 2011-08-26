@@ -20,7 +20,8 @@
 #define __math_h__
 #include <main.h>
 
-u32 floorlog2(u32 value);
-u32 floorlog10(u32 value);
+extern u32 floorlog2(u32 value);
+extern u32 floorlog10(u32 value);
+extern u32 lowestBit(u32 value);
 
 #endif

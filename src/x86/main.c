@@ -301,7 +301,7 @@ void kmain(u32 magic, MultibootStructure *multiboot, void *stackPointer)
     printf("Welcome to Valix Pre-Alpha 1. Type \"help\" for usage information.\n\n");
     
     String testcode = "| a |\n"
-        "a = 2.\n"
+        "a = 8 >> 1.\n"
         "thisWorld spawn eval: \n"
         "{\n"
         "    a = 5.\n"

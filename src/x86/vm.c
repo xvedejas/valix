@@ -26,12 +26,11 @@
 #include <parser.h>
 #include <stdarg.h>
 #include <number.h>
+#include <math.h>
 
 Map *globalSymbolTable;
 
 Object *globalScope;
-
-Object *trueObject, *falseObject, *console;
 
 Object *isNilSymbol, *doesNotUnderstandSymbol, *thisWorldSymbol;
 
@@ -95,6 +94,11 @@ Object *closureNew(Object *scope)
     return closure;
 }
 
+Object *stringNewNT(String s) // null terminated
+{
+    return stringNew(strlen(s), s);
+}
+
 Object *stringNew(Size len, String s)
 {
     Object *string = malloc(
@@ -141,9 +145,16 @@ Object *integerNew(u32 value)
 {
     Object *object = malloc(sizeof(Object) + sizeof(Number));
     object->proto = integerProto;
-    object->object = NULL;
     object->number->type = integer;
     object->number->data[0] = value;
+    return object;
+}
+
+Object *charNew(u8 value)
+{
+    Object *object = objectNew();
+    object->proto = charProto;
+    object->data[0] = (void*)(u32)value;
     return object;
 }
 
@@ -159,6 +170,12 @@ void vPrint(Object *process)
 {
     Object *str = call(process, pop(), "asString");
     printf("%S", str);
+}
+
+void vPrintNl(Object *process)
+{
+    Object *str = call(process, pop(), "asString");
+    printf("%S\n", str);
 }
 
 /* This following two functions, lookupVar and setVar, first try to find the
@@ -431,7 +448,7 @@ void callArgsOnStack(Object *process)
     Object *message = pop();
     Object *receiver = stackGet(currentScope->scope->valueStack, argc);
     Object *method = bind(receiver, message);
-    ///printf("sending %x %s\n", receiver, message->data[0]);
+    ///printf("sending %x %s %x\n", receiver, message->data[0], method);
     /* if the method is apply, the receiver becomes the method */
     if (unlikely(method->closure->function == &vApply))
     {
@@ -450,11 +467,9 @@ void callArgsOnStack(Object *process)
             pop();
         push(message);
         method = bind(receiver, doesNotUnderstandSymbol);
-        assert(method != NULL,
-            "VM Error; object at %x, proto %x %x "
-            "does not delegate to Object %x",
-            receiver, receiver->proto,
-            receiver->proto->proto, objectProto);
+        if (method == NULL)
+            call(process, vmError, "raise:",
+            symbolNew("Error: object does not implement doesNotUnderstand:."));
         push(method);
         vApply(process);
         return; // exit due to error.
@@ -585,11 +600,13 @@ void processMainLoop(Object *process)
             case initBC: // object init
             {
                 Object *self = arg(0);
-                assert(self != NULL, "Cannot initialize null object");
-                assert((void**)self->object != (void**)0,
-                    "Object already initialized");
-                assert(self->object[0] == NULL, "Object already initialized");
-                assert(self->methods == NULL, "Object already initialized");
+                if (self == NULL)
+                    call(process, vmError, "raise:",
+                    symbolNew("Cannot instantiate null object"));
+                if ((void**)self->object == (void**)0 || self->object[0] != NULL
+                    || self->methods != NULL)
+                    call(process, vmError, "raise:",
+                        symbolNew("Object already initialized"));
                 
                 /* Setup variables for the level 0 scope */
                 self->object[0] = scopeNew(NULL, currentScope);
@@ -634,6 +651,39 @@ void processMainLoop(Object *process)
             }
         }
     }
+}
+
+void vObjectAsString(Object *process)
+{
+    Object *self = pop();
+    Size size = floorlog10((u32)self) + 13;
+    String s = malloc(sizeof(char) * size);
+    strcpy(s, "<Object at: ");
+    itoa(integer, s + 12, 10);
+    s[size - 1] = '>';
+    push(stringNew(size, s));
+}
+
+void vObjectEq(Object *process)
+{
+    /* For Object, == is the same as is: but in general Eq will be overridden to
+     * return true in more situations (for instances, integers of equal value */
+    Object *obj = pop();
+    Object *self = pop();
+    if (obj == self)
+        push(trueObject);
+    else
+        push(falseObject);
+}
+
+void vObjectIs(Object *process)
+{
+    Object *obj = pop();
+    Object *self = pop();
+    if (obj == self)
+        push(trueObject);
+    else
+        push(falseObject);
 }
 
 void symbolAsString(Object *process)
@@ -735,12 +785,20 @@ void throw(Object *process)
     {
         process->process->depth--;
         if ((scope = scope->scope->parent) == NULL)
-            panic("Error %s not handled!", symbol->data[0]);
+            panic("Did not catch throwable: %s", symbol->data[0]);
     }
     currentScope = scope;
     push(symbol);
     longjmp(scope->scope->errorCatch, true);
     panic("catch");
+}
+
+void throwArg(Object *process)
+{
+    Object *stringArg = pop();
+    Object *self = pop();
+    Object *new = call(process, self, "new:", stringArg);
+    push(call(process, new, "raise"));
 }
 
 Object *worldNew(Object *parent)
@@ -786,6 +844,16 @@ bool delegatesTo(Object *obj, Object *proto)
     return true;
 }
 
+void vObjectDelegatesTo(Object *process)
+{
+    Object *proto = pop();
+    Object *self = pop();
+    if (delegatesTo(self, proto))
+        push(trueObject);
+    else
+        push(falseObject);
+}
+
 bool delegatesToAny(Object *obj, Object *arrayObject)
 {
     Object **array = arrayObject->array->array;
@@ -796,6 +864,64 @@ bool delegatesToAny(Object *obj, Object *arrayObject)
             return true;
     }
     return false;
+}
+
+void vObjectIsLiteral(Object *process)
+{
+    pop();
+    push(falseObject);
+}
+
+void stringConcat(Object *process)
+{
+    Object *s2 = pop();
+    Object *s1 = pop();
+    Size size = s1->string->len + s2->string->len;
+    String s = malloc(sizeof(char) * size);
+    memcpy(s, s1, s1->string->len);
+    memcpy(s + s1->string->len, s2, s2->string->len);
+    push(stringNew(size, s));
+}
+
+void stringAt(Object *process)
+{
+    Object *self = pop();
+    Object *index = pop();
+    push(charNew(self->string->string[index->number->data[0]]));
+}
+
+void stringLen(Object *process)
+{
+    Object *self = pop();
+    push(integerNew(self->string->len));
+}
+
+void arrayAt(Object *process)
+{
+    Object *self = pop();
+    Object *index = pop();
+    push(self->array->array[index->number->data[0]]);
+}
+
+void arrayAtPut(Object *process)
+{
+    Object *self = pop();
+    Object *index = pop();
+    Object *item = arg(0);
+    self->array->array[index->number->data[0]] = item;
+}
+
+void arrayLen(Object *process)
+{
+    Object *self = pop();
+    push(integerNew(self->array->size));
+}
+
+void charAsString(Object *process)
+{
+    Object *self = pop();
+    s8 c = (s8)(u32)self->data[0];
+    push(stringNew(1, &c));
 }
 
 void worldEvalOnErrorDo(Object *process)
@@ -895,6 +1021,12 @@ void worldRevert(Object *process)
     push(NULL);
 }
 
+void worldParent(Object *process)
+{
+    Object *world = pop();
+    push(world->world->parent);
+}
+
 void vObjectProto(Object *process)
 {
     Object *self = pop();
@@ -934,20 +1066,31 @@ void vObjectRespondsToAll(Object *process)
     push(arrayObject);
 }
 
-Object *exceptionNew(String message)
-{
-    Object *exception = objectNew();
-    exception->data[0] = message;
-    exception->proto = exceptionProto;
-    return exception;
-}
-
 /* Symbol argument to the following function */
-void vExceptionNew(Object *process)
+void throwableNew(Object *process)
 {
     Object *symbol = pop();
-    pop(); // self
-    push(exceptionNew(symbol->data[0]));
+    Object *new = malloc(sizeof(Object) + sizeof(Throwable));
+    new->proto = pop(); // self
+    new->throwable->name = symbol->data[0];
+    new->throwable->message = NULL;
+    push(new);
+}
+
+Object *exceptionNew(String name)
+{
+    Object *new = objectNew();
+    new->proto = exceptionProto;
+    new->data[0] = name;
+    return new;
+}
+
+Object *errorNew(String name)
+{
+    Object *new = objectNew();
+    new->proto = errorProto;
+    new->data[0] = name;
+    return new;
 }
 
 void throwableAsString(Object *process)
@@ -966,13 +1109,10 @@ void setInternalMethods(Object *object, Size entries, void **entry)
         String methodName = entry[i];
         keys[i / 2] = symbolNew(methodName);
         Size argc = getArgc(methodName);
-        printf("new symbol %s argc %x\n", methodName, argc);
         values[i / 2] = internalMethodNew(entry[i + 1], argc + 1);
     }
     object->methods = symbolMapNew(entries, (void**)keys, (void**)values);
 }
-
-typedef void *methodList[];
 
 void vmInstall()
 {
@@ -995,10 +1135,15 @@ void vmInstall()
         "isNil", vReturnFalse,
         "new", vObjectNew,
         "proto", vObjectProto,
-        "respondsToAll", vObjectRespondsToAll
+        "respondsToAll", vObjectRespondsToAll,
+        "asString", vObjectAsString,
+        "==", vObjectEq,
+        "is:", vObjectIs,
+        "delegatesTo:", vObjectDelegatesTo,
+        "isLiteral", vObjectIsLiteral,
     };
 
-    setInternalMethods(objectProto, 5, objectEntries);
+    setInternalMethods(objectProto, 10, objectEntries);
     
     /* Setting up SymbolProto */
     
@@ -1037,9 +1182,21 @@ void vmInstall()
     methodList stringEntries =
     {
         "asString", stringAsString,
+        "+", stringConcat,
+        "at:", stringAt,
+        "len", stringLen,
     };
+    setInternalMethods(stringProto, 4, stringEntries);
     
-    setInternalMethods(stringProto, 1, stringEntries);
+    /* Setting up charProto */
+    
+    charProto = objectNew();
+    
+    methodList charEntries =
+    {
+        "asString", charAsString,
+    };
+    setInternalMethods(charProto, 1, charEntries);
     
     /* Setting up arrayProto */
     
@@ -1048,9 +1205,11 @@ void vmInstall()
     methodList arrayEntries =
     {
         "asString", arrayAsString,
+        "at:", arrayAt,
+        "at:put:", arrayAtPut,
+        "len", arrayLen,
     };
-    
-    setInternalMethods(arrayProto, 1, arrayEntries);
+    setInternalMethods(arrayProto, 4, arrayEntries);
     
     /* Setting up console */
     
@@ -1059,59 +1218,39 @@ void vmInstall()
     methodList consoleEntries =
     {
         "print:", vPrint,
+        "printNl:", vPrintNl,
     };
+    setInternalMethods(console, 2, consoleEntries);
     
-    setInternalMethods(console, 1, consoleEntries);
-    
-    /* Setting up Throwable (exception/error) */
+    /* Setting up Throwable. Both Exception and Error inherit from Throwable;
+     * the distinction is that Error is usually a bad, internal problem, and
+     * the user usually shouldn't throw or catch one. Exceptions, on the other
+     * hand, should usually be caught! */
     
     throwable = objectNew();
     
     methodList throwableEntries =
     {
         "raise", throw,
+        "raise:", throwArg,
         "asString", throwableAsString,
+        "new:", throwableNew,
     };
-    
-    setInternalMethods(throwable, 2, throwableEntries);
+    setInternalMethods(throwable, 4, throwableEntries);
     
     exceptionProto = objectNew();
     exceptionProto->proto = throwable;
     
-    methodList exceptionEntries =
-    {
-        "new:", vExceptionNew,
-    };
-    
-    setInternalMethods(exceptionProto, 1, exceptionEntries);
-    
     errorProto = objectNew();
     errorProto->proto = throwable;
+    vmError = errorNew("VM Error");
     
     divideByZeroException = exceptionNew("divideByZero");
     doesNotUnderstandException = exceptionNew("doesNotUnderstand"); 
     
     /* Setting up integer */
     
-    integerProto = objectNew();
-    
-    methodList integerEntries =
-    {
-        "+", integerAdd,
-        "-", integerSub,
-        "*", integerMul,
-        "/", integerDiv,
-        "%", integerMod,
-        "asString", integerAsString,
-        "and:", integerAnd,
-        "or:", integerOr,
-        "xor:", integerXor,
-        "^", integerExp,
-        "factorial", integerFactorial,
-        "to:do:", integerToDo,
-    };
-    
-    setInternalMethods(integerProto, 12, integerEntries);
+    integerSetup();
     
     /* Setting up global world */
     
@@ -1124,9 +1263,10 @@ void vmInstall()
         "eval:on:do:", worldEvalOnDo,
         "eval:onErrorDo:", worldEvalOnErrorDo,
         "commit", worldCommit,
-        "revert", worldRevert
+        "revert", worldRevert,
+        "parent", worldParent,
     };
-    setInternalMethods(globalWorld, 6, worldEntries);
+    setInternalMethods(globalWorld, 7, worldEntries);
     
     /* Setting up Global Scope */
     
@@ -1141,6 +1281,8 @@ void vmInstall()
         symbolNew("Console"),
         symbolNew("Exception"),
         symbolNew("DivideByZero"),
+        symbolNew("Array"),
+        symbolNew("String"),
     };
     
     Map *globalValues[] =
@@ -1149,6 +1291,8 @@ void vmInstall()
         mapNewWith(globalWorld, console),
         mapNewWith(globalWorld, exceptionProto),
         mapNewWith(globalWorld, divideByZeroException),
+        mapNewWith(globalWorld, arrayProto),
+        mapNewWith(globalWorld, stringProto),
     };
     
     globalScope->scope->variables = symbolMapNew(globalVarCount,

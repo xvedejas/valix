@@ -97,6 +97,7 @@ typedef struct process
     PermissionLevel permissions;
     Size depth;
     bool inInternal;
+    Size line; // try to keep track of line number in source
 } Process;
 
 typedef struct stringData
@@ -132,6 +133,12 @@ typedef struct world
     List *modifies; /* list<map<world, var>> */
 } World;
 
+typedef struct throwable
+{
+    String name;
+    Object *message;
+} Throwable;
+
 struct object
 {
     struct object *proto;
@@ -145,6 +152,7 @@ struct object
         struct array array[0];
         struct number number[0];
         struct world world[0];
+        struct throwable throwable[0];
         u8 byte[0];
         Size value[0];
         void *data[0];
@@ -154,10 +162,12 @@ struct object
 
 Object *objectProto, *symbolProto, *closureProto, *scopeProto, *processProto,
        *byteArrayProto, *stringProto, *arrayProto, *integerProto,
-       *globalWorld;
+       *globalWorld, *charProto;
+
+Object *trueObject, *falseObject, *console;
 
 Object *throwable, *exceptionProto, *errorProto, *divideByZeroException,
-    *notImplementedException, *doesNotUnderstandException;
+    *notImplementedException, *doesNotUnderstandException, *vmError;
 
 extern Object *call(Object *process, Object *object, String message, ...);
 
@@ -168,7 +178,12 @@ extern void vApply(Object *process);
 extern void vmInstall();
 extern Object *integerNew(u32 value);
 extern Object *stringNew(Size len, String s);
+extern Object *stringNewNT(String s);
 extern Object *symbolNew(String string);
 extern inline Object *bind(Object *target, Object *symbol);
+extern Object *objectNew();
+extern void setInternalMethods(Object *object, Size entries, void **entry);
+
+typedef void *methodList[];
 
 #endif

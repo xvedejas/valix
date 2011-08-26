@@ -30,7 +30,7 @@ void integerAdd(Object *process)
     u32 a = pop()->number->data[0];
     a += b;
     if (a < b) // overflow
-        panic("Integer overflow; Not implemented");
+        call(process, vmError, "raise:", symbolNew("Integer overflow not implemented"));
     push(integerNew(a));
 }
 
@@ -40,7 +40,7 @@ void integerSub(Object *process)
     u32 a = pop()->number->data[0];
     a -= b;
     if (a > b) // underflow
-        panic("Integer underflow; Not implemented");
+        call(process, vmError, "raise:", symbolNew("Integer underflow not implemented"));
     push(integerNew(a));
 }
 
@@ -51,7 +51,7 @@ void integerMul(Object *process)
     
     /* mulOverflow returns whether there was an overflow */
     if (mulOverflow(a, b))
-        panic("Integer overflow; Not implemented");
+        call(process, vmError, "raise:", symbolNew("Integer overflow not implemented"));
     push(integerNew(a * b));
 }
 
@@ -61,12 +61,12 @@ void integerDiv(Object *process)
     u32 a = pop()->number->data[0];
     
     if (b == 0)
-        call(process, divideByZeroException, "raise", 0);
+        call(process, divideByZeroException, "raise");
     
     if ((double)(a / b) == (double)a / (double)b)
         push(integerNew(a / b));
     else
-        panic("Fractional numbers not yet implemented");
+        call(process, vmError, "raise:", symbolNew("NotImplemented"));
 }
 
 void integerMod(Object *process)
@@ -75,7 +75,7 @@ void integerMod(Object *process)
     u32 a = pop()->number->data[0];
     
     if (b == 0)
-        call(process, divideByZeroException, "raise", 0);
+        call(process, divideByZeroException, "raise");
     
     push(integerNew(a % b));
 }
@@ -113,10 +113,12 @@ void integerXor(Object *process)
 
 void integerExp(Object *process)
 {
+    call(process, vmError, "raise:", symbolNew("NotImplemented"));
 }
 
 void integerFactorial(Object *process)
 {
+    call(process, vmError, "raise:", symbolNew("NotImplemented"));
 }
 
 void integerToDo(Object *process)
@@ -133,4 +135,109 @@ void integerToDo(Object *process)
         pop();
     }
     push(NULL);
+}
+
+void integerToByDo(Object *process)
+{
+    Object *block = pop();
+    u32 stop = pop()->number->data[0];
+    u32 step = pop()->number->data[0];
+    u32 start = pop()->number->data[0];
+    for (; start < stop; start += step)
+    {
+        /* Call apply: on block */
+        push(integerNew(start));
+        push(block);
+        vApply(process);
+        pop();
+    }
+    push(NULL);
+}
+
+void integerEq(Object *process)
+{
+    Object *arg = pop();
+    Object *integer = pop();
+    if (arg->number->data[0] == integer->number->data[0])
+        push(trueObject);
+    else
+        push(falseObject);
+}
+
+void integerShiftLeft(Object *process)
+{
+    call(process, vmError, "raise:", symbolNew("NotImplemented"));
+}
+
+void integerShiftRight(Object *process)
+{
+    u32 b = pop()->number->data[0];
+    u32 a = pop()->number->data[0];
+    push(integerNew(a >> b));
+}
+
+void integerAtBit(Object *process)
+{
+    u32 b = pop()->number->data[0];
+    u32 a = pop()->number->data[0];
+    push(integerNew(a & bit(b)));
+}
+
+void integerNot(Object *process)
+{
+    u32 a = pop()->number->data[0];
+    push(integerNew(~a));
+}
+
+void integerHighestBit(Object *process)
+{
+    u32 a = pop()->number->data[0];
+    push(integerNew(floorlog2(a)));
+}
+
+void integerLowestBit(Object *process)
+{
+    u32 a = pop()->number->data[0];
+    push(integerNew(lowestBit(a)));
+}
+
+void integerCeilingLog(Object *process)
+{
+    call(process, vmError, "raise:", symbolNew("NotImplemented"));
+}
+
+void integerFloorLog(Object *process)
+{
+    call(process, vmError, "raise:", symbolNew("NotImplemented"));
+}
+
+void integerSetup()
+{
+    integerProto = objectNew();
+    methodList integerEntries =
+    {
+        "+", integerAdd,
+        "-", integerSub,
+        "*", integerMul,
+        "/", integerDiv,
+        "%", integerMod,
+        "asString", integerAsString,
+        "and:", integerAnd,
+        "or:", integerOr,
+        "xor:", integerXor,
+        "^", integerExp,
+        "factorial", integerFactorial,
+        "to:do:", integerToDo,
+        "to:by:do:", integerToByDo,
+        "==", integerEq,
+        "<<", integerShiftLeft,
+        ">>", integerShiftRight,
+        "atBit:", integerAtBit,
+        "not", integerNot, // one's compliment
+        "highestBit", integerHighestBit,
+        "lowestBit", integerLowestBit,
+        "ceilingLog:", integerCeilingLog,
+        "floorLog:", integerFloorLog,
+    };
+    setInternalMethods(integerProto, 22, integerEntries);
 }

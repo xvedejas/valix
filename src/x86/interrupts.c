@@ -119,11 +119,15 @@ void irqInstall()
 
 void irqHandler(Regs *r)
 {
-    void (*handler)(Regs *r) = irqRoutines[r->intNo - 32];
-    if (handler != NULL)
-        handler(r);
-    if (r->intNo >= 40)
+    Size interrupt = r->intNo;
+    if (interrupt >= 40)
         outb(0xA0, 0x20);
+    else if (interrupt >= 32)
+    {
+        void (*handler)(Regs *r) = irqRoutines[interrupt - 32];
+        if (handler != NULL)
+            handler(r);
+    }
     /* send an EOI to the master interrupt controller */
     outb(0x20, 0x20);
 }

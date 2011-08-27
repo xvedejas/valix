@@ -228,7 +228,7 @@ String getstring()
             } break;
             default:
             {
-                if (i == size - 1)
+                if (i >= size - 1)
                 {
                     size += 16;
                     s = realloc(s, size);

@@ -16,7 +16,7 @@
  *  Maintained by:
  *      Xander Vedėjas <xvedejas@gmail.com>
  */
-#include <number.h>
+#include <Number.h>
 #include <math.h>
 #include <mm.h>
 #include <types.h>

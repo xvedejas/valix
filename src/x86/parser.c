@@ -64,6 +64,7 @@ const String bytecodes[] =
 u8 *compile(String source)
 {
     Token *curToken = NULL;
+    jmp_buf exit;
     inline void nextToken()
     {
         curToken = lex(source, curToken);
@@ -83,6 +84,10 @@ u8 *compile(String source)
     {
         if (unlikely(!condition))
         {
+            if (curToken->type == EOFToken)
+            {
+                longjmp(exit, true);
+            }
             printf("\n [[ Parser Error ]]\n");
             printf("Token: %s Data: %s Line: %i Col: %i\n",
                 tokenTypeNames[curToken->type], curToken->data, curToken->line, curToken->col);
@@ -507,9 +512,12 @@ u8 *compile(String source)
     }
     
     // starts here
-    parseBlockHeader();
-    parseStmt();
-    outByte(endBC); // EOS
+    if (!setjmp(exit))
+    {
+        parseBlockHeader();
+        parseStmt();
+    }
+    outByte(0x04); // EOF
     
     Token *token = curToken;
     do

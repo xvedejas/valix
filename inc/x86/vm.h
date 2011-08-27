@@ -98,6 +98,7 @@ typedef struct process
     Size depth;
     bool inInternal;
     Size line; // try to keep track of line number in source
+    jmp_buf exit;
 } Process;
 
 typedef struct stringData
@@ -180,9 +181,11 @@ extern Object *integerNew(u32 value);
 extern Object *stringNew(Size len, String s);
 extern Object *stringNewNT(String s);
 extern Object *symbolNew(String string);
+extern void yourself(Object *process);
 extern inline Object *bind(Object *target, Object *symbol);
 extern Object *objectNew();
 extern void setInternalMethods(Object *object, Size entries, void **entry);
+extern Object *charNew(u8 value);
 
 typedef void *methodList[];
 

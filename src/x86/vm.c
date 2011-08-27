@@ -25,8 +25,9 @@
 #include <types.h>
 #include <parser.h>
 #include <stdarg.h>
-#include <number.h>
 #include <math.h>
+#include <Number.h>
+#include <String.h>
 
 Map *globalSymbolTable;
 
@@ -342,7 +343,7 @@ Object *processNew()
     process->proto = processProto;
     process->process->scope = NULL;
     
-    process->process->depth = 0;
+    process->process->depth = 1;
     Object *closure = closureNew(NULL);
     closure->closure->type = userDefinedClosure;
     Object *scope = scopeNew(closure, globalScope);
@@ -376,8 +377,6 @@ void processSetBytecode(Object *process, u8 *bytecode)
         IP += strlen((String)IP) + 1;
     }
     currentIP = IP;
-    
-    process->process->depth = 0;
 }
 
 /* This function is called by processMainLoop to create a block object from
@@ -515,7 +514,8 @@ void processMainLoop(Object *process)
 {
     closureSetup(process);
     
-    while (true)
+    if (!setjmp(process->process->exit))
+        while (true)
     {
         ///printf("Bytecode %s at %x\n", bytecodes[*currentIP - 0x80], currentIP);
         switch (*currentIP++)
@@ -590,12 +590,12 @@ void processMainLoop(Object *process)
                 processPopScope(process);
                 push(popFrom(oldScope)); // return value
                 
+                process->process->depth--;
                 if (oldScope->scope->fromInternal)
                     return; // return to vApply()
                 
-                process->process->depth--;
-                if (process->process->depth == 0) // process done
-                    return;
+                if (process->process->depth == 0)
+                    panic("error");
             } break;
             case initBC: // object init
             {
@@ -645,6 +645,10 @@ void processMainLoop(Object *process)
                 self->methods = symbolMapNew(methodCount,
                     (void**)methodNames, (void**)methodClosures);
             } break;
+            case 0x04: // EOF
+            {
+                longjmp(process->process->exit, true);
+            } break;
             default:
             {
                 panic("Unknown Bytecode %x", currentIP[-1]);
@@ -692,7 +696,7 @@ void symbolAsString(Object *process)
     push(stringNew(strlen(s), s));
 }
 
-void stringAsString(Object *process)
+void yourself(Object *process)
 {
     /* Do nothing */
     return;
@@ -870,30 +874,6 @@ void vObjectIsLiteral(Object *process)
 {
     pop();
     push(falseObject);
-}
-
-void stringConcat(Object *process)
-{
-    Object *s2 = pop();
-    Object *s1 = pop();
-    Size size = s1->string->len + s2->string->len;
-    String s = malloc(sizeof(char) * size);
-    memcpy(s, s1, s1->string->len);
-    memcpy(s + s1->string->len, s2, s2->string->len);
-    push(stringNew(size, s));
-}
-
-void stringAt(Object *process)
-{
-    Object *self = pop();
-    Object *index = pop();
-    push(charNew(self->string->string[index->number->data[0]]));
-}
-
-void stringLen(Object *process)
-{
-    Object *self = pop();
-    push(integerNew(self->string->len));
 }
 
 void arrayAt(Object *process)
@@ -1177,16 +1157,7 @@ void vmInstall()
     
     /* Setting up stringProto */
     
-    stringProto = objectNew();
-    
-    methodList stringEntries =
-    {
-        "asString", stringAsString,
-        "+", stringConcat,
-        "at:", stringAt,
-        "len", stringLen,
-    };
-    setInternalMethods(stringProto, 4, stringEntries);
+    stringSetup();
     
     /* Setting up charProto */
     

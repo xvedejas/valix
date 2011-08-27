@@ -273,6 +273,19 @@ void pciinfo()
     printf("\nDone.\n");
 }
 
+ThreadFunc testVM()
+{
+    Object *process = processNew();
+    
+    while (true)
+    {
+        printf("\n>>> ");
+        u8 *bytecode = compile(getstring());
+        processSetBytecode(process, bytecode);
+        processMainLoop(process);
+    }
+}
+
 /* This is the very first C function to be called. Here we initialize the various
  * parts of the system with *Install() functions. */
 void kmain(u32 magic, MultibootStructure *multiboot, void *stackPointer)
@@ -300,28 +313,30 @@ void kmain(u32 magic, MultibootStructure *multiboot, void *stackPointer)
     asm volatile("sti;");
     printf("Welcome to Valix Pre-Alpha 1. Type \"help\" for usage information.\n\n");
     
+    /*
     String testcode = "| a |\n"
         "a = 8 >> 1.\n"
         "thisWorld spawn eval: \n"
         "{\n"
         "    a = 5.\n"
-        "    Console print: (1234 / 0). \n"
+        "    Console printNl: (1234 / 0). \n"
         "} on: [ Exception ] \n"
         "do: \n"
         "{ error |\n"
-        "    Console print: error. \n"
-        "    Console print: a. \n"
+        "    Console printNl: error. \n"
+        "    Console printNl: a. \n"
         "    thisWorld revert. \n"
-        "    Console print: a. \n"
+        "    Console printNl: a. \n"
         "}.\n";
     
-    printf("Executing the following code: \n\n%s\n\n", testcode);
+    printf("Executing the following code: \n\n%s\n\n", testcode); */
     
-    Object *process = processNew();
+    spawn("VM", testVM);
     
-    u8 *bytecode = compile(testcode);
-    processSetBytecode(process, bytecode);
-    processMainLoop(process);
+    while (true)
+    {
+        ;
+    }
     
     //pciinfo();
     return; /* kills kernel thread */

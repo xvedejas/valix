@@ -21,20 +21,6 @@
 #include <main.h>
 #include <vm.h>
 
-extern void integerAdd(Object *process);
-extern void integerSub(Object *process);
-extern void integerMul(Object *process);
-extern void integerDiv(Object *process);
-extern void integerMod(Object *process);
-extern void integerAsString(Object *process);
-extern void integerAnd(Object *process);
-extern void integerOr(Object *process);
-extern void integerXor(Object *process);
-extern void integerExp(Object *process);
-extern void integerFactorial(Object *process);
-extern void integerToDo(Object *process);
-extern void integerToByDo(Object *process);
-extern void integerEq(Object *process);
 extern void integerSetup();
 
 #endif

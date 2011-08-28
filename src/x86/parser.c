@@ -517,6 +517,18 @@ u8 *compile(String source)
         parseBlockHeader();
         parseStmt();
     }
+    else // error or incomplete. scrap bytecode and return null.
+    {
+        Token *token = curToken;
+        do
+        {
+            tokenDel(token);
+        } while ((token = token->previous) != NULL);
+        stringBuilderDel(output);
+        stringBuilderDel(symbolTableBytecode);
+        internTableDel(symbolTable);
+        return NULL;
+    }
     outByte(0x04); // EOF
     
     Token *token = curToken;

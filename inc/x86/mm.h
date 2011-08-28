@@ -16,6 +16,7 @@
 #ifndef __mm_h__
 #define __mm_h__
 #include <main.h>
+#include <threading.h>
 
 struct thread;
 
@@ -95,8 +96,11 @@ extern void sweep();
 extern Size memUsed();
 extern Size memFree();
 extern void mmInstall(MultibootStructure *multiboot);
-extern void *malloc(Size size);
-extern void *kalloc(Size size, struct thread *thread);
+
+#define malloc(_size) _kalloc(_size, getCurrentThread(), __FILE__, __LINE__)
+#define kalloc(_size, _thread) _kalloc(_size, _thread, __FILE__, __LINE__)
+
+extern void *_kalloc(Size size, struct thread *thread, String file, Size line);
 extern void *calloc(Size amount, Size elementSize);
 extern bool isAllocated(void *memory);
 extern void free(void *memory);

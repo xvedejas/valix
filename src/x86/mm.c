@@ -181,18 +181,22 @@ inline void addToUsedList(MemoryHeader *block)
     firstUsedBlock = block;
 }
 
-void *kalloc(Size size, Thread *thread)
+void *_kalloc(Size size, Thread *thread, String file, Size line)
 {
     /* Thread may be null */
     mutexAcquireLock(&mmLockMutex);
     
     assert(mmInstalled, "MM Fatal Error");
-    assert(size != 0, "Cannot allocate 0-length memory block!");
+    assert(size != 0,
+        "Cannot allocate 0-length memory block (called from %s line %i)",
+        file, line);
     MemoryHeader *currentBlock = firstFreeBlock;
     sweep();
     while (true)
     {
-        assert(currentBlock != NULL, "Out of Memory! Was looking for %i bytes", size);
+        assert(currentBlock != NULL,
+            "Out of Memory! Was looking for %i bytes (called from %s line %i)",
+                size, file, line);
             
         if (unlikely(currentBlock->size >= size &&
             (currentBlock->size <= size + sizeof(MemoryHeader))))
@@ -237,11 +241,6 @@ void *kalloc(Size size, Thread *thread)
     }
     panic("MM Fatal Error");
     return NULL; // here to make compiler happy
-}
-
-void *malloc(Size size)
-{
-    return kalloc(size, getCurrentThread());
 }
 
 void *realloc(void *memory, Size size)

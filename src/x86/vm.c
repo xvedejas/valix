@@ -447,7 +447,7 @@ void callArgsOnStack(Object *process)
     Object *message = pop();
     Object *receiver = stackGet(currentScope->scope->valueStack, argc);
     Object *method = bind(receiver, message);
-    ///printf("sending %x %s %x\n", receiver, message->data[0], method);
+    printf("sending %x %s %x\n", receiver, message->data[0], method);
     /* if the method is apply, the receiver becomes the method */
     if (unlikely(method->closure->function == &vApply))
     {

@@ -127,13 +127,7 @@ void integerToDo(Object *process)
     u32 stop = pop()->number->data[0];
     u32 start = pop()->number->data[0];
     for (; start < stop; start++)
-    {
-        /* Call apply: on block */
-        push(integerNew(start));
-        push(block);
-        vApply(process);
-        pop();
-    }
+        call(process, block, "apply:", integerNew(start));
     push(NULL);
 }
 
@@ -144,13 +138,7 @@ void integerToByDo(Object *process)
     u32 step = pop()->number->data[0];
     u32 start = pop()->number->data[0];
     for (; start < stop; start += step)
-    {
-        /* Call apply: on block */
-        push(integerNew(start));
-        push(block);
-        vApply(process);
-        pop();
-    }
+        call(process, block, "apply:", integerNew(start));
     push(NULL);
 }
 

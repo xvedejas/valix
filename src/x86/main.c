@@ -280,9 +280,24 @@ ThreadFunc testVM()
     while (true)
     {
         printf("\n>>> ");
-        u8 *bytecode = compile(getstring());
+        String input = getstring();
+        u8 *bytecode;
+        
+        while ((bytecode = compile(input)) == NULL)
+        {
+            printf("    ...\n    ");
+            String oldInput = input;
+            Size oldLen = strlen(oldInput);
+            String newInput = getstring();
+            Size newLen = strlen(newInput);
+            input = malloc(sizeof(char) * (oldLen + newLen + 1));
+            memcpy(input, oldInput, oldLen);
+            memcpy(input + oldLen, newInput, newLen + 1);
+        }
+        
         processSetBytecode(process, bytecode);
         processMainLoop(process);
+        call(process, console, "print:", pop());
     }
 }
 

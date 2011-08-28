@@ -51,13 +51,11 @@ void stringSetup()
 {
     stringProto = objectNew();
     
-    methodList stringEntries =
+    setInternalMethods(stringProto, 4, (methodList)
     {
         "asString", yourself,
         "+", stringConcat,
         "at:", stringAt,
         "len", stringLen,
-    };
-    
-    setInternalMethods(stringProto, 4, stringEntries);
+    });
 }

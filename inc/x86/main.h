@@ -85,6 +85,8 @@ extern void gdtInstall(void);
 extern void timerInstall();
 extern void quickRestart();
 
+extern void pciinfo();
+
 bool withinISR;
 
 #endif

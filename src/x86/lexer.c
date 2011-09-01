@@ -26,8 +26,6 @@ String tokenTypeNames[] =
 {
     "undefToken",
     "EOFToken",
-    /* keywords */
-    "returnToken",
     /* Builtin types */
     "charToken",
     "stringToken", // abc
@@ -285,23 +283,10 @@ Token *lex(String source, Token *lastToken)
                 String data = malloc(sizeof(char) * (length + 1));
                 strlcpy(data, source + i, length);
                 Token *token = tokenNew(undefToken, NULL, 0);
-                /* Reserved keywords go here; more to come */
-                switch (data[0])
+                if (unlikely(startswith(source + i, "init:")))
                 {
-                    case 'i':
-                        if (unlikely(startswith(source + i, "init:")))
-                        {
-                            token->type = initToken;
-                            i++;
-                        }
-                    break;
-                    case 'r':
-                        // return
-                        if (unlikely(strcmp(data + 1, "eturn") == 0))
-                            token->type = returnToken;
-                    break;
-                    default:
-                    break;
+                    token->type = initToken;
+                    i++;
                 }
                 if (token->type == undefToken)
                 {

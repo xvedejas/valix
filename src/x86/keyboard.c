@@ -11,13 +11,12 @@
 // likely keep a buffer of keystrokes so fewer are missed.
 // you have been warned.
 
-Queue *keystrokeQueue;
+volatile Keystroke lastStroke = (Keystroke){ .scancode = 0, .flags = 0 };
 volatile u8 modifierFlags;
 
 void keyboardInstall()
 {
     modifierFlags = 0;
-    keystrokeQueue = queueNew(8);
     irqInstallHandler(1, keyboardHandler);
 }
 
@@ -36,23 +35,23 @@ typedef enum
 
 void keyboardHandler(Regs *r)
 {
-    Keystroke *key = malloc(sizeof(Keystroke));
-    key->flags = 0;
-    key->scancode = inb(0x60);
+    Keystroke key;
+    key.flags = 0;
+    key.scancode = inb(0x60);
     
-    if (key->scancode == 0xE0)
+    if (key.scancode == 0xE0)
     {
-        key->scancode = inb(0x60);
-        key->flags |= bit(isEscaped);
+        key.scancode = inb(0x60);
+        key.flags |= bit(isEscaped);
     }
     
-    if (key->scancode & 0x80)
+    if (key.scancode & 0x80)
     {
-        key->scancode &= ~0x80;
-        key->flags |= bit(isReleased);
+        key.scancode &= ~0x80;
+        key.flags |= bit(isReleased);
     }
     
-    enqueue(keystrokeQueue, key);
+    lastStroke = key;
 }
 
 u8 kbdqwerty[128] =
@@ -114,15 +113,15 @@ u8 kbdqwertyshift[128] =
 };
 
 
-u8 translateQWERTY(Keystroke *key)
+u8 translateQWERTY(Keystroke key)
 {
     u8 value = 0;
-    switch (key->scancode)
+    switch (key.scancode)
     {
         /* CTRL */
         case 0x1D:
         {
-            if (key->flags & bit(isReleased))
+            if (key.flags & bit(isReleased))
                 modifierFlags &= ~bit(CTRL);
             else
                 modifierFlags |= bit(CTRL);
@@ -130,7 +129,7 @@ u8 translateQWERTY(Keystroke *key)
         /* ALT */
         case 0x38:
         {
-            if (key->flags & bit(isReleased))
+            if (key.flags & bit(isReleased))
                 modifierFlags &= ~bit(ALT);
             else
                 modifierFlags |= bit(ALT);
@@ -139,7 +138,7 @@ u8 translateQWERTY(Keystroke *key)
         case 0x2A:
         case 0x36:
         {
-            if (key->flags & bit(isReleased))
+            if (key.flags & bit(isReleased))
                 modifierFlags &= ~bit(SHIFT);
             else
                 modifierFlags |= bit(SHIFT);
@@ -147,12 +146,12 @@ u8 translateQWERTY(Keystroke *key)
         /* Printable Characters */
         default:
         {
-            if (key->flags & bit(isReleased))
+            if (key.flags & bit(isReleased))
                 return 0;
             if (modifierFlags & bit(SHIFT))
-                value = kbdqwertyshift[key->scancode];
+                value = kbdqwertyshift[key.scancode];
             else
-                value = kbdqwerty[key->scancode];
+                value = kbdqwerty[key.scancode];
         } break;
     }
     return value;
@@ -163,11 +162,11 @@ u8 getchar()
     u8 c;
     while (true)
     {
-        Keystroke *key = dequeue(keystrokeQueue);
-        if (key == NULL)
+        Keystroke key = lastStroke;
+        if (key.scancode == 0x00)
             continue;
+        lastStroke.scancode = 0;
         c = translateQWERTY(key);
-        free(key);
         if (c != 0)
             return c;
     }

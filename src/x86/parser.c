@@ -45,7 +45,6 @@ const String bytecodes[] =
     "message",
     "stop",
     "set",
-    "return",
     "end",
     "init",
 };
@@ -92,7 +91,6 @@ u8 *compile(String source)
             printf("Token: %s Data: %s Line: %i Col: %i\n",
                 tokenTypeNames[curToken->type], curToken->data, curToken->line, curToken->col);
             printf("%s\n", error);
-            endThread();
         }
     }
     
@@ -511,14 +509,9 @@ u8 *compile(String source)
         }
     }
     
-    // starts here
-    if (!setjmp(exit))
+    if (setjmp(exit))
     {
-        parseBlockHeader();
-        parseStmt();
-    }
-    else // error or incomplete. scrap bytecode and return null.
-    {
+        // error or incomplete. scrap bytecode and return null.
         Token *token = curToken;
         do
         {
@@ -529,6 +522,8 @@ u8 *compile(String source)
         internTableDel(symbolTable);
         return NULL;
     }
+    parseBlockHeader();
+    parseStmt();
     outByte(0x04); // EOF
     
     Token *token = curToken;

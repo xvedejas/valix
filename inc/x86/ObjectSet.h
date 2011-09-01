@@ -1,4 +1,4 @@
- /*  Copyright (C) 2011 Xander Vedejas <xvedejas@gmail.com>
+/*  Copyright (C) 2011 Xander Vedejas <xvedejas@gmail.com>
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -16,11 +16,29 @@
  *  Maintained by:
  *      Xander Vedėjas <xvedejas@gmail.com>
  */
-#ifndef __number_h__
-#define __number_h__
+#ifndef __ObjectSet_h__
+#define __ObjectSet_h__
+
 #include <main.h>
 #include <vm.h>
 
-extern void integerSetup();
+typedef struct objectSetBucket
+{
+    Object *key;
+    struct objectSetBucket *next;
+} ObjectSetBucket;
+
+typedef struct
+{
+    Size sizeA, sizeB, entriesA, entriesB;
+    ObjectSetBucket *A;
+    ObjectSetBucket *B;
+} ObjectSet;
+
+extern ObjectSet *objectSetNew();
+extern bool objectSetAdd(ObjectSet *set, Object *obj);
+extern bool objectSetRemove(ObjectSet *set, Object *obj);
+extern bool objectSetHas(ObjectSet *set, Object *obj);
+extern void objectSetDebug(ObjectSet *set);
 
 #endif

@@ -1,4 +1,4 @@
- /*  Copyright (C) 2011 Xander Vedejas <xvedejas@gmail.com>
+/*  Copyright (C) 2011 Xander Vedejas <xvedejas@gmail.com>
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -16,26 +16,28 @@
  *  Maintained by:
  *      Xander Vedėjas <xvedejas@gmail.com>
  */
- #ifndef __keyboard_h__
-#define __keyboard_h__
+#ifndef __StringMap_h__
+#define __StringMap_h__
+
 #include <main.h>
-#include <data.h>
-#include <interrupts.h>
+
+typedef struct stringMapBucket
+{
+    String key;
+    void *value;
+    struct stringMapBucket *next;
+} StringMapBucket;
 
 typedef struct
 {
-    u8 scancode;
-    /* For the following "flags" field,
-     * 
-     * bit 0 - is key being released?
-     * bit 1 - is key after a 0xE0 escape code?
-     */
-    u8 flags;
-} Keystroke;
+    Size sizeA, sizeB, entriesA, entriesB;
+    StringMapBucket *A;
+    StringMapBucket *B;
+} StringMap;
 
-void keyboardInstall();
-void keyboardHandler(Regs *r);
-String getstring();
-u8 getchar();
+extern StringMap *stringMapNew();
+extern bool stringMapSet(StringMap *map, String key, void *value);
+extern void *stringMapGet(StringMap *map, String key);
+extern void stringMapDebug(StringMap *map);
 
 #endif

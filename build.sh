@@ -109,13 +109,13 @@ for FILE in ${CFILES}; do
         ${CC} ${AUTODEFINES} -nostdlib -nodefaultlibs -fno-stack-protector \
             -ffreestanding -fno-stack-limit -fno-stack-check -fno-builtin \
             -O3 -nostdinc -Werror -g ${CCARGS} ${ARCHARGS} -Wall ${INCLUDE} -c \
-            -o $OUTPUT $FILE || error "C compilation failed"
+            -Wno-unused -o $OUTPUT $FILE || error "C compilation failed"
     fi
     if $compiletoasm; then
         ${CC} ${AUTODEFINES} -S -nostdlib -nodefaultlibs -fno-stack-protector \
             -ffreestanding -fno-stack-limit -fno-stack-check \
             -O3 -nostdinc -Werror -g ${CCARGS} ${ARCHARGS} -Wall ${INCLUDE} -c \
-            -o $ASMOUTPUT $FILE || error "C compilation failed"
+            -Wno-unused -o $ASMOUTPUT $FILE || error "C compilation failed"
     fi
 done
 
@@ -153,7 +153,7 @@ if [[ $1 == "run-qemu" ]]; then
     #    notice_build "Creating QEMU Hard Disk Image"
     #    qemu-img create -f qcow2 valix.img 4G
     #fi
-    qemu -cdrom valix.iso -m 256 -serial stdio # -hda valix.img
+    $QEMU -cdrom valix.iso -m 256 -serial stdio # -hda valix.img
     exit
 fi
 

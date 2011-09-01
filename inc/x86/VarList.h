@@ -1,4 +1,4 @@
- /*  Copyright (C) 2011 Xander Vedejas <xvedejas@gmail.com>
+/*  Copyright (C) 2011 Xander Vedejas <xvedejas@gmail.com>
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -16,26 +16,28 @@
  *  Maintained by:
  *      Xander Vedėjas <xvedejas@gmail.com>
  */
- #ifndef __keyboard_h__
-#define __keyboard_h__
+#ifndef __VarList_h__
+#define __VarList_h__
+
 #include <main.h>
-#include <data.h>
-#include <interrupts.h>
+#include <vm.h>
+
+typedef struct varListItem
+{
+    Object *world, *value;
+    struct varListItem *next;
+} VarListItem;
+
+typedef struct varBucket
+{
+    Object *var;
+    struct varListItem *next;
+} VarBucket;
 
 typedef struct
 {
-    u8 scancode;
-    /* For the following "flags" field,
-     * 
-     * bit 0 - is key being released?
-     * bit 1 - is key after a 0xE0 escape code?
-     */
-    u8 flags;
-} Keystroke;
-
-void keyboardInstall();
-void keyboardHandler(Regs *r);
-String getstring();
-u8 getchar();
+    Size size, capacity, entries;
+    VarBucket buckets[0];
+} VarList;
 
 #endif

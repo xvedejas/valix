@@ -21,15 +21,15 @@
 
 typedef void *jmp_buf[6];
 
-extern bool __attribute__((fastcall)) setjmp(jmp_buf env);
-extern void __attribute__((fastcall)) longjmp(jmp_buf env, bool val);
+//extern bool __attribute__((fastcall)) setjmp(jmp_buf env);
+//extern void __attribute__((fastcall)) longjmp(jmp_buf env, bool val);
 
 #define jmpBufDebug(env) \
     printf("JMP BUF:\n%x\n%x\n%x\n%x\n%x\n%x\n----\n", \
         env[0], env[1], env[2], env[3], env[4], env[5]);
 
-//#define setjmp(env) __builtin_setjmp(env)
-//#define longjmp(env, val) __builtin_longjmp(env, val)
+#define setjmp(env) __builtin_setjmp(env)
+#define longjmp(env, val) __builtin_longjmp(env, val)
 
 #endif
 

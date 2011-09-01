@@ -42,9 +42,8 @@ typedef enum
                         * args on stack in reverse order, then receiver */
     stopBC     = 0x8A, // yield nil from expression
     setBC      = 0x8B, // set variable (next byte) to data on stack
-    returnBC   = 0x8C, // return-from
-    endBC      = 0x8D, // ends a block or file
-    initBC     = 0x8E, // begin an object init
+    endBC      = 0x8C, // ends a block or file
+    initBC     = 0x8D, // begin an object init
 } bytecodeCommand;
 
 extern const String bytecodes[];

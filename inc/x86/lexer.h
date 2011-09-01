@@ -25,8 +25,6 @@ typedef enum
 {
     undefToken,        // throws error, make sure this is TokenType == 0
     EOFToken,
-    /* keywords */
-    returnToken,
     /* Builtin types */
     charToken,       // 'a'
     stringToken,     // "abc"

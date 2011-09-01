@@ -16,12 +16,24 @@
  *  Maintained by:
  *      Xander Vedėjas <xvedejas@gmail.com>
  */
-#ifndef __String_h__
-#define __String_h__
+#ifndef __MethodTable_h__
+#define __MethodTable_h__
 
-#include <main.h>
 #include <vm.h>
+#include <main.h>
 
-void stringSetup();
+typedef Object *MethodTableBucket[2];
+
+typedef struct
+{
+    Size size; // each bucket is (2 * sizeof(Object*)) big
+    Size capacity, entries; // capacity is constant, entries cannot exceed it
+    MethodTableBucket buckets[0];
+} MethodTable;
+
+extern MethodTable *methodTableDataNew(Size size);
+extern void methodTableDataAdd(MethodTable *table, Object *symbol, Object *method);
+extern Object *methodTableDataGet(MethodTable *table, Object *symbol);
+extern void methodTableDataDebug(MethodTable *table);
 
 #endif

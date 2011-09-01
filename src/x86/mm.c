@@ -461,9 +461,9 @@ void sweep() // quick tests
     assert(currentBlock->previous == NULL, "Sweep failed");
     do
     {
+        assert(currentBlock->startMagic == mmMagic, "Sweep failed, possible buffer overflow");
+        assert(currentBlock->endMagic == mmMagic, "Sweep failed, possible buffer underflow");
         assert(currentBlock->free, "Sweep failed");
-        assert(currentBlock->startMagic == mmMagic, "Sweep failed");
-        assert(currentBlock->endMagic == mmMagic, "Sweep failed");
         assert((Size)&currentBlock->start ==
             (Size)currentBlock + sizeof(MemoryHeader), "Sweep failed");
     } while ((currentBlock = currentBlock->next) >= (MemoryHeader*)0x100000);
@@ -477,9 +477,9 @@ void sweep() // quick tests
     assert(currentBlock->previous == NULL, "Sweep failed");
     do
     {
+        assert(currentBlock->startMagic == mmMagic, "Sweep failed, possible buffer overflow");
+        assert(currentBlock->endMagic == mmMagic, "Sweep failed, possible buffer underflow");
         assert(!currentBlock->free, "Sweep failed");
-        assert(currentBlock->startMagic == mmMagic, "Sweep failed");
-        assert(currentBlock->endMagic == mmMagic, "Sweep failed");
         assert((Size)&currentBlock->start ==
             (Size)currentBlock + sizeof(MemoryHeader), "Sweep failed");
     } while ((currentBlock = currentBlock->next) >= (MemoryHeader*)0x100000);

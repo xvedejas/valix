@@ -157,14 +157,14 @@ void printf(const char *format, ...)
                     else
                         put(s);
                 } break;
-                case 'S': // vm string object
+                /*case 'S': // vm string object
                 {
                     Object *str = va_arg(argptr, Object*);
                     Size i;
                     Size len = str->string->len;
                     for (i = 0; i < len; i++)
                         putch(str->string->string[i]);
-                } break;
+                } break;*/
                 case 'c':
                 {   
                     u8 c = va_arg(argptr, u32);
@@ -275,30 +275,8 @@ void pciinfo()
 
 ThreadFunc testVM()
 {
-    Object *process = processNew();
-    
-    while (true)
-    {
-        printf("\n>>> ");
-        String input = getstring();
-        u8 *bytecode;
-        
-        while ((bytecode = compile(input)) == NULL)
-        {
-            printf("    ...\n    ");
-            String oldInput = input;
-            Size oldLen = strlen(oldInput);
-            String newInput = getstring();
-            Size newLen = strlen(newInput);
-            input = malloc(sizeof(char) * (oldLen + newLen + 1));
-            memcpy(input, oldInput, oldLen);
-            memcpy(input + oldLen, newInput, newLen + 1);
-        }
-        
-        processSetBytecode(process, bytecode);
-        processMainLoop(process);
-        call(process, console, "print:", pop());
-    }
+    printf(getstring());
+    printf("Done.");
 }
 
 /* This is the very first C function to be called. Here we initialize the various
@@ -328,30 +306,7 @@ void kmain(u32 magic, MultibootStructure *multiboot, void *stackPointer)
     asm volatile("sti;");
     printf("Welcome to Valix Pre-Alpha 1. Type \"help\" for usage information.\n\n");
     
-    /*
-    String testcode = "| a |\n"
-        "a = 8 >> 1.\n"
-        "thisWorld spawn eval: \n"
-        "{\n"
-        "    a = 5.\n"
-        "    Console printNl: (1234 / 0). \n"
-        "} on: [ Exception ] \n"
-        "do: \n"
-        "{ error |\n"
-        "    Console printNl: error. \n"
-        "    Console printNl: a. \n"
-        "    thisWorld revert. \n"
-        "    Console printNl: a. \n"
-        "}.\n";
-    
-    printf("Executing the following code: \n\n%s\n\n", testcode); */
-    
-    spawn("VM", testVM);
-    
-    while (true)
-    {
-        ;
-    }
+    spawn("VM interactive shell", testVM);
     
     //pciinfo();
     return; /* kills kernel thread */

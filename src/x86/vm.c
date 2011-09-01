@@ -1,4 +1,4 @@
-/*  Copyright (C) 2011 Xander Vedejas <xvedejas@gmail.com>
+ /*  Copyright (C) 2011 Xander Vedejas <xvedejas@gmail.com>
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -16,1256 +16,292 @@
  *  Maintained by:
  *      Xander Vedėjas <xvedejas@gmail.com>
  */
-
+ 
 #include <vm.h>
-#include <threading.h>
 #include <mm.h>
+#include <MethodTable.h>
+#include <ObjectSet.h>
+#include <StringMap.h>
 #include <data.h>
-#include <string.h>
-#include <types.h>
-#include <parser.h>
 #include <stdarg.h>
-#include <math.h>
-#include <Number.h>
-#include <String.h>
 
-Map *globalSymbolTable;
+/* TODO:
+ * 
+ * add cache to bind()
+ * think about how worlds relates to both variables and hidden internal data
+ * 
+ */
 
-Object *globalScope;
+Object *objectProto, *symbolProto, *methodTableProto, *varTableProto,
+    *closureProto;
 
-Object *isNilSymbol, *doesNotUnderstandSymbol, *thisWorldSymbol;
+ObjectSet *globalObjectSet;
 
-#define bindLoop() {\
-    closure = (object->methods == NULL)? NULL : symbolMapGet(object->methods, symbol);\
-    if (closure != NULL)\
-        return closure;\
-    object = object->proto;\
-    if (unlikely(object == NULL)) {\
-        return NULL;\
-    }}
+Object *lookupSymbol;
 
-inline Object *bind(Object *target, Object *symbol)
+StringMap *globalSymbolTable;
+
+// argc doesn't include self
+extern Object *callInternal(void *function, Size argc, Object *self, va_list args);
+Object *object_bind(Object *self, Object *symbol);
+Object *methodTable_lookup(Object *self, Object *symbol);
+
+Object *object_new(Object *self)
 {
-    register Object *object = target;
-    if (object == NULL)
-        return (symbol == isNilSymbol) ? trueObject : NULL;
-    Object *closure;
-    
-    while (true)
-    {
-        /* Some loop unwinding here; this is a pretty important function so
-         * optimization is necessary. */
-        bindLoop(); bindLoop(); bindLoop(); bindLoop(); bindLoop(); bindLoop();
-        bindLoop(); bindLoop(); bindLoop(); bindLoop(); bindLoop(); bindLoop();
-    }
+    Object *new = malloc(sizeof(Object));
+    new->parent = self;
+    new->methodTable = (self == NULL)?NULL:self->methodTable;
+    new->data = NULL;
+    objectSetAdd(globalObjectSet, new);
+    return new;
 }
 
-Object *objectNew()
+bool isObject(void *ptr)
 {
-    Object *object = malloc(sizeof(Object));
-    object->proto = objectProto;
-    object->object = NULL;
-    return object;
+    return objectSetHas(globalObjectSet, ptr);
 }
 
-Object *scopeNew(Object *block, Object *containing)
+Object *methodTable_new(Object *self, u32 size)
 {
-    Object *self = malloc(sizeof(Object) + sizeof(Scope));
-    self->proto = scopeProto;
-    Scope *scope = self->scope;
-    scope->block = block;
-    scope->thisWorld = NULL;
-    scope->valueStack = stackNew();
-    scope->errorCatch[0] = NULL;
-    scope->fromInternal = false;
-    if (containing == NULL)
-        scope->containing = globalScope;
-    else
-        scope->containing = containing;
-    
-    return self;
+    Object *table = object_new(self);
+    table->parent = self;
+    table->methodTable = (self == NULL)?NULL:methodTableProto;
+    table->data = methodTableDataNew(size);
+    return table;
 }
 
-Object *closureNew(Object *scope)
+bool object_isSymbol(Object *self)
 {
-    Object *closure = malloc(sizeof(Object) + sizeof(Closure));
-    closure->proto = closureProto;
-    closure->closure->scope = scope; // scope where closure was defined
-    closure->closure->isMethod = false;
-    return closure;
+    return (stringMapGet(globalSymbolTable, self->data) == self);
 }
 
-Object *stringNewNT(String s) // null terminated
-{
-    return stringNew(strlen(s), s);
-}
-
-Object *stringNew(Size len, String s)
-{
-    Object *string = malloc(
-        sizeof(Object) + sizeof(StringData) + sizeof(char) * len);
-    memcpy(string->string->string, s, len);
-    string->proto = stringProto;
-    string->string->len = len;
-    return string;
-}
-
-Object *symbolNew(String string)
+Object *__attribute__ ((pure)) symbol_new(Object *self, String string)
 {
     Object *symbol;
-    if ((symbol = mapGet(globalSymbolTable, string, stringKey)) != NULL)
+    if ((symbol = stringMapGet(globalSymbolTable, string)) != NULL)
         return symbol;
-    symbol = malloc(sizeof(Object) + sizeof(String));
-    symbol->proto = symbolProto;
-    symbol->data[0] = string;
-    mapSet(globalSymbolTable, string, symbol, stringKey);
-    symbol->methods = NULL;
+    symbol = object_new(self);
+    symbol->data = string;
+    stringMapSet(globalSymbolTable, string, symbol);
+    assert(object_isSymbol(symbol), "VM error, symbol not a symbol");
     return symbol;
 }
 
-Object *internalMethodNew(InternalFunction *function, Size argc)
+void *object_send(Object *self, Object *message, ...)
 {
-    Object *method = closureNew(NULL);
-    Closure *closure = method->closure;
-    closure->type = internalClosure;
-    closure->isMethod = true;
-    closure->argc = argc;
-    closure->function = function;
-    return method;
-}
-
-Object *arrayNew(Size s)
-{
-    Object *array = malloc(sizeof(Object) + sizeof(Array) + sizeof(Object*) * s);
-    array->proto = arrayProto;
-    array->array->size = s;
-    return array;
-}
-
-Object *integerNew(u32 value)
-{
-    Object *object = malloc(sizeof(Object) + sizeof(Number));
-    object->proto = integerProto;
-    object->number->type = integer;
-    object->number->data[0] = value;
-    return object;
-}
-
-Object *charNew(u8 value)
-{
-    Object *object = objectNew();
-    object->proto = charProto;
-    object->data[0] = (void*)(u32)value;
-    return object;
-}
-
-void vDoesNotUnderstand(Object *process)
-{
-    call(process, doesNotUnderstandException, "raise");
-    push(NULL);
-}
-
-void vApply(Object *process);
-
-void vPrint(Object *process)
-{
-    Object *str = call(process, pop(), "asString");
-    printf("%S", str);
-}
-
-void vPrintNl(Object *process)
-{
-    Object *str = call(process, pop(), "asString");
-    printf("%S\n", str);
-}
-
-/* This following two functions, lookupVar and setVar, first try to find the
- * variable in the current scope and world. If not found, they search the
- * current scope but with a parent world until all parent worlds are exhausted.
- * Then they look at the containing scope with the current world, and then
- * parent worlds, etc. */
-Object *lookupVar(Object *scope, Object *symbol)
-{
-    if (symbol == thisWorldSymbol)
-        return scope->scope->thisWorld;
-    Object *value = NULL;
-    Map *values;
-    Object *startingWorld = scope->scope->thisWorld;
-    Object *world = startingWorld;
-    
-    while (value == NULL)
-    {
-        while ((values = symbolMapGet(scope->scope->variables, symbol)) == NULL)
-        {
-            if ((scope = scope->scope->containing) == NULL)
-                return NULL;
-        }
-        while ((value = mapGetVal(values, world)) == NULL)
-        {
-            if ((world = world->world->parent) == NULL)
-            {
-                world = startingWorld;
-                scope = scope->scope->containing;
-                break;
-            }
-        }
-    }
-    
-    /* Here we've found our value. If this was found in a world that
-     * isn't the current world, then we must add the entry for the
-     * current world because we read the value. Also we keep track of the value
-     * that was read, and put it in the world's "reads" map. */
-    if (world != startingWorld)
-    {
-        mapSetVal(values, startingWorld, value);
-        if (startingWorld->world->reads != NULL)
-            mapSetVal(startingWorld->world->reads, values, value);
-    }
-    return value;
-}
-
-void setVar(Object *scope, Object *symbol, Object *newValue)
-{
-    Map *values;
-    Object *startingWorld = scope->scope->thisWorld;
-    Object *world = startingWorld;
-    
-    while ((values = symbolMapGet(scope->scope->variables, symbol)) == NULL)
-    {
-        if ((scope = scope->scope->containing) == NULL)
-        {
-            panic("variable not found! cannot set.\n");
-            return;
-        }
-    }
-    while (!mapHasVal(values, world))
-    {
-        if ((world = world->world->parent) == NULL)
-        {
-            world = startingWorld;
-            scope = scope->scope->containing;
-            break;
-        }
-    }
-    
-    // note that this value has been modified in the current world
-    if (startingWorld->world->modifies != NULL)
-        listAdd(startingWorld->world->modifies, values);
-    mapSetVal(values, startingWorld, newValue);
-}
-
-/* Note that what world we are in is determined by which scope calls the current
- * scope, not which scope defines the current scope. It is the exact opposite
- * when dealing with variable delegation. */
-void processPushScope(Object *process, Object *scope)
-{
-    scope->scope->parent = currentScope;
-    if (scope->scope->thisWorld == NULL)
-        scope->scope->thisWorld = process->process->world;
-    currentScope = scope;
-}
-
-Object *processPopScope(Object *process)
-{
-    Object *prevScope = currentScope;
-    currentScope = currentScope->scope->parent;
-    process->process->world = currentScope->scope->thisWorld;
-    return prevScope;
-}
-
-/* The return value is put on the process's value stack, supposedly. In the case
- * of a user-defined closure, we don't immediately get a return value, we change
- * the scope of execution by pushing a new scope to the process. */
-void vApply(Object *process)
-{
-    Object *block = pop();
-    assert(block != NULL, "Internal error; method does not exist");
-    Closure *closure = block->closure;
-    // if we are calling from an internal function, save this state
-    bool fromInternal = process->process->inInternal;
-    
-    if (closure->type == internalClosure)
-    {
-        process->process->inInternal = true;
-        closure->function(process);
-        process->process->inInternal = fromInternal;
-    }
-    else /* we create a new scope if the closure is a user-defined closure. */
-    {
-        process->process->depth++;
-        process->process->inInternal = false;
-        Object *scope;
-        /* Here we see if we must correct for the scope of a method when the
-         * method is defined for a prototype instead of the given object */
-        if (closure->isMethod)
-        {
-            Object *methodScope = closure->scope;
-            Object *self = arg(closure->argc - 1);
-            Size i = 0;
-            Object *current = self;
-            for (; current->object[0] != methodScope; i++)
-            {
-                if ((current = current->proto) == NULL)
-                    panic("Method parent scope not found");
-            }
-            scope = scopeNew(block, self->object[i]);
-        }
-        else
-        {
-            // create a new scope
-            scope = scopeNew(block, block->closure->scope);
-        }
-        
-        Size i;
-        for (i = 0; i < closure->argc; i++)
-            pushTo(pop(), scope); // move arguments to new scope's stack
-            
-        processPushScope(process, scope);
-        currentScope->scope->IP = closure->bytecode;
-        if (fromInternal)
-        {
-            scope->scope->fromInternal = true;
-            processMainLoop(process);
-            process->process->inInternal = true;
-        }
-    }
-}
-
-// returns symbol
-#define translate(internedValue)\
-    ((Object*)({  Map *table = currentClosure->closure->translationTable;\
-        assert(table != NULL, "VM Error");\
-    mapGetVal(table, (void*)(Size)internedValue); }))
-
-Object *processNew()
-{
-    Object *process = malloc(sizeof(Object) + sizeof(Process));
-    process->proto = processProto;
-    process->process->scope = NULL;
-    
-    process->process->depth = 1;
-    Object *closure = closureNew(NULL);
-    closure->closure->type = userDefinedClosure;
-    Object *scope = scopeNew(closure, globalScope);
-    process->process->world = globalWorld;
-    process->process->inInternal = false;
-    
-    currentScope = globalScope;
-    processPushScope(process, scope);
-    currentClosure = closure;
-    
-    return process;
-}
-
-/* The following function sets a bytecode for the process and generates the
- * corresponding transation table */
-void processSetBytecode(Object *process, u8 *bytecode)
-{
-    currentClosure->closure->bytecode = bytecode;
-    currentIP = bytecode;
-    
-    /* setup the translation table */
-    u8 *IP = currentIP;
-    Size symcount = *IP++;
-    Map *table = mapNewSize(symcount);
-    currentClosure->closure->translationTable = table;
-    Size i = 0;
-    for (; i < symcount; i++)
-    {
-        Object *symbol = symbolNew((String)IP);
-        mapSetVal(table, i, symbol);
-        IP += strlen((String)IP) + 1;
-    }
-    currentIP = IP;
-}
-
-/* This function is called by processMainLoop to create a block object from
- * bytecode generated whenever a block literal is encountered in the source. */
-void blockLiteral(Object *process)
-{
-    u8 *IP = currentIP;
-    Object *newClosure = closureNew(currentScope);
-    newClosure->closure->type = userDefinedClosure;
-    newClosure->closure->bytecode = IP;
-    newClosure->closure->argc = IP[1];
-    newClosure->closure->translationTable =
-        currentClosure->closure->translationTable;
-    push(newClosure);
-    // increment IP until after this block
-    Size defdepth = 1;
-    while (defdepth > 0)
-    {
-        switch (*IP++)
-        {
-            case 0x87: // start block
-                defdepth++;
-            break;
-            case 0x8D: // end block
-                defdepth--;
-            break;
-        }
-    }
-    currentIP = IP;
-}
-
-/* This function is called by processMainLoop at the beginning of executing a
- * closure, to account for the header which tells info about the variables and
- * arguments available to the closure */
-void closureSetup(Object *process)
-{
-    /* setup variables */
-    u8 *IP = currentIP;
-    Size varcount = *IP++;
-    IP += 1; // skip over arg count
-    Object *keys[varcount];
-    Map *values[varcount];
-    Size i;
-    for (i = 0; i < varcount; i++)
-    {
-        keys[i] = translate(*IP++);
-        values[i] = mapNew();
-        mapSetVal(values[i], currentScope->scope->thisWorld, NULL);
-    }
-    currentScope->scope->variables = symbolMapNew(varcount, (void**)keys,
-        (void**)values);
-        
-    /* setup arguments */
-    IP = currentIP + 1;
-    Size argcount = *IP;
-    IP += argcount;
-    i = 0;
-    for (; i < argcount; i++, IP--)
-        setVar(currentScope, translate(*IP), pop());
-    currentIP += *currentIP + 2;
-}
-
-/* with callArgsOnStack, the topmost item on the stack should be the argcount,
- * then the symbol of the message */
-void callArgsOnStack(Object *process)
-{
-    Size argc = pop()->number->data[0];
-    Object *message = pop();
-    Object *receiver = stackGet(currentScope->scope->valueStack, argc);
-    Object *method = bind(receiver, message);
-    printf("sending %x %s %x\n", receiver, message->data[0], method);
-    /* if the method is apply, the receiver becomes the method */
-    if (unlikely(method->closure->function == &vApply))
-    {
-        method = receiver;
-        // remove extra unused receiver argument
-        Stack *stack = currentScope->scope->valueStack;
-        Size entries = stack->entries;
-        memcpyd(stack->bottom + entries - argc - 1,
-            stack->bottom + entries - argc, argc);
-        pop();
-    }
-    if (unlikely(method == NULL))
-    {
-        /* Bind failed, send DoesNotUnderstand */
-        while (argc --> 0)
-            pop();
-        push(message);
-        method = bind(receiver, doesNotUnderstandSymbol);
-        if (method == NULL)
-            call(process, vmError, "raise:",
-            symbolNew("Error: object does not implement doesNotUnderstand:."));
-        push(method);
-        vApply(process);
-        return; // exit due to error.
-    }
-    push(method);
-    if (method->closure->type == internalClosure)
-    {
-        vApply(process);
-    }
-    else // user-defined method.
-    {
-        /* Apply, using the arguments on the stack */
-        vApply(process);
-        closureSetup(process);
-    }
-}
-
-/* Syntactic argument count, does not include receiver, so might need to add one
- * if dealing with the real argument count of methods */
-Size getArgc(String message)
-{
-    return (strchr("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_",
-        message[0]))? chrcount(message, ':') : 1;
-}
-
-Object *call(Object *process, Object *object, String message, ...)
-{
-    Size argc = getArgc(message);
-    push(object);
+    if (!object_isSymbol(message))
+        panic("sending something not a symbol");
+    Object *method = object_bind(self, message);
+    if (method == NULL)
+        return object_send(self, symbol_new(symbolProto, "doesNotUnderstand:"),
+            message);
+    /* Call the method */
+    Closure *closureData = method->data;
     va_list argptr;
     va_start(argptr, message);
-    Size i = argc;
-    while (i --> 0)
-        push(va_arg(argptr, Object*));
-    va_end(argptr);
-    push(symbolNew(message));
-    push(integerNew(argc));
-    callArgsOnStack(process);
-    return pop();
+    switch (closureData->type)
+    {
+        case internalClosure:
+        {
+            /* type checking and implicit conversion */
+            String argString = closureData->argString;
+            /* The first argument must be an object "self" */
+            assert(isObject(self) && argString[1] == 'o', "vm error");
+            Size i;
+            for (i = 0; i < closureData->argc; i++)
+            {
+                char expectedArgument = argString[i + 2];
+                void *argument = va_arg(argptr, void*);
+                
+                switch (expectedArgument)
+                {
+                    case 'u':
+                    {
+                        if (isObject(argument))
+                        {
+                            *((void**)argptr) = object_send(argument,
+                                symbol_new(symbolProto, "asU32Int"));
+                        }
+                    } break;
+                    case 's':
+                    {
+                        if (isObject(argument))
+                        {
+                            *((void**)argptr) = object_send(argument,
+                                symbol_new(symbolProto, "asS32Int"));
+                        }
+                    } break;
+                    case 'o':
+                    {
+                        if (!isObject(argument))
+                            panic("VM Error, expected an object, given some "
+                                  "other value. Please construct and pass a "
+                                  "valid object. Message sent was %s. Arg %x",
+                                  message->data, argument);
+                    } break;
+                    case 'S':
+                    {
+                        if (isObject(argument))
+                        {
+                            *((void**)argptr) = object_send(argument,
+                                symbol_new(symbolProto, "asCString"));
+                        }
+                    } break;
+                    default:
+                        panic("vm error");
+                }
+            }
+            
+            va_list arguments;
+            va_start(arguments, message);
+            return callInternal(closureData->function, closureData->argc, self,
+                arguments);
+        } break;
+        case userDefinedClosure:
+        {
+            panic("not implemented\n");
+        } break;
+        default: panic("vm error, closure type %i not known", closureData->type);
+    }
+    return NULL;
 }
 
-void processMainLoop(Object *process)
+Object *__attribute__ ((pure)) object_bind(Object *self, Object *symbol)
 {
-    closureSetup(process);
-    
-    if (!setjmp(process->process->exit))
-        while (true)
+    Object *methodTable = self->methodTable;
+    return (symbol == lookupSymbol && self == self->methodTable)?
+        methodTable_lookup(methodTable, symbol):
+        object_send(methodTable, lookupSymbol, symbol);
+}
+
+Size getArgc(String argString)
+{
+    Size count = 0;
+    while (true)
     {
-        ///printf("Bytecode %s at %x\n", bytecodes[*currentIP - 0x80], currentIP);
-        switch (*currentIP++)
+        switch (*argString++)
         {
-            case integerBC: // integer literal
-            {
-                Size value = strtoul((String)currentIP, NULL, 10);
-                currentIP += strlen((String)currentIP) + 1;
-                Object *integer = integerNew(value);
-                push(integer);
-            } break;
-            case doubleBC: // double literal
-            {
-                panic("Not implemented");
-            } break;
-            case stringBC: // string literal
-            {
-                Size len = strlen((String)currentIP);
-                Object *string = stringNew(len, (String)currentIP);
-                currentIP += len + 1;
-                push(string);
-            } break;
-            case charBC: // character literal
-            {
-                panic("Not implemented");
-            } break;
-            case symbolBC: // symbol literal
-            {
-                Object *newSymbol = translate(*currentIP++);
-                push(newSymbol);
-            } break;
-            case arrayBC: // array literal
-            {
-                Size size = (Size)*currentIP++;
-                Object *newArray = arrayNew(size);
-                while (size --> 0)
-                    newArray->array->array[size] = pop();
-                push(newArray);
-            } break;
-            case blockBC: // block literal
-            {
-                blockLiteral(process);
-            } break;
-            case variableBC: // variable
-            {
-                Size index = (Size)*currentIP++;
-                Object *symbol = translate(index);
-                Object *value = lookupVar(currentScope, symbol);
-                push(value);
-            } break;
-            case messageBC: // message 0x89
-            {
-                Size argc = (Size)*currentIP++;
-                push(integerNew(argc));
-                callArgsOnStack(process);
-            } break;
-            case stopBC: // stop
-            {
-                pop();
-            } break;
-            case setBC: // set variable
-            {
-                setVar(currentScope, translate(*currentIP++), pop());
-            } break;
-            case returnBC: // return-from
-            {
-                panic("Not implemented");
-            } break;
-            case endBC: // end
-            {
-                Object *oldScope = currentScope;
-                processPopScope(process);
-                push(popFrom(oldScope)); // return value
-                
-                process->process->depth--;
-                if (oldScope->scope->fromInternal)
-                    return; // return to vApply()
-                
-                if (process->process->depth == 0)
-                    panic("error");
-            } break;
-            case initBC: // object init
-            {
-                Object *self = arg(0);
-                if (self == NULL)
-                    call(process, vmError, "raise:",
-                    symbolNew("Cannot instantiate null object"));
-                if ((void**)self->object == (void**)0 || self->object[0] != NULL
-                    || self->methods != NULL)
-                    call(process, vmError, "raise:",
-                        symbolNew("Object already initialized"));
-                
-                /* Setup variables for the level 0 scope */
-                self->object[0] = scopeNew(NULL, currentScope);
-                Object *scope = self->object[0];
-                
-                Size varc = *currentIP++;
-                Object *varNames[varc];
-                Map *varMaps[varc];
-                Size i = varc;
-                while (i --> 0)
-                {
-                    varNames[i] = translate(*currentIP++);
-                    varMaps[i] = mapNew();
-                    mapSetVal(varMaps[i], scope->scope->thisWorld, NULL);
-                }
-                scope->scope->variables = symbolMapNew(varc, (void**)varNames,
-                    (void**)varMaps);
-                
-                Size methodCount = *currentIP++;
-                Object *methodNames[methodCount];
-                Object *methodClosures[methodCount];
-                i = methodCount;
-                
-                /* Setup methods */
-                while (i --> 0)
-                {
-                    methodNames[i] = translate(*currentIP++);
-                    assert(*currentIP++ == blockBC, "Malformed Bytecode");
-                    blockLiteral(process);
-                    methodClosures[i] = pop();
-                    methodClosures[i]->closure->isMethod = true;
-                    methodClosures[i]->closure->scope =
-                        self->object[0];
-                }
-                
-                self->methods = symbolMapNew(methodCount,
-                    (void**)methodNames, (void**)methodClosures);
-            } break;
-            case 0x04: // EOF
-            {
-                longjmp(process->process->exit, true);
-            } break;
+            case 's': case 'u': // signedint, unsigned (word size)
+            case 'o': case 'S': case 'v': // object*, String, void
+                count++;
+            break;
+            case '\0':
+            /* ignore first argument, which is return value, and the second
+             * argument (self) isn't counted */
+                return count - 2;
             default:
-            {
-                panic("Unknown Bytecode %x", currentIP[-1]);
-            }
+                panic("Improperly formatted argstring, character %c",
+                    argString[-1]);
         }
     }
+    return count - 2;
 }
 
-void vObjectAsString(Object *process)
+/* The given argument string tells what sort of arguments are expected by the
+ * given function.
+ * 
+ * Example: "SSou32s8" means (String,Object*,u32,s8), return value is a String
+ */
+Object *closure_newInternal(Object *self, void *function, String argString)
 {
-    Object *self = pop();
-    Size size = floorlog10((u32)self) + 13;
-    String s = malloc(sizeof(char) * size);
-    strcpy(s, "<Object at: ");
-    itoa(integer, s + 12, 10);
-    s[size - 1] = '>';
-    push(stringNew(size, s));
-}
-
-void vObjectEq(Object *process)
-{
-    /* For Object, == is the same as is: but in general Eq will be overridden to
-     * return true in more situations (for instances, integers of equal value */
-    Object *obj = pop();
-    Object *self = pop();
-    if (obj == self)
-        push(trueObject);
-    else
-        push(falseObject);
-}
-
-void vObjectIs(Object *process)
-{
-    Object *obj = pop();
-    Object *self = pop();
-    if (obj == self)
-        push(trueObject);
-    else
-        push(falseObject);
-}
-
-void symbolAsString(Object *process)
-{
-    String s = pop()->data[0];
-    push(stringNew(strlen(s), s));
-}
-
-void yourself(Object *process)
-{
-    /* Do nothing */
-    return;
-}
-
-void arrayAsString(Object *process)
-{
-    Object *array = pop();
-    StringBuilder *sb = stringBuilderNew("[");
-    Size i;
-    for (i = 0; i < array->array->size; i++)
-    {
-        Object *object = array->array->array[i];
-        Object *method = bind(object, symbolNew("asString"));
-        push(object);
-        push(method);
-        vApply(process);
-        Object *string = pop();
-        stringBuilderAppend(sb, string->string->string);
-        if (i < array->array->size)
-            stringBuilderAppend(sb, ", ");
-    }
-    stringBuilderAppend(sb, "]");
-    Size size = sb->size;
-    Object *string = stringNew(size, stringBuilderToString(sb));
-    push(string);
-}
-
-/* Does a copy of the Map<world, SymbolMap<variable, value>> structure used to
- * store variables. */
-SymbolMap *variablesCopy(SymbolMap *vars)
-{
-    SymbolMap *variables = symbolMapCopy(vars);
-    /* Iterate through the values of the symbolMap and replace with copies */
-    int i = symbolMapBuckets(variables->entries);
-    do
-    {
-        i--;
-        Map *map = (Map*)variables->hashTable[i];
-        if (map == NULL)
-            continue;
-        variables->hashTable[i] = (Size)mapCopy(map);
-    } while (i-- > 0);
-    return variables;
-}
-
-void vObjectNew(Object *process)
-{
-    Object *proto = pop();
-    Object *object = malloc(sizeof(Object));
-    object->proto = proto;
-    object->methods = NULL;
-    
-    Size protoChainLen = 1;
-    Object *current = proto;
-    for (; current->object != 0 && current->proto != NULL; current = current->proto)
-        protoChainLen++;
-    
-    object->object = calloc(sizeof(Object*), protoChainLen);
-    
-    /* Initialize all the super scopes */
-    
-    Size i;
-    for (i = 1; i < protoChainLen; i++)
-    {
-        if ((void**)proto->object == (void**)0 || proto->object[i - 1] == NULL)
-            continue;
-        object->object[i] = scopeNew(NULL, currentScope->scope->parent);
-        Scope *scope = object->object[i]->scope;
-        scope->variables = variablesCopy(proto->object[i - 1]->scope->variables);
-    }
-    
-    push(object);
-}
-
-void vReturnFalse(Object *process)
-{
-    push(falseObject);
-}
-
-void throw(Object *process)
-{
-    Object *symbol = pop();
-    pop(); // self
-    
-    /* Search through scope to find one that's catching errors. */
-    Object *scope = currentScope;
-    
-    while (scope->scope->errorCatch[0] == NULL)
-    {
-        process->process->depth--;
-        if ((scope = scope->scope->parent) == NULL)
-            panic("Did not catch throwable: %s", symbol->data[0]);
-    }
-    currentScope = scope;
-    push(symbol);
-    longjmp(scope->scope->errorCatch, true);
-    panic("catch");
-}
-
-void throwArg(Object *process)
-{
-    Object *stringArg = pop();
-    Object *self = pop();
-    Object *new = call(process, self, "new:", stringArg);
-    push(call(process, new, "raise"));
-}
-
-Object *worldNew(Object *parent)
-{
-    Object *world = malloc(sizeof(Object) + sizeof(World));
-    world->proto = globalWorld;
-    world->world->parent = parent;
-    if (parent != NULL)
-    {
-        world->world->reads = mapNew();
-        world->world->modifies = listNew();
-    }
-    else
-    {
-        world->world->reads = NULL;
-        world->world->modifies = NULL;
-    }
-    return world;
-}
-
-void worldSpawn(Object *process)
-{
-    push(worldNew(pop()));
-}
-
-void worldEval(Object *process)
-{
-    Object *block = pop();
-    Object *self = pop();
-    process->process->world = self;
-    push(block);
-    vApply(process);
-    push(NULL);
-}
-
-bool delegatesTo(Object *obj, Object *proto)
-{
-    while (obj != proto)
-    {
-        if ((obj = obj->proto) == NULL)
-            return false;
-    }
-    return true;
-}
-
-void vObjectDelegatesTo(Object *process)
-{
-    Object *proto = pop();
-    Object *self = pop();
-    if (delegatesTo(self, proto))
-        push(trueObject);
-    else
-        push(falseObject);
-}
-
-bool delegatesToAny(Object *obj, Object *arrayObject)
-{
-    Object **array = arrayObject->array->array;
-    Size i = arrayObject->array->size;
-    while (i --> 0)
-    {
-        if (delegatesTo(obj, array[i]))
-            return true;
-    }
-    return false;
-}
-
-void vObjectIsLiteral(Object *process)
-{
-    pop();
-    push(falseObject);
-}
-
-void arrayAt(Object *process)
-{
-    Object *self = pop();
-    Object *index = pop();
-    push(self->array->array[index->number->data[0]]);
-}
-
-void arrayAtPut(Object *process)
-{
-    Object *self = pop();
-    Object *index = pop();
-    Object *item = arg(0);
-    self->array->array[index->number->data[0]] = item;
-}
-
-void arrayLen(Object *process)
-{
-    Object *self = pop();
-    push(integerNew(self->array->size));
-}
-
-void charAsString(Object *process)
-{
-    Object *self = pop();
-    s8 c = (s8)(u32)self->data[0];
-    push(stringNew(1, &c));
-}
-
-void worldEvalOnErrorDo(Object *process)
-{
-    panic("not implemented\n");
-}
-
-void worldEvalOnDo(Object *process)
-{
-    Object *catchBlock = pop();
-    Object *errors = pop();
-    Object *self = arg(1);
-    
-    if (setjmp(currentScope->scope->errorCatch))
-    {
-        currentScope->scope->errorCatch[0] = NULL;
-        Object *error = arg(0);
-        if (!delegatesToAny(error, errors))
-        {
-            printf("nope\n");
-            push(bind(error, symbolNew("raise")));
-            vApply(process);
-        }
-        process->process->world = self;
-        push(catchBlock);
-        vApply(process);
-    }
-    else
-    {
-        worldEval(process);
-        return;
-    }
-    
-    push(NULL);
-}
-
-/* true returns if successful, false otherwise */
-void worldCommit(Object *process)
-{
-    Object *world = pop();
-    Object *parentWorld = world->world->parent;
-    assert(parentWorld != NULL, "error");
-    Map *reads = world->world->reads;
-    MapIterator iter;
-    mapIteratorInit(&iter);
-    
-    /* We iterate through the world's reads. If they are consistent with the
-     * values found in the parent world, we can commit. The commit fails if the
-     * state of the child world might be out of date due to changes made in the
-     * parent world. */
-    Association *assoc;
-    while ((assoc = mapNext(reads, &iter)) != NULL)
-    {
-        Object *readValue = (Object*)assoc->value;
-        Object *parentCurrentValue = mapGetVal((Map*)assoc->key, parentWorld);
-        if (readValue != parentCurrentValue)
-        {
-            printf("commit failed\n");
-            push(falseObject);
-            return;
-        }
-    }
-    
-    /* Now we can commit */
-    List *list = world->world->modifies;
-    Size i;
-    for (i = 0; i < list->entries; i++)
-    {
-        Map *values = list->array[i];
-        mapSetVal(values, parentWorld, mapGetVal(values, world));
-    }
-    
-    push(trueObject);
-}
-
-/* Similar to commit, revert works in the opposite direction. thisWorld is
- * restored to the state of its parent as it currently is. This operation is
- * pretty much equivalent to spawning a new world from the parent, except that
- * another object does not need to be instantiated. */
-void worldRevert(Object *process)
-{
-    Object *world = pop();
-    Object *parentWorld = world->world->parent;
-    assert(parentWorld != NULL, "error");
-    Map *reads = world->world->reads;
-    
-    mapEmpty(reads);
-    
-    List *list = world->world->modifies;
-    Size i;
-    for (i = 0; i < list->entries; i++)
-    {
-        Map *values = list->array[i];
-        mapRemoveVal(values, world);
-    }
-    
-    push(NULL);
-}
-
-void worldParent(Object *process)
-{
-    Object *world = pop();
-    push(world->world->parent);
-}
-
-void vObjectProto(Object *process)
-{
-    Object *self = pop();
-    push(self->proto);
-}
-
-/* Returns an array of symbols representing the messages that the object
- * responds to, including those defined by its prototype */
-void vObjectRespondsToAll(Object *process)
-{
-    Object *self = pop();
-    Size size = 0;
-    Object *current = self;
-    do
-        size += current->methods->entries;
-    while ((current = current->proto) != NULL);
-    Object *arrayObject = arrayNew(size);
-    Object **array = arrayObject->array->array;
-    current = self;
-    Size arrayIndex = 0;
-    
-    do
-    {
-        Size entries = current->methods->entries;
-        Size i;
-        Object *value;
-        for (i = 0; entries > 0; i += 2)
-        {
-            if ((value = (Object*)current->methods->hashTable[i]) != NULL)
-            {
-                entries--;
-                array[arrayIndex++] = value;
-            }
-        } 
-    }
-    while ((current = current->proto) != NULL);
-    push(arrayObject);
-}
-
-/* Symbol argument to the following function */
-void throwableNew(Object *process)
-{
-    Object *symbol = pop();
-    Object *new = malloc(sizeof(Object) + sizeof(Throwable));
-    new->proto = pop(); // self
-    new->throwable->name = symbol->data[0];
-    new->throwable->message = NULL;
-    push(new);
-}
-
-Object *exceptionNew(String name)
-{
-    Object *new = objectNew();
-    new->proto = exceptionProto;
-    new->data[0] = name;
+    Size argc = getArgc(argString);
+    Object *new = object_new(self);
+    Closure *closure = malloc(sizeof(Closure));
+    new->data = closure;
+    closure->argString = argString;
+    closure->argc = argc;
+    closure->function = function;
+    closure->type = internalClosure;
     return new;
 }
 
-Object *errorNew(String name)
+Object *methodTable_lookup(Object *self, Object *symbol)
 {
-    Object *new = objectNew();
-    new->proto = errorProto;
-    new->data[0] = name;
-    return new;
+    MethodTable *table = self->data;
+    return methodTableDataGet(table, symbol);
 }
 
-void throwableAsString(Object *process)
+void methodTable_addClosure(Object *self, Object *symbol, Object *closure)
 {
-    Object *self = pop();
-    push(stringNew(strlen(self->data[0]), self->data[0]));
+    MethodTable *table = self->data;
+    methodTableDataAdd(table, symbol, closure);
 }
 
-void setInternalMethods(Object *object, Size entries, void **entry)
+void console_printTest(Object *self)
 {
-    void *keys[entries];
-    void *values[entries];
-    Size i;
-    for (i = 0; i / 2 < entries; i += 2)
-    {
-        String methodName = entry[i];
-        keys[i / 2] = symbolNew(methodName);
-        Size argc = getArgc(methodName);
-        values[i / 2] = internalMethodNew(entry[i + 1], argc + 1);
-    }
-    object->methods = symbolMapNew(entries, (void**)keys, (void**)values);
+    printf("Success! object at %x\n", self);
 }
 
 void vmInstall()
 {
-    globalSymbolTable = mapNew();
+    globalSymbolTable = stringMapNew();
+    globalObjectSet = objectSetNew();
     
-    /* Base object creation */
+    /* 1. create and initialize methodTables */
     
-    objectProto = malloc(sizeof(Object));
-    objectProto->proto = NULL;
+    objectProto = object_new(NULL);
     
-    symbolProto = objectNew();
+    methodTableProto = methodTable_new(NULL, 4);
+    methodTableProto->methodTable = methodTableProto;
     
-    closureProto = objectNew();
+    Object *objectMethodTable = methodTable_new(methodTableProto, 1);
+    methodTableProto->parent = objectProto;
+    objectProto->methodTable = objectMethodTable;
     
-    /* Setting up ObjectProto */
+    Object *symbolMethodTable = methodTable_new(objectMethodTable, 1);
+    symbolProto = object_new(objectProto);
+    symbolProto->methodTable = symbolMethodTable;
     
-    methodList objectEntries =
-    {
-        "doesNotUnderstand:", vDoesNotUnderstand,
-        "isNil", vReturnFalse,
-        "new", vObjectNew,
-        "proto", vObjectProto,
-        "respondsToAll", vObjectRespondsToAll,
-        "asString", vObjectAsString,
-        "==", vObjectEq,
-        "is:", vObjectIs,
-        "delegatesTo:", vObjectDelegatesTo,
-        "isLiteral", vObjectIsLiteral,
-    };
-
-    setInternalMethods(objectProto, 10, objectEntries);
+    Object *closureMethodTable = methodTable_new(objectMethodTable, 0);
+    closureProto = object_new(objectProto);
+    closureProto->methodTable = closureMethodTable;
     
-    /* Setting up SymbolProto */
+    /* 2. install the following methods:
+     * methodTable_lookup()
+     * methodTable_add()
+     * object_new()
+     * methodTable_new()
+     * symbol_new()
+     * object_setMethodTable() */
     
-    methodList symbolEntries =
-    {
-        "asString", symbolAsString,
-    };
+    lookupSymbol = symbol_new(symbolProto, "lookup:");
+    methodTable_addClosure(methodTableProto,
+        lookupSymbol,
+        closure_newInternal(closureProto, methodTable_lookup, "ooo"));
+    methodTable_addClosure(objectMethodTable,
+        symbol_new(symbolProto, "new"),
+        closure_newInternal(closureProto, object_new, "oo"));
+    methodTable_addClosure(methodTableProto,
+        symbol_new(symbolProto, "new:"),
+        closure_newInternal(closureProto, methodTable_new, "oou"));
+    methodTable_addClosure(symbolMethodTable,
+        symbol_new(symbolProto, "new:"),
+        closure_newInternal(closureProto, symbol_new, "ooS"));
     
-    setInternalMethods(symbolProto, 1, symbolEntries);
+    /* 3. Do asserts to make sure things all connected correctly */
     
-    thisWorldSymbol = symbolNew("thisWorld");
+    assert(objectProto->parent == NULL, "vm error");
+    assert(objectProto->methodTable == objectMethodTable, "vm error");
+    assert(objectMethodTable->parent == methodTableProto, "vm error");
+    assert(objectMethodTable->methodTable == methodTableProto, "vm error");
+    assert(methodTableProto->parent == objectProto, "vm error");
+    assert(methodTableProto->methodTable == methodTableProto, "vm error");
+    assert(symbolProto->parent == objectProto, "vm error");
+    assert(symbolProto->methodTable == symbolMethodTable, "vm error");
+    assert(symbolMethodTable->parent == objectMethodTable, "vm error");
+    assert(symbolMethodTable->methodTable == methodTableProto, "vm error");
     
-    /* Setting up ClosureProto */
+    /* 4. Test the system by creating a Console object from ObjectProto,
+     *    adding a printTest method, and calling it using the proper mechanisms */
     
-    methodList closureEntries =
-    {
-        "apply", vApply,
-        "apply:", vApply,
-        "apply:and:", vApply,
-    };
+    Object *console = object_send(objectProto, symbol_new(symbolProto, "new"));
+    Object *consoleMethodTable = object_send(objectMethodTable, symbol_new(symbolProto, "new:"), 1);
+    console->methodTable = consoleMethodTable;
     
-    setInternalMethods(closureProto, 3, closureEntries);
+    Object *methodClosure = closure_newInternal(closureProto, console_printTest, "vo");
+    methodTable_addClosure(consoleMethodTable,
+        symbol_new(symbolProto, "printTest"),
+        methodClosure);
     
-    /* ProcessProto */
-    
-    processProto = objectNew();
-    
-    /* Setting up ScopeProto */
-    
-    scopeProto = objectNew();
-    
-    /* Setting up stringProto */
-    
-    stringSetup();
-    
-    /* Setting up charProto */
-    
-    charProto = objectNew();
-    
-    methodList charEntries =
-    {
-        "asString", charAsString,
-    };
-    setInternalMethods(charProto, 1, charEntries);
-    
-    /* Setting up arrayProto */
-    
-    arrayProto = objectNew();
-    
-    methodList arrayEntries =
-    {
-        "asString", arrayAsString,
-        "at:", arrayAt,
-        "at:put:", arrayAtPut,
-        "len", arrayLen,
-    };
-    setInternalMethods(arrayProto, 4, arrayEntries);
-    
-    /* Setting up console */
-    
-    console = objectNew();
-    
-    methodList consoleEntries =
-    {
-        "print:", vPrint,
-        "printNl:", vPrintNl,
-    };
-    setInternalMethods(console, 2, consoleEntries);
-    
-    /* Setting up Throwable. Both Exception and Error inherit from Throwable;
-     * the distinction is that Error is usually a bad, internal problem, and
-     * the user usually shouldn't throw or catch one. Exceptions, on the other
-     * hand, should usually be caught! */
-    
-    throwable = objectNew();
-    
-    methodList throwableEntries =
-    {
-        "raise", throw,
-        "raise:", throwArg,
-        "asString", throwableAsString,
-        "new:", throwableNew,
-    };
-    setInternalMethods(throwable, 4, throwableEntries);
-    
-    exceptionProto = objectNew();
-    exceptionProto->proto = throwable;
-    
-    errorProto = objectNew();
-    errorProto->proto = throwable;
-    vmError = errorNew("VM Error");
-    
-    divideByZeroException = exceptionNew("divideByZero");
-    doesNotUnderstandException = exceptionNew("doesNotUnderstand"); 
-    
-    /* Setting up integer */
-    
-    integerSetup();
-    
-    /* Setting up global world */
-    
-    globalWorld = worldNew(NULL);
-    
-    methodList worldEntries =
-    {
-        "spawn", worldSpawn,
-        "eval:", worldEval,
-        "eval:on:do:", worldEvalOnDo,
-        "eval:onErrorDo:", worldEvalOnErrorDo,
-        "commit", worldCommit,
-        "revert", worldRevert,
-        "parent", worldParent,
-    };
-    setInternalMethods(globalWorld, 7, worldEntries);
-    
-    /* Setting up Global Scope */
-    
-    globalScope = scopeNew(NULL, NULL);
-    globalScope->scope->containing = NULL;
-    globalScope->scope->thisWorld = globalWorld;
-    
-    Size globalVarCount = 4;
-    Object *globalKeys[] =
-    {
-        symbolNew("Object"),
-        symbolNew("Console"),
-        symbolNew("Exception"),
-        symbolNew("DivideByZero"),
-        symbolNew("Array"),
-        symbolNew("String"),
-    };
-    
-    Map *globalValues[] =
-    {
-        mapNewWith(globalWorld, objectProto),
-        mapNewWith(globalWorld, console),
-        mapNewWith(globalWorld, exceptionProto),
-        mapNewWith(globalWorld, divideByZeroException),
-        mapNewWith(globalWorld, arrayProto),
-        mapNewWith(globalWorld, stringProto),
-    };
-    
-    globalScope->scope->variables = symbolMapNew(globalVarCount,
-        (void**)globalKeys, (void**)globalValues);
+    object_send(console, symbol_new(symbolProto, "printTest"));
 }

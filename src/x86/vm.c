@@ -24,20 +24,16 @@
 #include <StringMap.h>
 #include <data.h>
 #include <stdarg.h>
+#include <VarList.h>
 
 /* TODO:
  * 
- * add cache to bind()
  * think about how worlds relates to both variables and hidden internal data
+ * bytecode extend command
  * 
  */
 
-Object *objectProto, *symbolProto, *methodTableProto, *varTableProto,
-    *closureProto;
-
 ObjectSet *globalObjectSet;
-
-Object *lookupSymbol;
 
 StringMap *globalSymbolTable;
 
@@ -65,7 +61,7 @@ Object *methodTable_new(Object *self, u32 size)
 {
     Object *table = object_new(self);
     table->parent = self;
-    table->methodTable = (self == NULL)?NULL:methodTableProto;
+    table->methodTable = (self == NULL)?NULL:methodTableMT;
     table->data = methodTableDataNew(size);
     return table;
 }
@@ -93,7 +89,7 @@ void *object_send(Object *self, Object *message, ...)
         panic("sending something not a symbol");
     Object *method = object_bind(self, message);
     if (method == NULL)
-        return object_send(self, symbol_new(symbolProto, "doesNotUnderstand:"),
+        return object_send(self, symbol("doesNotUnderstand:"),
             message);
     /* Call the method */
     Closure *closureData = method->data;
@@ -120,7 +116,7 @@ void *object_send(Object *self, Object *message, ...)
                         if (isObject(argument))
                         {
                             *((void**)argptr) = object_send(argument,
-                                symbol_new(symbolProto, "asU32Int"));
+                                symbol("asU32Int"));
                         }
                     } break;
                     case 's':
@@ -128,7 +124,7 @@ void *object_send(Object *self, Object *message, ...)
                         if (isObject(argument))
                         {
                             *((void**)argptr) = object_send(argument,
-                                symbol_new(symbolProto, "asS32Int"));
+                                symbol("asS32Int"));
                         }
                     } break;
                     case 'o':
@@ -136,7 +132,7 @@ void *object_send(Object *self, Object *message, ...)
                         if (!isObject(argument))
                             panic("VM Error, expected an object, given some "
                                   "other value. Please construct and pass a "
-                                  "valid object. Message sent was %s. Arg %x",
+                                  "valid object. Message sent was %s. Arg %x.",
                                   message->data, argument);
                     } break;
                     case 'S':
@@ -144,7 +140,7 @@ void *object_send(Object *self, Object *message, ...)
                         if (isObject(argument))
                         {
                             *((void**)argptr) = object_send(argument,
-                                symbol_new(symbolProto, "asCString"));
+                                symbol("asCString"));
                         }
                     } break;
                     default:
@@ -166,12 +162,31 @@ void *object_send(Object *self, Object *message, ...)
     return NULL;
 }
 
+struct methodCacheEntry
+{
+    Object *methodTable, *symbol, *method;
+} MethodCache[8192];
+
 Object *__attribute__ ((pure)) object_bind(Object *self, Object *symbol)
 {
     Object *methodTable = self->methodTable;
-    return (symbol == lookupSymbol && self == self->methodTable)?
+    
+    /* Check the cache */
+    Size methodCacheHash = (((Size)methodTable << 2) ^ ((Size)symbol >> 3)) &
+        (sizeof(MethodCache) / sizeof(struct methodCacheEntry) - 1);
+    struct methodCacheEntry *entry = MethodCache + methodCacheHash;
+    if (entry->methodTable == methodTable && entry->symbol == symbol)
+        return entry->method;
+    
+    Object *method = (symbol == lookupSymbol && self == self->methodTable)?
         methodTable_lookup(methodTable, symbol):
         object_send(methodTable, lookupSymbol, symbol);
+    
+    entry->methodTable = methodTable;
+    entry->symbol = symbol;
+    entry->method = method;
+    
+    return method;
 }
 
 Size getArgc(String argString)
@@ -241,20 +256,20 @@ void vmInstall()
     
     objectProto = object_new(NULL);
     
-    methodTableProto = methodTable_new(NULL, 4);
-    methodTableProto->methodTable = methodTableProto;
+    methodTableMT = methodTable_new(NULL, 4);
+    methodTableMT->methodTable = methodTableMT;
     
-    Object *objectMethodTable = methodTable_new(methodTableProto, 1);
-    methodTableProto->parent = objectProto;
-    objectProto->methodTable = objectMethodTable;
+    Object *objectMT = methodTable_new(methodTableMT, 1);
+    methodTableMT->parent = objectProto;
+    objectProto->methodTable = objectMT;
     
-    Object *symbolMethodTable = methodTable_new(objectMethodTable, 1);
+    Object *symbolMT = methodTable_new(objectMT, 1);
     symbolProto = object_new(objectProto);
-    symbolProto->methodTable = symbolMethodTable;
+    symbolProto->methodTable = symbolMT;
     
-    Object *closureMethodTable = methodTable_new(objectMethodTable, 0);
+    Object *closureMT = methodTable_new(objectMT, 0);
     closureProto = object_new(objectProto);
-    closureProto->methodTable = closureMethodTable;
+    closureProto->methodTable = closureMT;
     
     /* 2. install the following methods:
      * methodTable_lookup()
@@ -262,46 +277,46 @@ void vmInstall()
      * object_new()
      * methodTable_new()
      * symbol_new()
-     * object_setMethodTable() */
+     * object_setMT() */
     
-    lookupSymbol = symbol_new(symbolProto, "lookup:");
-    methodTable_addClosure(methodTableProto,
+    lookupSymbol = symbol("lookup:");
+    methodTable_addClosure(methodTableMT,
         lookupSymbol,
         closure_newInternal(closureProto, methodTable_lookup, "ooo"));
-    methodTable_addClosure(objectMethodTable,
-        symbol_new(symbolProto, "new"),
+    methodTable_addClosure(objectMT,
+        symbol("new"),
         closure_newInternal(closureProto, object_new, "oo"));
-    methodTable_addClosure(methodTableProto,
-        symbol_new(symbolProto, "new:"),
+    methodTable_addClosure(methodTableMT,
+        symbol("new:"),
         closure_newInternal(closureProto, methodTable_new, "oou"));
-    methodTable_addClosure(symbolMethodTable,
-        symbol_new(symbolProto, "new:"),
+    methodTable_addClosure(symbolMT,
+        symbol("new:"),
         closure_newInternal(closureProto, symbol_new, "ooS"));
     
     /* 3. Do asserts to make sure things all connected correctly */
     
     assert(objectProto->parent == NULL, "vm error");
-    assert(objectProto->methodTable == objectMethodTable, "vm error");
-    assert(objectMethodTable->parent == methodTableProto, "vm error");
-    assert(objectMethodTable->methodTable == methodTableProto, "vm error");
-    assert(methodTableProto->parent == objectProto, "vm error");
-    assert(methodTableProto->methodTable == methodTableProto, "vm error");
+    assert(objectProto->methodTable == objectMT, "vm error");
+    assert(objectMT->parent == methodTableMT, "vm error");
+    assert(objectMT->methodTable == methodTableMT, "vm error");
+    assert(methodTableMT->parent == objectProto, "vm error");
+    assert(methodTableMT->methodTable == methodTableMT, "vm error");
     assert(symbolProto->parent == objectProto, "vm error");
-    assert(symbolProto->methodTable == symbolMethodTable, "vm error");
-    assert(symbolMethodTable->parent == objectMethodTable, "vm error");
-    assert(symbolMethodTable->methodTable == methodTableProto, "vm error");
+    assert(symbolProto->methodTable == symbolMT, "vm error");
+    assert(symbolMT->parent == objectMT, "vm error");
+    assert(symbolMT->methodTable == methodTableMT, "vm error");
     
     /* 4. Test the system by creating a Console object from ObjectProto,
      *    adding a printTest method, and calling it using the proper mechanisms */
     
-    Object *console = object_send(objectProto, symbol_new(symbolProto, "new"));
-    Object *consoleMethodTable = object_send(objectMethodTable, symbol_new(symbolProto, "new:"), 1);
-    console->methodTable = consoleMethodTable;
+    Object *console = object_send(objectProto, symbol("new"));
+    Object *consoleMT = object_send(objectMT, symbol("new:"), 1);
+    console->methodTable = consoleMT;
     
     Object *methodClosure = closure_newInternal(closureProto, console_printTest, "vo");
-    methodTable_addClosure(consoleMethodTable,
-        symbol_new(symbolProto, "printTest"),
+    methodTable_addClosure(consoleMT,
+        symbol("printTest"),
         methodClosure);
     
-    object_send(console, symbol_new(symbolProto, "printTest"));
+    object_send(console, symbol("printTest"));
 }

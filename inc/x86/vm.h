@@ -31,11 +31,6 @@ typedef enum
     userDefinedClosure
 } closureType;
 
-typedef struct scope
-{
-
-} Scope;
-
 typedef struct closure
 {
     closureType type;
@@ -54,11 +49,6 @@ typedef struct closure
     };
 } Closure;
 
-typedef struct process
-{
-
-} Process;
-
 typedef struct stringData
 {
     Size len;
@@ -71,25 +61,6 @@ typedef struct array
     Object *array[0];
 } Array;
 
-typedef enum
-{
-    integer32, // signed 32 bits
-    integer64, // signed 64 bits
-    bigint,    /* -inf to +inf */
-    floating,  /* float precision */
-    fraction,  /* perfect precision, int / int */
-} NumberType;
-
-typedef struct world
-{
-
-} World;
-
-typedef struct throwable
-{
-
-} Throwable;
-
 struct object
 {
     struct object *parent;
@@ -97,6 +68,14 @@ struct object
     void *data;
 };
 
-void vmInstall();
+#define symbol(str) (symbol_new(symbolProto, str))
+
+Object *objectProto, *objectMT, *symbolProto, *methodTableMT, *varTableProto,
+    *closureProto, *lookupSymbol;
+
+extern Object *symbol_new(Object *self, String string);
+extern void *object_send(Object *self, Object *message, ...);
+extern Object *object_bind(Object *self, Object *symbol);
+extern void vmInstall();
 
 #endif

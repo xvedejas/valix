@@ -158,6 +158,17 @@ u8 *compile(String source)
         return output->size;
     }
     
+    inline void outBytecode(Size sizeOfArg, bytecodeCommand command)
+    {
+        while (true)
+        {
+            sizeOfArg >> 1;
+            if (sizeOfArg == 0)
+                break;
+            outByte(extendedBC);
+        }
+    }
+    
     inline void setPos(Size pos, u8 value)
     {
         output->s[pos] = value;

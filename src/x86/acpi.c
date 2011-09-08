@@ -1,5 +1,5 @@
 #include <acpi.h>
-#include <string.h>
+#include <cstring.h>
 
 bool acpiInstalled = false;
 

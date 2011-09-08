@@ -18,7 +18,7 @@
 #include <lexer.h>
 #include <threading.h>
 #include <mm.h>
-#include <string.h>
+#include <cstring.h>
 #include <types.h>
 #include <data.h>
 #include <vm.h>

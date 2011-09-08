@@ -17,7 +17,7 @@
  *      Xander Vedėjas <xvedejas@gmail.com>
  */
 #include <video.h>
-#include <string.h>
+#include <cstring.h>
 #include <fonts.h>
 
 #define red(color) (color & 0xFF)

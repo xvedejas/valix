@@ -17,7 +17,7 @@
  *      Xander Vedėjas <xvedejas@gmail.com>
  */
 #include <interrupts.h>
-#include <string.h>
+#include <cstring.h>
 
 /* This array is actually an array of function pointers. We use
 *  this to handle custom IRQ handlers for a given IRQ */

@@ -1,125 +1,38 @@
-#include <string.h>
+ /*  Copyright (C) 2011 Xander Vedejas <xvedejas@gmail.com>
+ *
+ *  This program is free software: you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation, either version 3 of the License, or
+ *  (at your option) any later version.
+ *
+ *  This program is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License
+ *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ *
+ *  Maintained by:
+ *      Xander Vedėjas <xvedejas@gmail.com>
+ */
+ 
+#include <String.h>
+#include <cstring.h>
 #include <mm.h>
 
-#define hasZeroByte(v) ((v - 0x01010101UL) & ~v & 0x80808080UL)
-
-String strdup(String s)
+void stringInstall()
 {
-    String new = malloc(sizeof(char) * strlen(s));
-    strcpy(new, s);
+    stringProto = object_send(objectProto, symbol("new"));
+}
+
+Object *string_new(Object *self, String val)
+{
+    Object *new = object_send(self, symbol("new"));
+    Size len = strlen(val);
+    StringData *stringData = malloc(sizeof(StringData) + sizeof(char) * len);
+    new->data = stringData;
+    stringData->len = len;
+    memcpy(stringData->string, val, len);
     return new;
-}
-
-u32 strcmp(String cs, String ct)
-{
-    register signed char __res;
-    while (true)
-    {
-        if ((__res = *cs - *ct++) != 0 || !*cs++)
-            break;
-    }
-    return __res;
-}
-
-u32 strncmp(String cs, String ct, Size n)
-{
-    register signed char __res;
-    Size i = 0;
-    while (i++ < n)
-    {
-        if ((__res = *cs - *ct++) != 0 || !*cs++)
-            break;
-    }
-    return __res;
-}
-
-Size strlcpy(String dest, String src, Size count)
-{
-    register u32 i = 0;
-    while (*src && i++ < count) *dest++ = *src++;
-    *dest++ = 0;
-    return i;
-}
-
-Size chrcount(String s, char c)
-{
-    int i = 0;
-    while (*s++)
-           if (*s == c)
-            i++;
-    return i;
-}
-
-String strchr(String s, char c)
-{
-    for (; *s != c; s++)
-        if (*s == '\0')
-            return NULL;
-    return (String)s;
-}
-
-String strncpy(String dest, String src, Size count)
-{
-    String tmp = dest;
-    while (count-- && (*dest++ = *src++) != '\0');
-    return tmp;
-}
-
-String strncat(String dest, String src, Size count)
-{
-    String tmp = dest;
-    if (count)
-    {
-         while (*dest)
-            dest++;
-        while ((*dest++ = *src++))
-        {
-            if (--count == 0)
-            {
-                 *dest = '\0';
-                break;
-            }
-        }
-    }
-
-    return tmp;
-}
-
-Size strlen(String s)
-{
-    String sc;
-    for (sc = s; *sc != '\0'; ++sc);
-    return sc - s;
-}
-
-void *memmove(void * dest, const void *src, Size count)
-{
-    char *tmp, *s;
-
-    if (dest <= src)
-    {
-         tmp = (char *) dest;
-        s = (char *) src;
-        while (count--)
-            *tmp++ = *s++;
-    }
-    else
-    {
-         tmp = (char *) dest + count;
-        s = (char *) src + count;
-        while (count--)
-            *--tmp = *--s;
-    }
-
-    return dest;
-}
-
-bool startswith(String string, String substring)
-{
-    return !strncmp(string, substring, strlen(substring));
-}
-
-bool endswith(String string, String substring)
-{
-    return !strncmp(string + strlen(string) - strlen(substring), substring, strlen(substring));
 }

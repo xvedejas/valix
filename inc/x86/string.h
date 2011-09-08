@@ -1,4 +1,4 @@
-/*  Copyright (C) 2011 Xander Vedejas <xvedejas@gmail.com>
+ /*  Copyright (C) 2011 Xander Vedejas <xvedejas@gmail.com>
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -12,29 +12,18 @@
  *
  *  You should have received a copy of the GNU General Public License
  *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ *
+ *  Maintained by:
+ *      Xander Vedėjas <xvedejas@gmail.com>
  */
-#ifndef __string_h__
-#define __string_h__
+#ifndef __String_h__
+#define __String_h__
 #include <main.h>
+#include <vm.h>
 
-void *memset(void *memory, u8 value, Size number);
-void *memsetd(void *memory, u32 value, Size number);
-void *memcpy(void *dest, void *src, Size count);
-void *memcpyd(void *dest, void *src, Size count);
-void *memmove(void *dest, const void *src, Size count);
-String strcpy(String dest, const String source);
-String strcat(String dest, const String source);
-String strdup(String s);
-Size strlen(String s);
-u32 strcmp(String cs, String ct);
-u32 strncmp(String cs, String ct, Size n);
-Size strlcpy(String dest, String src, Size count);
-Size chrcount(String s, char c);
-String strchr(const String s, char c);
-String strncpy(String dest, const String src, Size count);
-String strncat(String dest, String src, Size count);
+extern Object *string_new(Object *self, String val);
+extern void stringInstall();
 
-bool startswith(String string, String substring);
-bool endswith(String string, String substring);
+Object *stringProto;
 
 #endif

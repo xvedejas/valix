@@ -19,7 +19,7 @@
 #include <mm.h>
 #include <data.h>
 #include <vm.h>
-#include <string.h>
+#include <cstring.h>
 
 MethodTable *methodTableDataNew(Size size)
 {

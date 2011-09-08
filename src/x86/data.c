@@ -19,7 +19,7 @@
  
 #include <data.h>
 #include <mm.h>
-#include <string.h>
+#include <cstring.h>
 #include <types.h>
 #include <main.h>
 

@@ -18,7 +18,7 @@
  */
 #include <main.h>
 #include <mm.h>
-#include <string.h>
+#include <cstring.h>
 #include <threading.h>
 
 const u32 mmMagic = 0x9001DEAD;

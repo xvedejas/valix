@@ -20,7 +20,7 @@
 #include <data.h>
 #include <interrupts.h>
 #include <main.h>
-#include <string.h>
+#include <cstring.h>
 #include <stdarg.h>
 #include <threading.h>
 #include <types.h>

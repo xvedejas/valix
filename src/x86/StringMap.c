@@ -20,7 +20,7 @@
 #include <StringMap.h>
 #include <data.h>
 #include <mm.h>
-#include <string.h>
+#include <cstring.h>
 
 const Size stringMapInitialSize = 5;
 

@@ -18,7 +18,7 @@
  */
  
 #include <String.h>
-#include <string.h>
+#include <cstring.h>
 #include <mm.h>
 
 void stringInstall()

@@ -17,41 +17,22 @@
  *      Xander Vedėjas <xvedejas@gmail.com>
  */
  
-#include <main.h>
-#include <vm.h>
-#include <Number.h>
+#include <String.h>
+#include <string.h>
 #include <mm.h>
 
-void numberInstall()
+void stringInstall()
 {
-    numberProto = object_send(objectProto, symbol("new"));
-    
-    /* integerProto */
-    
-    integerProto = object_send(numberProto, symbol("new"));
-    Object *integerMT = object_send(objectMT, symbol("new:"), 1);
-    integerProto->methodTable = integerMT;
-    
-    methodTable_addClosure(integerMT, symbol("isInteger"),
-        closure_newInternal(closureProto, returnTrue, "oo"));
-    
-    // integer32Proto = object_send(
+    stringProto = object_send(objectProto, symbol("new"));
 }
 
-Object *integer32_new(Object *self, s32 value)
+Object *string_new(Object *self, String val)
 {
     Object *new = object_send(self, symbol("new"));
-    s32 *numberData = malloc(sizeof(s32));
-    new->data = numberData;
-    numberData[0] = (Size)value;
-    return new;
-}
-
-Object *integer64_new(Object *self, s64 value)
-{
-    Object *new = object_send(self, symbol("new"));
-    s64 *numberData = malloc(sizeof(s64));
-    new->data = numberData;
-    numberData[0] = value;
+    Size len = strlen(val);
+    StringData *stringData = malloc(sizeof(StringData) + sizeof(char) * len);
+    new->data = stringData;
+    stringData->len = len;
+    memcpy(stringData->string, val, len);
     return new;
 }

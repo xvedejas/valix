@@ -16,16 +16,14 @@
  *  Maintained by:
  *      Xander Vedėjas <xvedejas@gmail.com>
  */
-#ifndef __Number_h__
-#define __Number_h__
-#include <Number.h>
+#ifndef __String_h__
+#define __String_h__
 #include <main.h>
 #include <vm.h>
 
-Object *numberProto, *integerProto, *integer32Proto, *integer64Proto;
+extern Object *string_new(Object *self, String val);
+extern void stringInstall();
 
-extern void numberInstall();
-extern Object *integer32_new(Object *self, s32 value);
-extern Object *integer64_new(Object *self, s64 value);
+Object *stringProto;
 
 #endif

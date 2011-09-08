@@ -308,6 +308,7 @@ void kmain(u32 magic, MultibootStructure *multiboot, void *stackPointer)
     
     spawn("VM interactive shell", testVM);
     
-    //pciinfo();
+    compile("Console print: \"abc\". myObject = @{ Object new | new { super new } }.");
+    
     return; /* kills kernel thread */
 }

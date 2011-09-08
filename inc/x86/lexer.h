@@ -47,7 +47,8 @@ typedef enum
     symbolToken,  // #symbolName
     keywordToken,
     specialCharToken,
-    initToken
+    openObjectBraceToken, // @{
+    openTraitBraceToken,  // #{
 } TokenType;
 
 extern String tokenTypeNames[];
@@ -57,7 +58,7 @@ typedef struct token
     String data;
     TokenType type;
     struct token *previous;
-    Size line, col, length; /* The position marking the END of the token */
+    Size line, col, end; /* The index of the source marking the END of the token */
 } Token;
 
 #define lexLoop(source, tokenName) Token *_next = lex(source), *tokenName;\

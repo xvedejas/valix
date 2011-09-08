@@ -68,6 +68,7 @@ extern void stringBuilderAppendN(StringBuilder *sb, String s, Size len);
 extern void stringBuilderAppendChar(StringBuilder *sb, char c);
 /* note: ToString will destroy the string builder! */
 extern String stringBuilderToString(StringBuilder *sb);
+void stringBuilderPrint(StringBuilder *sb);
 
 /////////////////////
 // Queue Interface //

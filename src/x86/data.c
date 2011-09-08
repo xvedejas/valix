@@ -111,12 +111,20 @@ String stringBuilderToString(StringBuilder *sb)
     return s;
 }
 
+void stringBuilderPrint(StringBuilder *sb)
+{
+    Size i;
+    for (i = 0; i < sb->size; i++)
+        putch(sb->s[i]);
+}
+
 ////////////////////////////////
 // InternTable Implementation //
 ////////////////////////////////
 
 /* The intern table returns a number (0, 1, 2, 3...) for each unique string
- * given. The same number is always returned for the same string. */
+ * given. The same number is always returned for the same string. The limit is
+ * the processor word size. */
 
 InternTable *internTableNew()
 {
@@ -140,6 +148,7 @@ Size internString(InternTable *table, String string)
         table->capacity = nextSize(table->capacity);
         table->table = realloc(table->table, table->capacity);
     }
+    assert(i == table->count, "intern error");
     table->table[i] = string;
     table->count++;
     return i;

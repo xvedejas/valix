@@ -43,8 +43,13 @@ typedef enum
     stopBC     = 0x8A, // yield nil from expression
     setBC      = 0x8B, // set variable (next byte) to data on stack
     endBC      = 0x8C, // ends a block or file
-    initBC     = 0x8D, // begin an object init
-    extendedBC = 0x8E, // for each of these, the length of the arg in bytes is twice as large
+    objectBC   = 0x8D,
+    traitBC    = 0x8E,
+    extendedBC8 = 0xF0, // 8 bits, for 8-bit values that are 0xF0 or greater
+    extendedBC16 = 0xF1, // 16 bits
+    extendedBC32 = 0xF2, // 32 bits
+    extendedBC64 = 0xF3, // 64 bits
+    extendedBC128 = 0xF4, // 128 bits
 } bytecodeCommand;
 
 extern const String bytecodes[];

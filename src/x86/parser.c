@@ -23,12 +23,35 @@
 #include <data.h>
 #include <vm.h>
 
+const Size EOF = 0x04;
+
 const Size maxKeywordCount = 8;
 
 /*
  * This is a tail-recursive parser, which means it is designed to work with
  * left-recursive grammars. It uses less stack space than a recursive descent
  * parser, and is fairly easy to write.
+ * 
+ * 
+ * stmt ::= expr ('.' expr)* '.'?
+ * expr ::= value (Keyword (':' value (Keyword ':' value)*)? | Special value)
+ * blockHeader ::=
+ *     ((Keyword (',' Keyword)* '|') |
+ *     ('|' Keyword (',' Keyword)* '|') |
+ *     (Keyword (',' Keyword)* '|' Keyword (',' Keyword)* '|'))?
+ * methodBlockHeader ::= ('|' Keyword (',' Keyword)* '|')?
+ * methodList ::=
+ *     (Keyword (':' value (Keyword ':' value)*)? | Special value) methodBlock
+ * block ::= '{' blockHeader stmt '}'
+ * methodBlock ::= '{' methodBlockHeader stmt '}'
+ * objDef ::= '@{' stmt (',' stmt)* '|'
+ *     (Keyword (',' Keyword)* '|')? methodList '}'
+ * traitDef ::= '#{' methodList '}'
+ * value ::= array | block | Integer | Double | String | Char | objDef | traitDef
+ * array ::= '[' (stmt (',' stmt)*)? ']'
+ * 
+ * top ::= blockHeader stmt
+ * 
  */
 
 const String bytecodes[] =
@@ -46,8 +69,72 @@ const String bytecodes[] =
     "stop",
     "set",
     "end",
-    "init",
+    "object",
+    "trait"
 };
+
+typedef struct parseStructure
+{
+    StringBuilder *sb;
+    struct parseStructure *next;
+} ParseStructure;
+
+ParseStructure *parseStructureNew()
+{
+    ParseStructure *ps = malloc(sizeof(ParseStructure));
+    ps->sb = stringBuilderNew(NULL);
+    ps->next = NULL;
+    return ps;
+}
+
+ParseStructure *parseStructurePush(ParseStructure *root)
+{
+    while (root->next != NULL) root = root->next;
+    return (root->next = parseStructureNew());
+}
+
+ParseStructure *parseStructureCommit(ParseStructure *root)
+{
+    ParseStructure *node = root;
+    assert(node->next != NULL, "parser error");
+    ParseStructure *previous;
+    do
+    {
+        previous = node;
+        node = root->next;
+    } while (node->next != NULL);
+    stringBuilderAppendN(previous->sb, stringBuilderToString(node->sb),
+        node->sb->size);
+    previous->next = node->next;
+    free(node);
+    return previous;
+}
+
+StringBuilder *parseStructureCollapse(ParseStructure *root)
+{
+    ParseStructure *node, *next;
+    for (node = root->next; node != NULL; node = next)
+    {
+        next = node->next;
+        stringBuilderAppendN(root->sb, stringBuilderToString(node->sb),
+            node->sb->size);
+        free(node);
+    }
+    StringBuilder *result = root->sb;
+    free(root);
+    return result;
+}
+
+void parseStructureDebug(ParseStructure *root)
+{
+    printf("SB Contents:\n");
+    do
+    {
+        stringBuilderPrint(root->sb);
+        printf("\n");
+    }
+    while ((root = root->next) != NULL);
+}
 
 /*
  * Data literals:
@@ -62,53 +149,39 @@ const String bytecodes[] =
 
 u8 *compile(String source)
 {
+    ParseStructure *root = parseStructureNew();
+    InternTable *symbolTable = internTableNew();
     Token *curToken = NULL;
-    jmp_buf exit;
+    jmp_buf exit; // on case of error
+    
+    /* First we push a new stringBuilder in our parseStructure. This leaves the
+     * root so that we can add a symbol table to the beginning of the bytecode
+     * later on. */
+    ParseStructure *node = parseStructurePush(root);
+    
+    void parserRequire(bool val, String message)
+    {
+        if (unlikely(!val))
+        {
+            printf("Parser error: %s\n", message);
+            longjmp(exit, true);
+        }
+    }
+    
     inline void nextToken()
     {
         curToken = lex(source, curToken);
-        source += curToken->length;
-    }
-    StringBuilder *output = stringBuilderNew(NULL);
-    nextToken();
-    /* Per file, when loaded is compared with global method table */
-    InternTable *symbolTable = internTableNew();
-    /* The method table must be saved */
-    StringBuilder *symbolTableBytecode = stringBuilderNew(" ");
-    /* The very first byte tells the size of the symbol table. For now the
-     * limit is 255 but it may very well change. that byte is reserved by
-     * starting with a single character in the string builder. */
-    
-    void parserRequire(bool condition, String error)
-    {
-        if (unlikely(!condition))
-        {
-            if (curToken->type == EOFToken)
-            {
-                longjmp(exit, true);
-            }
-            printf("\n [[ Parser Error ]]\n");
-            printf("Token: %s Data: %s Line: %i Col: %i\n",
-                tokenTypeNames[curToken->type], curToken->data, curToken->line, curToken->col);
-            printf("%s\n", error);
-        }
+        source += curToken->end;
     }
     
-    Size intern(String string)
+    Size intern(String s)
     {
-        bool alreadyInTable = isStringInterned(symbolTable, string);
-        Size index = internString(symbolTable, string);
-        if (!alreadyInTable)
-        {
-            stringBuilderAppend(symbolTableBytecode, string);
-            stringBuilderAppendChar(symbolTableBytecode, '\0');
-        }
-        return index;
+        return internString(symbolTable, s);
     }
     
     /* The following function takes an array of keywords and finds the
      * corresponding message keyword's interned value. Does not work for unary
-     * messages. */
+     * messages, just use intern() instead. */
     Size methodNameIntern(Size keywordCount, String *keywords)
     {
         Size i = keywordCount,
@@ -127,51 +200,57 @@ u8 *compile(String source)
         return interned;
     }
     
-    Token *lookahead(u32 n)
+    Token *lookahead(Size n)
     {
         Token *token = curToken;
         String currentPos = source;
         Token *lookahead = NULL;
         while (n--)
         {
-            curToken = lex(source, curToken);
-            source += curToken->length;
+            curToken = lex(currentPos, curToken);
+            currentPos += curToken->end;
         }
         lookahead = curToken;
         curToken = token;
-        source = currentPos;
         return lookahead;
     }
     
-    inline void outStr(String val)
+    inline void outByte(u8 byte, ParseStructure *ps)
     {
-        stringBuilderAppendN(output, val, strlen(val) + 1);
+        if (byte >= 0xF0)
+            stringBuilderAppendChar(ps->sb, extendedBC8);
+        stringBuilderAppendChar(ps->sb, byte);
     }
     
-    inline void outByte(char val)
+    void outWord(u16 word, ParseStructure *ps)
     {
-        stringBuilderAppendChar(output, val);
+        outByte(extendedBC16, ps);
+        outByte(word & 0xFF, ps);
+        outByte((word >> 8) & 0xFF, ps);
     }
     
-    inline Size getPos()
+    void outDWord(u32 dword, ParseStructure *ps)
     {
-        return output->size;
+        outByte(extendedBC32, ps);
+        outByte(dword & 0xFF, ps);
+        outByte((dword >> 8) & 0xFF, ps);
+        outByte((dword >> 16) & 0xFF, ps);
+        outByte((dword >> 24) & 0xFF, ps);
     }
     
-    inline void outBytecode(Size sizeOfArg, bytecodeCommand command)
+    void outVal(Size word, ParseStructure *ps)
     {
-        while (true)
-        {
-            sizeOfArg >> 1;
-            if (sizeOfArg == 0)
-                break;
-            outByte(extendedBC);
-        }
+        if (word == (word & 0xFF))
+            outByte((u8)word, ps);
+        else if (word == (word & 0xFFFF))
+            outWord((u16)word, ps);
+        else
+            outDWord(word, ps);
     }
     
-    inline void setPos(Size pos, u8 value)
+    void outStr(String s, ParseStructure *ps)
     {
-        output->s[pos] = value;
+        stringBuilderAppendN(ps->sb, s, strlen(s) + 1); // include null
     }
     
     inline bool startsValue(TokenType type)
@@ -183,130 +262,82 @@ u8 *compile(String source)
                type == keywordToken;
     }
     
-    auto void parseValue();
-    auto void parseExpr();
-    
-    /* Statements can be any string of expressions separated by '.' */
-    void parseStmt()
+    void parseBlockHeader(bool methodDecl, Size argc)
     {
-        while (startsValue(curToken->type))
+        /* In a method declaration, the syntax for arguments is different,
+         * so the argument portion is skipped. Argc is given if methodDecl.
+         * 
+         * The output syntax is as follows;
+         * 
+         * [Variable Count] [Argument Count] [arg interned]* [var interned]*
+         * 
+         * Note that an extended command can occur at the beginning of any of
+         * these sections.
+         * 
+         */
+        ParseStructure *parseBlockNode = node;
+        Size varc = 0;
+        node = parseStructurePush(node);
+        TokenType lookaheadType = lookahead(1)->type;
+        if ((lookaheadType == commaToken || lookaheadType == pipeToken)
+            && !methodDecl)
         {
-            parseExpr();
-            if (curToken->type == stopToken)
+            /* Arguments */
+            
+            parserRequire(curToken->type == keywordToken,
+                "Expected keyword token");
+            outVal(intern(curToken->data), node);
+            argc++;
+            nextToken();
+            while (curToken->type != pipeToken)
             {
-                outByte(stopBC);
+                parserRequire(curToken->type == commaToken,
+                    "Expected keyword token");
+                nextToken();
+                parserRequire(curToken->type == keywordToken,
+                    "Expected keyword token");
+                outVal(intern(curToken->data), node);
+                argc++;
                 nextToken();
             }
-            else
-                break;
         }
-    }
-    
-    void parseObjectDef()
-    {
-        outByte(initBC);
-        Size varCountByte = getPos();
-        Size varCount = 0;
-        outByte('\0'); // number of variables
-        parserRequire(curToken->type == openBraceToken, "Expected '{' token");
-        nextToken();
-        /* variables, listed as | var, var | */
         if (curToken->type == pipeToken)
         {
             nextToken();
-            parserRequire(curToken->type == keywordToken, "Expected variable name");
-            varCount++;
-            outByte(intern(curToken->data));
-            nextToken();
-            while (curToken->type == commaToken)
+            lookaheadType = lookahead(1)->type;
+            if (lookaheadType == pipeToken || lookaheadType == commaToken)
             {
+                parserRequire(curToken->type == keywordToken,
+                    "Expected keyword token");
+                outVal(intern(curToken->data), node);
+                varc++;
                 nextToken();
-                parserRequire(curToken->type == keywordToken, "Expected variable name");
-                varCount++;
-                outByte(intern(curToken->data));
-                nextToken();
-            }
-            parserRequire(curToken->type == pipeToken, "Expected '|' token");
-            nextToken();
-        }
-        setPos(varCountByte, varCount);
-        /* Method Declarations */
-        Size methodCountByte = getPos();
-        Size methodCount = 0;
-        outByte('\0'); // number of methods
-        while (curToken->type != closeBraceToken)
-        {
-            methodCount++;
-            parserRequire(curToken->type == keywordToken, "Expected method declaration");
-            String keywords[maxKeywordCount];
-            String args[maxKeywordCount + 1];
-            Size keywordc = 0,
-                 argc = 0;
-            args[argc++] = "self";
-            
-            keywords[keywordc++] = curToken->data;
-            nextToken();
-            if (curToken->type == colonToken) // not unary
-            {
-                nextToken();
-                args[argc++] = curToken->data;
-                nextToken();
-                while (curToken->type != openBraceToken)
+                while (curToken->type != pipeToken)
                 {
-                    parserRequire(curToken->type == keywordToken, "Expected method keyword");
-                    parserRequire(keywordc < maxKeywordCount, "Message has too many keywords");
-                    keywords[keywordc++] = curToken->data;
+                    parserRequire(curToken->type == commaToken,
+                        "Expected keyword token");
                     nextToken();
-                    parserRequire(curToken->type == colonToken, "Expected ':' token");
-                    nextToken();
-                    args[argc++] = curToken->data;
+                    parserRequire(curToken->type == keywordToken,
+                        "Expected keyword token");
+                    outVal(intern(curToken->data), node);
+                    varc++;
                     nextToken();
                 }
-                outByte(methodNameIntern(keywordc, keywords));
+                nextToken();
             }
-            else
-                outByte(intern(keywords[0]));
-            
-            /* Method closure */
-            outByte(blockBC);
-            parserRequire(curToken->type == openBraceToken, "Expected '{' token");
-            nextToken();
-            Size varCountByte = getPos();
-            outByte('\0');
-            outByte(argc);
-            Size i;
-            for (i = 0; i < argc; i++)
-                outByte(intern(args[i]));
-            
-            Size varc = 0;
-            if (curToken->type == pipeToken) // variables
-            {
-                do
-                {
-                    nextToken();
-                    parserRequire(curToken->type == keywordToken, "Expected variable name");
-                    varc++;
-                    outByte(intern(curToken->data));
-                    nextToken();
-                } while (curToken->type == commaToken);
-                parserRequire(curToken->type == pipeToken, "Expected '|' token");
-            }
-            setPos(varCountByte, (u8)(varc + argc));
-            parseStmt();
-            parserRequire(curToken->type == closeBraceToken, "Expected '}' token");
-            nextToken();
-            outByte(endBC);
         }
-        nextToken();
-        setPos(methodCountByte, methodCount);
+        
+        outVal(varc, parseBlockNode);
+        outVal(argc, parseBlockNode);
+        node = parseStructureCommit(parseBlockNode);
     }
     
-    /* Value plus messages */
+    auto void parseValue();
+    
     void parseExpr()
     {
-        parseValue();
-        while (curToken->type == initToken || curToken->type == keywordToken ||
-            curToken->type == specialCharToken)
+        parseValue();       
+        while (curToken->type == keywordToken || curToken->type == specialCharToken)
         {
             if (curToken->type == keywordToken)
             {
@@ -320,11 +351,11 @@ u8 *compile(String source)
                     nextToken();
                     if (curToken->type != colonToken) // unary message
                     {
-                        parserRequire(i == 1, "Expected ':' token. Use parenthesis around binary messages.");
-                        outByte(symbolBC);
-                        outByte(intern(keywords[0]));
-                        outByte(messageBC);
-                        outByte(0); // argument count
+                        parserRequire(i == 1, "Expected ':' token. Useparenthesis around binary messages.");
+                        outByte(symbolBC, node);
+                        outVal(intern(keywords[0]), node);
+                        outByte(messageBC, node);
+                        outByte(0, node); // argument count
                         isUnary = true;
                         break;
                     }
@@ -333,96 +364,79 @@ u8 *compile(String source)
                 }
                 if (isUnary)
                     continue;
-                outByte(symbolBC);
-                outByte(methodNameIntern(i, keywords));
-                outByte(messageBC);
-                outByte(i);
-            }
-            else if (curToken->type == initToken)
-            {
-                nextToken();
-                parseObjectDef();
+                outByte(symbolBC, node);
+                outVal(methodNameIntern(i, keywords), node);
+                outByte(messageBC, node);
+                outVal(i, node);
             }
             else
             {
                 Size binaryMessage = intern(curToken->data);
                 nextToken();
                 parseValue();
-                outByte(symbolBC);
-                outByte(binaryMessage);
-                outByte(messageBC);
-                outByte(1); // number of arguments
+                outByte(symbolBC, node);
+                outVal(binaryMessage, node);
+                outByte(messageBC, node);
+                outByte(1, node); // number of arguments
             }
         }
     }
     
-    /*
-        A block header is one of the four following formats:
-            { a, b, c | x, y, z | ... }
-            { | x, y, z | ... }
-            { a, b, c | ... }
-            { ... }
-        
-        The bytecode output is as follows, byte-by-byte
-        
-            n = number of local variables, including arguments
-            m = number of arguments, where first m varibles are arguments.
-                index of variable 0
-                index of variable 1
-                  &c
-                index of variable n  
-    */
+    auto void parseStmt();
     
-    void parseBlockHeader()
+    void parseMethodList()
     {
-        Size varCountByte = getPos();
-        outByte('\0');
-        Size argCountByte = getPos();
-        outByte('\0');
-        Size arguments = 0;
-        /* Argument List */
-        if (lookahead(1)->type == pipeToken || lookahead(1)->type == commaToken)
+        /* Output format:
+         * 
+         * [method count] {block definitions} */
+        
+        Size methodCount = 0;
+        
+        while (curToken->type != closeBraceToken)
         {
-            parserRequire(curToken->type == keywordToken, "Expected keyword token");
-            outByte(intern(curToken->data));
-            arguments++;
+            methodCount++;
+            parserRequire(curToken->type == keywordToken,
+                "Expected method declaration");
+            String keywords[maxKeywordCount];
+            String args[maxKeywordCount + 1];
+            Size keywordc = 0,
+                 argc = 0;
+            args[argc++] = "self";
+            keywords[keywordc++] = curToken->data;
             nextToken();
-            while (curToken->type != pipeToken)
+            if (curToken->type == colonToken) // not unary message
             {
-                parserRequire(curToken->type == commaToken, "Expected ',' token");
                 nextToken();
-                parserRequire(curToken->type == keywordToken, "Expected keyword token");
-                outByte(intern(curToken->data));
-                arguments++;
+                args[argc++] = curToken->data;
                 nextToken();
-            }
-        }
-        setPos(argCountByte, arguments);
-        Size variables = 0;
-        if (curToken->type == pipeToken)
-        {
-            nextToken();
-            /* Variable list */
-            if (lookahead(1)->type == pipeToken || lookahead(1)->type == commaToken)
-            {
-                parserRequire(curToken->type == keywordToken, "Expected keyword token");
-                outByte(intern(curToken->data));
-                variables++;
-                nextToken();
-                while (curToken->type != pipeToken)
+                while (curToken->type != openBraceToken)
                 {
-                    parserRequire(curToken->type == commaToken, "Expected ',' token");
+                    parserRequire(curToken->type == keywordToken,
+                        "Expected method keyword");
+                    parserRequire(keywordc < maxKeywordCount,
+                        "Message has too many keywords");
+                    keywords[keywordc++] = curToken->data;
                     nextToken();
-                    parserRequire(curToken->type == keywordToken, "Expected keyword token");
-                    outByte(intern(curToken->data));
-                    variables++;
+                    parserRequire(curToken->type == colonToken,
+                        "Expected ':' token");
+                    nextToken();
+                    args[argc++] = curToken->data;
                     nextToken();
                 }
-                parserRequire(curToken->type == pipeToken, "Expected '|' token");
-                nextToken();
+                outVal(methodNameIntern(keywordc, keywords), node);
             }
+            else
+                outVal(intern(keywords[0]), node);
+            
+            outByte(blockBC, node);
+            parserRequire(curToken->type == openBraceToken, "Expected '{' token");
+            nextToken();
+            parseBlockHeader(true, argc);
+            parseStmt();
+            parserRequire(curToken->type == closeBraceToken, "Expected '}' token");
+            nextToken();
+            outByte(endBC, node);
         }
-        setPos(varCountByte, (u8)(variables + arguments));
     }
     
     void parseValue()
@@ -431,32 +445,32 @@ u8 *compile(String source)
         {
             case integerToken:
             {
-                outByte(integerBC);
-                outStr(curToken->data);
+                outByte(integerBC, node);
+                outStr(curToken->data, node);
                 nextToken();
             } break;
             case doubleToken:
             {
-                outByte(doubleBC);
-                outStr(curToken->data);
+                outByte(doubleBC, node);
+                outStr(curToken->data, node);
                 nextToken();
             } break;
             case stringToken:
             {
-                outByte(stringBC);
-                outStr(curToken->data);
+                outByte(stringBC, node);
+                outStr(curToken->data, node);
                 nextToken();
             } break;
             case charToken:
             {
-                outByte(charBC);
-                outByte((char)(Size)curToken->data);
+                outByte(charBC, node);
+                outByte((char)(Size)curToken->data, node);
                 nextToken();
             } break;
-            case symbolToken:
+            case symbolToken: // variable
             {
-                outByte(symbolBC);
-                outByte(intern(curToken->data));
+                outByte(symbolBC, node);
+                outVal(intern(curToken->data), node);
                 nextToken();
             } break;
             case openBracketToken: // array
@@ -474,18 +488,87 @@ u8 *compile(String source)
                     nextToken();
                 }
                 nextToken();
-                outByte(arrayBC);
-                outByte(elements);
+                outByte(arrayBC, node);
+                outVal(elements, node);
             } break;
             case openBraceToken: // block
             {
                 nextToken();
-                outByte(blockBC);
-                parseBlockHeader();
+                outByte(blockBC, node);
+                parseBlockHeader(false, 0);
                 parseStmt();
                 parserRequire(curToken->type == closeBraceToken, "Expected '}' token");
                 nextToken();
-                outByte(endBC);
+                outByte(endBC, node);
+            } break;
+            case openObjectBraceToken:
+            {
+                /* Format:
+                 * 
+                 * [ObjectBC] [trait count] [var count] [var intern]* [method count]
+                 * 
+                 * traits are popped from the stack, as is the object's
+                 * prototype (the first in the list of traits, but is not a
+                 * trait itself)
+                 * 
+                 */
+                
+                Size traitc = 0,
+                     varc = 0;
+                
+                /* Parse prototype */
+                
+                nextToken();
+                parseStmt();
+                
+                /* Parse traits */
+                
+                while (curToken->type != pipeToken)
+                {
+                    parserRequire(curToken->type == commaToken, "Expected ',' token");
+                    nextToken();
+                    parseStmt();
+                    traitc++;
+                }
+                parserRequire(curToken->type == pipeToken, "Expected '|' token");
+                
+                outByte(objectBC, node);
+                outVal(traitc, node);
+                
+                /* Parse variables */
+                
+                ParseStructure *objectParseStructure = node;
+                node = parseStructurePush(objectParseStructure);
+                
+                TokenType lookaheadType = lookahead(1)->type;
+                if (lookaheadType == pipeToken || lookaheadType == commaToken)
+                {
+                    parserRequire(curToken->type == keywordToken,
+                        "Expected keyword token");
+                    outVal(intern(curToken->data), node);
+                    nextToken();
+                    varc++;
+                    while (curToken->type != pipeToken)
+                    {
+                        nextToken();
+                        parserRequire(curToken->type == keywordToken,
+                            "Expected keyword token");
+                        outVal(intern(curToken->data), node);
+                        nextToken();
+                        varc++;
+                    }
+                    nextToken();
+                }
+                
+                outVal(varc, objectParseStructure);
+                node = parseStructureCommit(objectParseStructure);
+                parseMethodList();
+            } break;
+            case openTraitBraceToken:
+            {
+                nextToken();
+                outByte(traitBC, node);
+                parseMethodList();
             } break;
             case openParenToken:
             {
@@ -503,13 +586,13 @@ u8 *compile(String source)
                     parserRequire(curToken->type == eqToken, "Expected '=' token");
                     nextToken();
                     parseExpr();
-                    outByte(setBC);
-                    outByte(keyword);
+                    outByte(setBC, node);
+                    outVal(keyword, node);
                 }
                 else
                 {
-                    outByte(variableBC);
-                    outByte(intern(curToken->data));
+                    outByte(variableBC, node);
+                    outVal(intern(curToken->data), node);
                     nextToken();
                 }
             } break;
@@ -520,47 +603,67 @@ u8 *compile(String source)
         }
     }
     
+    void parseStmt()
+    {
+        while (startsValue(curToken->type))
+        {
+            parseExpr();
+            if (curToken->type == stopToken)
+            {
+                outByte(stopBC, node);
+                nextToken();
+            }
+            else break;
+        }
+    }
+    
+    StringBuilder *cleanup(bool all)
+    {
+        /* if "all" is true, then we don't leave any output to return at all. */
+        Token *token = curToken;
+        do tokenDel(token); while ((token = token->previous) != NULL);
+        internTableDel(symbolTable);
+        StringBuilder *result = parseStructureCollapse(root);
+        if (all)
+        {
+            stringBuilderDel(result);
+            return NULL;
+        }
+        return result;
+    }
+    
     if (setjmp(exit))
     {
-        // error or incomplete. scrap bytecode and return null.
-        Token *token = curToken;
-        do
-        {
-            tokenDel(token);
-        } while ((token = token->previous) != NULL);
-        stringBuilderDel(output);
-        stringBuilderDel(symbolTableBytecode);
-        internTableDel(symbolTable);
+        cleanup(true);
         return NULL;
     }
-    parseBlockHeader();
+    
+    nextToken();
+    parseBlockHeader(false, 0);
     parseStmt();
-    outByte(0x04); // EOF
+    outByte(EOF, node);
     
-    Token *token = curToken;
-    do
+    /* Build symbol table */
+    
+    outVal(symbolTable->count, root);
+    Size i;
+    for (i = 0; i < symbolTable->count; i++)
+        outStr(symbolTable->table[i], root);
+    
+    StringBuilder *result = cleanup(false);
+    
+    /* Print the result */
+    Size bytecodeSize = result->size;
+    for (i = 0; i < bytecodeSize; i++)
     {
-        tokenDel(token);
-    } while ((token = token->previous) != NULL);
+        u8 byte = result->s[i];
+        printf("%x ", byte);
+        if (byte > 0x80)
+            printf("%s\n", bytecodes[byte - 0x80]);
+        else
+            printf("%c\n", byte);
+    }
     
-    /* We want our method table at the beginning of the bytecode */
-    Size outputSize = output->size;
-    String bodyCode = stringBuilderToString(output);
-    stringBuilderAppendN(symbolTableBytecode, bodyCode, outputSize);
-    free(bodyCode);
-    outputSize = symbolTableBytecode->size;
-    u8 *finalBytecode = (u8*)stringBuilderToString(symbolTableBytecode);
-    
-    finalBytecode[0] = (u8)symbolTable->count; // symbol count
-    internTableDel(symbolTable);
-    
-    // see the output
-    //Size i;
-    //for (i = 0; i < outputSize; i++)
-    //    printf("%x %c\n", finalBytecode[i], finalBytecode[i]);
-    //printf("Parser done\n");
-    
-    //printf("Bytecode size %i\n", outputSize);
-    return finalBytecode;
+    return (u8*)stringBuilderToString(result);
 }
 

@@ -25,6 +25,8 @@
 #include <data.h>
 #include <stdarg.h>
 #include <VarList.h>
+#include <Number.h>
+#include <String.h>
 
 /* TODO:
  * 
@@ -85,12 +87,9 @@ Object *__attribute__ ((pure)) symbol_new(Object *self, String string)
 
 void *object_send(Object *self, Object *message, ...)
 {
-    if (!object_isSymbol(message))
-        panic("sending something not a symbol");
     Object *method = object_bind(self, message);
     if (method == NULL)
-        return object_send(self, symbol("doesNotUnderstand:"),
-            message);
+        return object_send(self, symbol("doesNotUnderstand:"), message);
     /* Call the method */
     Closure *closureData = method->data;
     va_list argptr;
@@ -150,8 +149,17 @@ void *object_send(Object *self, Object *message, ...)
             
             va_list arguments;
             va_start(arguments, message);
-            return callInternal(closureData->function, closureData->argc, self,
+            void *result = callInternal(closureData->function, closureData->argc, self,
                 arguments);
+            switch (argString[0])
+            {
+                case 'u':
+                case 's': return integer32_new(integer32Proto, (s32)result);
+                case 'S': return string_new(stringProto, (String)result);
+                case 'v': return NULL;
+                case 'o':
+                default: return result;
+            }
         } break;
         case userDefinedClosure:
         {
@@ -169,6 +177,11 @@ struct methodCacheEntry
 
 Object *__attribute__ ((pure)) object_bind(Object *self, Object *symbol)
 {
+    if (!object_isSymbol(symbol))
+        panic("sending something not a symbol");
+    if (unlikely(self == NULL))
+        panic("Binding symbol %s to null value not implemented", symbol->data);
+    
     Object *methodTable = self->methodTable;
     
     /* Check the cache */
@@ -178,14 +191,12 @@ Object *__attribute__ ((pure)) object_bind(Object *self, Object *symbol)
     if (entry->methodTable == methodTable && entry->symbol == symbol)
         return entry->method;
     
-    Object *method = (symbol == lookupSymbol && self == self->methodTable)?
-        methodTable_lookup(methodTable, symbol):
+    Object *method = (symbol == lookupSymbol && self == methodTable)?
+        methodTable_lookup(self, symbol):
         object_send(methodTable, lookupSymbol, symbol);
-    
     entry->methodTable = methodTable;
     entry->symbol = symbol;
     entry->method = method;
-    
     return method;
 }
 
@@ -247,6 +258,22 @@ void console_printTest(Object *self)
     printf("Success! object at %x\n", self);
 }
 
+Object *returnTrue(Object *self)
+{
+    return trueObject;
+}
+
+Object *returnFalse(Object *self)
+{
+    return falseObject;
+}
+
+void object_doesNotUnderstand(Object *self, Object *symbol)
+{
+    printf("Object at %x does not understand symbol %s\n", self, symbol);
+    panic("Error handling not currently implemented");
+}
+
 void vmInstall()
 {
     globalSymbolTable = stringMapNew();
@@ -259,7 +286,7 @@ void vmInstall()
     methodTableMT = methodTable_new(NULL, 4);
     methodTableMT->methodTable = methodTableMT;
     
-    Object *objectMT = methodTable_new(methodTableMT, 1);
+    objectMT = methodTable_new(methodTableMT, 2);
     methodTableMT->parent = objectProto;
     objectProto->methodTable = objectMT;
     
@@ -270,6 +297,8 @@ void vmInstall()
     Object *closureMT = methodTable_new(objectMT, 0);
     closureProto = object_new(objectProto);
     closureProto->methodTable = closureMT;
+    
+    /* todo: trait object, its data is a MethodTable. */
     
     /* 2. install the following methods:
      * methodTable_lookup()
@@ -286,6 +315,9 @@ void vmInstall()
     methodTable_addClosure(objectMT,
         symbol("new"),
         closure_newInternal(closureProto, object_new, "oo"));
+    methodTable_addClosure(objectMT,
+        symbol("doesNotUnderstand:"),
+        closure_newInternal(closureProto, object_doesNotUnderstand, "voo"));
     methodTable_addClosure(methodTableMT,
         symbol("new:"),
         closure_newInternal(closureProto, methodTable_new, "oou"));
@@ -313,10 +345,16 @@ void vmInstall()
     Object *consoleMT = object_send(objectMT, symbol("new:"), 1);
     console->methodTable = consoleMT;
     
-    Object *methodClosure = closure_newInternal(closureProto, console_printTest, "vo");
+    Object *methodClosure =
+        closure_newInternal(closureProto, console_printTest, "vo");
     methodTable_addClosure(consoleMT,
         symbol("printTest"),
         methodClosure);
     
     object_send(console, symbol("printTest"));
+    
+    /* 5. Install other base components */
+    
+    numberInstall();
+    stringInstall();
 }

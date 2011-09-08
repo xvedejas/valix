@@ -48,7 +48,8 @@ String tokenTypeNames[] =
     "symbolToken",
     "keywordToken",
     "specialCharToken",
-    "initToken",
+    "objectDefToken",
+    "traitDefToken"
 };
 
 void lexerError(String message)
@@ -220,14 +221,14 @@ Token *lex(String source, Token *lastToken)
         column = lastToken->col;
     }
     
-    Token *tokenNew(TokenType type, String data, Size length)
+    Token *tokenNew(TokenType type, String data, Size end)
     {
         Token* token = malloc(sizeof(Token));
         token->type = type;
         token->data = data;
         token->line = line;
         token->col = column;
-        token->length = length;
+        token->end = end;
         token->previous = lastToken;
         return token;
     }
@@ -265,7 +266,7 @@ Token *lex(String source, Token *lastToken)
                     break;
                 }
             } /* Do not break here, fall through */
-            case '=':
+            case '=': case '@': case '%':
             {
                 if (source[i] == '=' && source[i+1] == ' ')
                 {
@@ -273,45 +274,43 @@ Token *lex(String source, Token *lastToken)
                     i++;
                     return tokenNew(eqToken, NULL, i);
                 }
+                else if (source[i+1] == '{')
+                {
+                    if (source[i] == '@')
+                    {
+                        column += 2;
+                        i += 2;
+                        return tokenNew(openObjectBraceToken, NULL, i);
+                    } else if (source[i] == '%')
+                    {
+                        column += 2;
+                        i += 2;
+                        return tokenNew(openTraitBraceToken, NULL, i);
+                    }
+                }
             } /* Do not break here, fall through */
-            case 'a' ... 'z': case 'A' ... 'Z': case '~': case '`':
-            case '!': case '@': case '$': case '%': case '^': case '&':
-            case '*': case '-': case '+': case '_': case '?': case '<':
-            case '>': case '\\':
+            case 'a' ... 'z': case 'A' ... 'Z': case '~': case '`': case '!':
+            case '$': case '^': case '&': case '*': case '-': case '+':
+            case '_': case '?': case '<': case '>': case '\\':
             {
                 Size length = matchKeyword(source, i);
                 String data = malloc(sizeof(char) * (length + 1));
                 strlcpy(data, source + i, length);
                 Token *token = tokenNew(undefToken, NULL, 0);
-                if (unlikely(startswith(source + i, "init:")))
+                switch (data[0])
                 {
-                    token->type = initToken;
-                    i++;
+                    case 'a' ... 'z': case 'A' ... 'Z': case '_':
+                        token->type = keywordToken;
+                    break;
+                    default:
+                        token->type = specialCharToken;
+                    break;
                 }
-                if (token->type == undefToken)
-                {
-                    switch (data[0])
-                    {
-                        case 'a' ... 'z': case 'A' ... 'Z': case '_':
-                            token->type = keywordToken;
-                        break;
-                        default:
-                            token->type = specialCharToken;
-                        break;
-                    }
-                }
-                if (token->type == keywordToken ||
-                    token->type == specialCharToken)
-                {
-                    token->data = data;
-                } else /* token->type is some keyword type, don't need data */
-                {
-                    free(data);
-                }
+                token->data = data;
                 column += length;
                 token->col = column;
                 i += length;
-                token->length = i;
+                token->end = i;
                 return token;
             } break;
             case '0' ... '9':

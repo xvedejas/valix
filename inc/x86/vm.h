@@ -61,6 +61,10 @@ typedef struct array
     Object *array[0];
 } Array;
 
+/* A trait is a null-terminated array of closures that represent methods to be
+ * added to method tables on their creation. */
+typedef Object **Trait;
+
 struct object
 {
     struct object *parent;
@@ -71,11 +75,15 @@ struct object
 #define symbol(str) (symbol_new(symbolProto, str))
 
 Object *objectProto, *objectMT, *symbolProto, *methodTableMT, *varTableProto,
-    *closureProto, *lookupSymbol;
+    *closureProto, *lookupSymbol, *trueObject, *falseObject;
 
 extern Object *symbol_new(Object *self, String string);
 extern void *object_send(Object *self, Object *message, ...);
 extern Object *object_bind(Object *self, Object *symbol);
 extern void vmInstall();
+extern void methodTable_addClosure(Object *self, Object *symbol, Object *closure);
+extern Object *closure_newInternal(Object *self, void *function, String argString);
+extern Object *returnTrue(Object *self);
+extern Object *returnFalse(Object *self);
 
 #endif

@@ -153,7 +153,7 @@ if [[ $1 == "run-qemu" ]]; then
     #    notice_build "Creating QEMU Hard Disk Image"
     #    qemu-img create -f qcow2 valix.img 4G
     #fi
-    $QEMU -cdrom valix.iso -m 256 -serial stdio # -hda valix.img
+    $QEMU -cdrom valix.iso -serial file:CON # -hda valix.img
     exit
 fi
 

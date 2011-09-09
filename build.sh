@@ -1,5 +1,4 @@
 #!/bin/bash
-trap exit ERR # Exit on error
 source settings.sh
 
 ###################################
@@ -30,7 +29,9 @@ function notice_build
 #################
 
 if [[ $1 == "clean" ]]; then
-    rm output/* -rf
+    rm -rf output
+    rm -f valix.iso
+    rm -f *.map
     exit 0
 fi
 

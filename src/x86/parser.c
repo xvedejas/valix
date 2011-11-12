@@ -164,6 +164,7 @@ u8 *compile(String source)
         if (unlikely(!val))
         {
             printf("Parser error: %s\n", message);
+            printf("Line %i, Col %i\n", curToken->line, curToken->col);
             longjmp(exit, true);
         }
     }
@@ -395,6 +396,7 @@ u8 *compile(String source)
         while (curToken->type != closeBraceToken)
         {
             methodCount++;
+            printf("curToken type is %s\n", tokenTypeNames[curToken->type]);
             parserRequire(curToken->type == keywordToken,
                 "Expected method declaration");
             String keywords[maxKeywordCount];
@@ -531,6 +533,7 @@ u8 *compile(String source)
                     traitc++;
                 }
                 parserRequire(curToken->type == pipeToken, "Expected '|' token");
+                nextToken();
                 
                 outByte(objectBC, node);
                 outVal(traitc, node);

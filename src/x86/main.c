@@ -275,8 +275,8 @@ void pciinfo()
 
 ThreadFunc testVM()
 {
-    printf(getstring());
-    printf("Done.");
+    compile(getstring());
+    printf("\nDone.");
 }
 
 /* This is the very first C function to be called. Here we initialize the various
@@ -298,7 +298,8 @@ void kmain(u32 magic, MultibootStructure *multiboot, void *stackPointer)
     mmInstall(multiboot);
     printf("mm installed\n");
     threadingInstall(stackPointer); // must be after mmInstall
-    printf("threading installed\n");
+    printf("threading installed\n");    
+    
     vmInstall(); // must be after mmInstall
     printf("vm installed\n");
     keyboardInstall(); // must be after mmInstall, threadingInstall
@@ -308,10 +309,8 @@ void kmain(u32 magic, MultibootStructure *multiboot, void *stackPointer)
     
     spawn("VM interactive shell", testVM);
     
-    compile("Console print: \"abc\".\n"
-            "myObject =\n"
-            "@{ Object new |\n"
-            "new { super new } }.");
+    
+    
     
     return; /* kills kernel thread */
 }

@@ -71,15 +71,12 @@ extern String stringBuilderToString(StringBuilder *sb);
 void stringBuilderPrint(StringBuilder *sb);
 
 /////////////////////
-// Queue Interface //
+// Array Functions //
 /////////////////////
 
-/////////////////////////
-// SymbolMap Interface //
-/////////////////////////
-
-////////////////////
-// List Interface //
-////////////////////
+void radixSort(u32 *array, Size n);
+u32 maxItem(u32 *array, Size n);
+void quickSort(u32 *array, Size n);
+void insertSort(u32 *array, Size n);
 
 #endif

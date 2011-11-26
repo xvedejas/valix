@@ -22,6 +22,7 @@
 #include <cstring.h>
 #include <types.h>
 #include <main.h>
+#include <math.h>
 
 Size nextSize(Size size)
 {
@@ -169,4 +170,120 @@ bool isStringInterned(InternTable *table, String string)
             return true;
     }
     return false;
+}
+
+/////////////////////
+// Array Functions //
+/////////////////////
+
+u32 maxItem(u32 *array, Size n)
+{
+    register u32 v = 0;
+    Size i = n;
+    while (i --> 0)
+        v = max(v, array[i]);
+    return v;
+}
+
+void _doRadixSort(u32 *array, Size n, Size digit)
+{
+    while (true)
+    {
+        Size b = bit(digit);
+        Size i = 0, j = 0;
+        for (; j < n; j++)
+        {
+            u32 val = array[j];
+            if (!(val & b))
+            {
+                Size v = array[i];
+                array[i] = val;
+                array[j] = v;
+                i++;
+            }
+        }
+        if (digit == 0) return;
+        digit -= 1;
+        if (i > n - i)
+        {
+            _doRadixSort(array + i, n - i, digit);
+            n = i;
+        }
+        else
+        {
+            _doRadixSort(array, i, digit);
+            array += i;
+            n -= i;
+        }
+    }
+}
+
+void radixSort(u32 *array, Size n)
+{
+    u32 maxDigit = floorlog2(maxItem(array, n)); // position of highest set bit
+    _doRadixSort(array, n, maxDigit);
+}
+
+void insertSort(u32 *array, Size n)
+{
+    Size i, j;
+    for (i = 0; i < n; i++)
+    {
+        u32 val = array[i];
+        for (j = 0; j < i; j++)
+        {
+            u32 *index = array + j;
+            if (val < *index)
+            {
+                memmove(index + 1, index, (i - j) * sizeof(u32));
+                *index = val;
+                break;
+            }
+        }
+    }
+}
+
+void quickSort(u32 *array, Size n)
+{
+    while (true)
+    {
+        if (n < 2)
+            return;
+        else if (n > 8)
+        {
+            u32 pivot = mid(array[0], array[n >> 1], array[n - 1]);
+            Size i = 0, j = 0;
+            for (; j < n; j++)
+            {
+                u32 val = array[j];
+                if (val <= pivot)
+                {
+                    Size v = array[i];
+                    array[i] = val;
+                    array[j] = v;
+                    i++;
+                }
+            }
+            
+            // recurse into the smaller partition, tail-call into larger
+            if (i > n - i)
+            {
+                quickSort(array + i, n - i);
+                n = i;
+            }
+            else
+            {
+                quickSort(array, i);
+                array += i;
+                n -= i;
+            }
+        }
+        /* if the number of elements is small, use insertion sort instead of
+         * quick sort */
+        else
+        {
+            insertSort(array, n);
+            return;
+        }
+    }
 }

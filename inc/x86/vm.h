@@ -44,7 +44,7 @@ typedef struct closure
         };
         struct // userDefinedClosure
         {
-            
+            char *bytecode;
         };
     };
 } Closure;
@@ -78,12 +78,15 @@ Object *objectProto, *objectMT, *symbolProto, *methodTableMT, *varTableProto,
     *closureProto, *lookupSymbol, *trueObject, *falseObject;
 
 extern Object *symbol_new(Object *self, String string);
-extern void *object_send(Object *self, Object *message, ...);
+extern Object *object_send(Object *self, Object *message, ...);
 extern Object *object_bind(Object *self, Object *symbol);
 extern void vmInstall();
 extern void methodTable_addClosure(Object *self, Object *symbol, Object *closure);
 extern Object *closure_newInternal(Object *self, void *function, String argString);
 extern Object *returnTrue(Object *self);
 extern Object *returnFalse(Object *self);
+
+#define send(obj, messagestr, ...)\
+    object_send(obj, symbol(messagestr), ## __VA_ARGS__)
 
 #endif

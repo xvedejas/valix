@@ -73,7 +73,7 @@ u32 floorlog10(u32 value)
 
 u32 lowestBit(u32 value)
 {
-    u32 register v = value;      // 32-bit word input to count zero bits on right
+    u32 register v = value; // 32-bit word input to count zero bits on right
     u32 register c = 32; // c will be the number of zero bits on the right
     v &= -(s32)(v);
     if (v) c--;

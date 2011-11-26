@@ -21,6 +21,10 @@
 #include <vm.h>
 #include <cstring.h>
 
+/* The MethodTable data type is a hashtable mapping symbol objects to
+ * method objects. Its size is static, so the number of methods to put into the
+ * table must be known on allocation. */
+
 MethodTable *methodTableDataNew(Size size)
 {
     Size buckets = size + (size >> 1);
@@ -35,7 +39,8 @@ MethodTable *methodTableDataNew(Size size)
 
 void methodTableDataAdd(MethodTable *table, Object *symbol, Object *method)
 {
-    assert(++table->entries <= table->capacity, "methodTable error");
+    assert(++table->entries <= table->capacity,
+        "methodTable error, did you make the methodTable large enough?");
     Size size = table->size;
     Size hash = valueHash(symbol) % size;
     MethodTableBucket *buckets = table->buckets;

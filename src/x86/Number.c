@@ -29,13 +29,7 @@ void numberInstall()
     /* integerProto */
     
     integerProto = object_send(numberProto, symbol("new"));
-    
-    printf("XXX\n");
-    
-    Object *integerMT = object_send(methodTableMT, symbol("new:"), 1);
-    
-    printf("YYY\n");
-    
+    Object *integerMT = methodTable_new(methodTableMT, 1);
     integerProto->methodTable = integerMT;
     
     methodTable_addClosure(integerMT, symbol("isInteger"),

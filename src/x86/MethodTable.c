@@ -39,7 +39,6 @@ MethodTable *methodTableDataNew(Size number)
 
 void methodTableDataAdd(MethodTable *table, Object *symbol, Object *method)
 {
-	printf("methodTableAdd table %x symbol %s %x\n", table, symbol->data, symbol);
 	table->entries++;
     assert(table->entries <= table->capacity,
         "methodTable error, did you make the methodTable large enough?");
@@ -76,7 +75,8 @@ Object *methodTableDataGet(MethodTable *table, Object *symbol)
 
 void methodTableDataDebug(MethodTable *table)
 {
-    printf(" ===[MethodTable %x capacity %i entries %i]===\n", table, table->capacity, table->entries);
+    printf(" ===[MethodTable %x capacity %i entries %i]===\n", table,
+		table->capacity, table->entries);
     Size i, count = 0;
     for (i = 0; i < table->capacity; i++)
     {

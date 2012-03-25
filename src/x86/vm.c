@@ -109,17 +109,16 @@ Executes a closure (self) with the given arguments
             Size i;
             for (i = 0; i < closureData->argc; i++)
             {
-                char expectedArgument = argString[i + 2];
+                char expectedArgument = argString[i + 1];
                 void *argument = va_arg(argptr, void*);
-                
                 
                 switch (expectedArgument)
                 {
-                    case 'u': // Expecting unsigned integer, if object, convert
+                    case 'u': // Expecting unsigned integer, if object, try to convert
                     {
                         if (isObject(argument))
                         {
-							printf("%x is an object?\n", argument);
+							printf("%s\n", argString);
                             *((void**)argptr) = send(argument, "asU32Int");
                         }
                     } break;
@@ -251,7 +250,7 @@ Size __attribute__ ((pure)) getArgc(String argString)
             case '\0':
             /* ignore first argument, which is return value, and the second
              * argument (self) isn't counted */
-                return count - 2;
+                return count - 1;
             default:
                 panic("Improperly formatted argstring, character %c",
                     argString[-1]);
@@ -348,8 +347,6 @@ void vmInstall()
     closureProto->methodTable = closureMT;
     
     /* 2. install the following methods: */
-    printf("Installing methods\n");
-    
     bindSymbol = symbol("bind:");
     getSymbol = symbol("get:");
     newSymbol = symbol("new");
@@ -380,8 +377,6 @@ void vmInstall()
         closure_newInternal(closureProto, closure_with, "ooo"));
     
     /* 3. Do asserts to make sure things all connected correctly */
-    printf("Asserting\n");
-    
     assert(objectProto->parent == NULL, "vm error");
     assert(objectProto->methodTable == objectMT, "vm error");
     assert(objectMT->parent == methodTableMT, "vm error");
@@ -403,12 +398,7 @@ void vmInstall()
     
     numberInstall();
     
-    printf("AAA\n");
-    
     Object *consoleMT = object_send(methodTableMT, symbol("new:"), 1);
-    
-    printf("BBB\n");
-    
     Object *console = object_send(objectProto, newSymbol);
     console->methodTable = consoleMT;
     

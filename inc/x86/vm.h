@@ -85,6 +85,7 @@ extern Object *closure_newInternal(Object *self, void *function, String argStrin
 extern Object *returnTrue(Object *self);
 extern Object *returnFalse(Object *self);
 extern Object *closure_with(Object *self, ...);
+extern Object *methodTable_new(Object *self, u32 size);
 
 #define object_send(self, message, ...)\
 ({\

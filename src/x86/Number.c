@@ -29,7 +29,13 @@ void numberInstall()
     /* integerProto */
     
     integerProto = object_send(numberProto, symbol("new"));
-    Object *integerMT = object_send(objectMT, symbol("new:"), 1);
+    
+    printf("XXX\n");
+    
+    Object *integerMT = object_send(methodTableMT, symbol("new:"), 1);
+    
+    printf("YYY\n");
+    
     integerProto->methodTable = integerMT;
     
     methodTable_addClosure(integerMT, symbol("isInteger"),
@@ -40,6 +46,7 @@ void numberInstall()
 
 Object *integer32_new(Object *self, s32 value)
 {
+	printf("i32 new\n");
     Object *new = object_send(self, symbol("new"));
     s32 *numberData = malloc(sizeof(s32));
     new->data = numberData;

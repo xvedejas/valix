@@ -40,9 +40,9 @@ ObjectSet *globalObjectSet;
 StringMap *globalSymbolTable;
 
 // argc doesn't include self
-extern Object *callInternal(void *function, Size argc, Object *self, va_list args);
+extern Object *callInternal(void *function, Size argc, va_list args);
 Object *object_bind(Object *self, Object *symbol);
-Object *methodTable_lookup(Object *self, Object *symbol);
+Object *methodTable_get(Object *self, Object *symbol);
 
 Object *object_new(Object *self)
 {
@@ -88,15 +88,16 @@ Object *__attribute__ ((pure)) symbol_new(Object *self, String string)
     return symbol;
 }
 
-Object *object_send(Object *self, Object *message, ...)
+
+Object *closure_with(Object *self, ...)
+/*
+Executes a closure (self) with the given arguments
+*/
 {
-    Object *method = object_bind(self, message);
-    if (method == NULL)
-        return object_send(self, symbol("doesNotUnderstand:"), message);
-    /* Call the method */
-    Closure *closureData = method->data;
+	assert(self != NULL && self->data != NULL, "NULL error");
+    Closure *closureData = self->data;
     va_list argptr;
-    va_start(argptr, message);
+    va_start(argptr, self);
     switch (closureData->type)
     {
         case internalClosure:
@@ -111,14 +112,15 @@ Object *object_send(Object *self, Object *message, ...)
                 char expectedArgument = argString[i + 2];
                 void *argument = va_arg(argptr, void*);
                 
+                
                 switch (expectedArgument)
                 {
                     case 'u': // Expecting unsigned integer, if object, convert
                     {
                         if (isObject(argument))
                         {
-                            *((void**)argptr) = object_send(argument,
-                                symbol("asU32Int"));
+							printf("%x is an object?\n", argument);
+                            *((void**)argptr) = send(argument, "asU32Int");
                         }
                     } break;
                     case 's': // Expecting signed integer, if object, convert
@@ -134,8 +136,7 @@ Object *object_send(Object *self, Object *message, ...)
                         if (!isObject(argument))
                             panic("VM Error, expected an object, given some "
                                   "other value. Please construct and pass a "
-                                  "valid object. Message sent was %s. Arg %x.",
-                                  message->data, argument);
+                                  "valid object. Arg %x.", argument);
                     } break;
                     case 'S': // Expecting string, if object, convert
                     {
@@ -151,14 +152,17 @@ Object *object_send(Object *self, Object *message, ...)
             }
             
             va_list arguments;
-            va_start(arguments, message);
+            va_start(arguments, self);
             /* We need to know the number of arguments to pass, so we must know
              * what a method expects. To pass variable arguments, we will need
              * to use a simple list object. */
+            
+            indention++;///
             void *result = callInternal(closureData->function,
-                closureData->argc, self, arguments);
+                closureData->argc + 1, arguments);
             /* The given type of "result" is what we currently have, but we want
              * to return an object, so here we do the proper conversion. */
+            indention--;///
             switch (argString[0])
             {
                 case 'u':
@@ -175,9 +179,7 @@ Object *object_send(Object *self, Object *message, ...)
         case userDefinedClosure:
         {
             panic("not implemented\n");
-            
             char *bytecode = closureData->bytecode;
-            
             
         } break;
         default: panic("vm error, closure type %i not known", closureData->type);
@@ -202,20 +204,32 @@ Object *__attribute__ ((pure)) object_bind(Object *self, Object *symbol)
         panic("Binding symbol %s to null value not implemented", symbol->data);
     
     Object *methodTable = self->methodTable;
-    
-    /* Check the cache */
+    /*
+    // Check the cache
     Size methodCacheHash = (((Size)methodTable << 2) ^ ((Size)symbol >> 3)) &
         (sizeof(MethodCache) / sizeof(struct methodCacheEntry) - 1);
     struct methodCacheEntry *entry = MethodCache + methodCacheHash;
     if (entry->methodTable == methodTable && entry->symbol == symbol)
         return entry->method;
+    */
     
-    Object *method = (symbol == lookupSymbol && self == methodTable)?
-        methodTable_lookup(self, symbol):
-        object_send(methodTable, lookupSymbol, symbol);
-    entry->methodTable = methodTable;
-    entry->symbol = symbol;
-    entry->method = method;
+    Object *method;
+    if ((symbol == getSymbol || symbol == bindSymbol) && self == self->methodTable)
+    {
+        method = methodTableDataGet(self->data, symbol);
+    }
+    else
+    {
+		Object *table = self->methodTable;
+		method = send(table, "get:", symbol);
+		if (method == NULL && self->parent != NULL)
+			method = send(self->parent, "bind:", symbol);
+    }
+    /*
+		entry->methodTable = methodTable;
+		entry->symbol = symbol;
+		entry->method = method;
+	*/
     return method;
 }
 
@@ -264,12 +278,9 @@ Object *closure_newInternal(Object *self, void *function, String argString)
     return new;
 }
 
-Object *methodTable_lookup(Object *self, Object *symbol)
+Object *methodTable_get(Object *self, Object *symbol)
 {
-    /* object_bind() eventually calls lookup on a method table to retrieve a
-     * method. */
-    MethodTable *table = self->data;
-    return methodTableDataGet(table, symbol);
+	return methodTableDataGet(self->data, symbol);
 }
 
 void methodTable_addClosure(Object *self, Object *symbol, Object *closure)
@@ -297,18 +308,8 @@ void object_doesNotUnderstand(Object *self, Object *symbol)
 {
     /* Overrideable method called whenever an object does not understand some
      * symbol */
-    printf("Object at %x does not understand symbol %s\n", self, symbol);
+    printf("Object at %x does not understand symbol '%s'\n", self, symbol->data);
     panic("Error handling not currently implemented");
-}
-
-Object *closure_with(Object *self, Object *arglist)
-{
-    /* Execute a closure given arguments */
-    
-    /// move code from object_send to here, call from object_send?
-    
-    panic("not implemented");
-    return NULL;
 }
 
 Object *object_methodTable(Object *self)
@@ -334,30 +335,37 @@ void vmInstall()
     methodTableMT = methodTable_new(NULL, 4);
     methodTableMT->methodTable = methodTableMT;
     
-    objectMT = methodTable_new(methodTableMT, 3);
+    objectMT = methodTable_new(methodTableMT, 4);
     methodTableMT->parent = objectProto;
     objectProto->methodTable = objectMT;
     
-    Object *symbolMT = methodTable_new(objectMT, 1);
+    Object *symbolMT = methodTable_new(methodTableMT, 1);
     symbolProto = object_new(objectProto);
     symbolProto->methodTable = symbolMT;
     
-    Object *closureMT = methodTable_new(objectMT, 1);
+    Object *closureMT = methodTable_new(methodTableMT, 1);
     closureProto = object_new(objectProto);
     closureProto->methodTable = closureMT;
     
     /* 2. install the following methods: */
+    printf("Installing methods\n");
     
-    lookupSymbol = symbol("lookup:");
-    // methodTable.lookup(self, symbol)
-    methodTable_addClosure(methodTableMT, symbol("lookup:"),
-        closure_newInternal(closureProto, methodTable_lookup, "ooo"));
+    bindSymbol = symbol("bind:");
+    getSymbol = symbol("get:");
+    newSymbol = symbol("new");
+    DNUSymbol = symbol("doesNotUnderstand:");
+    // methodTable.get(self, symbol)
+    methodTable_addClosure(methodTableMT, getSymbol,
+        closure_newInternal(closureProto, methodTable_get, "ooo"));
     // object.new(self)
-    methodTable_addClosure(objectMT, symbol("new"),
+    methodTable_addClosure(objectMT, newSymbol,
         closure_newInternal(closureProto, object_new, "oo"));
+    // object.bind(self, symbol)
+    methodTable_addClosure(objectMT, bindSymbol,
+		closure_newInternal(closureProto, object_bind, "ooo"));
     // object.doesNotUnderstand(self, message)
     methodTable_addClosure(objectMT, symbol("doesNotUnderstand:"),
-        closure_newInternal(closureProto, object_doesNotUnderstand, "voo"));
+		closure_newInternal(closureProto, object_doesNotUnderstand, "voo"));
     // object.methodTable(self)
     methodTable_addClosure(objectMT, symbol("methodTable"),
         closure_newInternal(closureProto, object_methodTable, "oo"));
@@ -367,11 +375,12 @@ void vmInstall()
     // symbol.new(self, string)
     methodTable_addClosure(symbolMT, symbol("new:"),
         closure_newInternal(closureProto, symbol_new, "ooS"));
-    // closure.with(self, list)
+    // closure.send(self, list)
     methodTable_addClosure(closureMT, symbol("with:"),
         closure_newInternal(closureProto, closure_with, "ooo"));
     
     /* 3. Do asserts to make sure things all connected correctly */
+    printf("Asserting\n");
     
     assert(objectProto->parent == NULL, "vm error");
     assert(objectProto->methodTable == objectMT, "vm error");
@@ -381,31 +390,41 @@ void vmInstall()
     assert(methodTableMT->methodTable == methodTableMT, "vm error");
     assert(symbolProto->parent == objectProto, "vm error");
     assert(symbolProto->methodTable == symbolMT, "vm error");
-    assert(symbolMT->parent == objectMT, "vm error");
+    assert(symbolMT->parent == methodTableMT, "vm error");
     assert(symbolMT->methodTable == methodTableMT, "vm error");
+    assert(closureProto->parent == objectProto, "vm error");
+    assert(closureProto->methodTable == closureMT, "vm error");
+    assert(closureMT->parent == methodTableMT, "vm error");
+    assert(closureMT->methodTable == methodTableMT, "vm error");
     
     /* 4. Test the system by creating a Console object from ObjectProto,
      *    adding a printTest method, and calling it using the proper mechanisms */
+    printf("Testing\n");
     
-    Object *console = object_send(objectProto, symbol("new"));
-    Object *consoleMT = object_send(objectMT, symbol("new:"), 1);
+    numberInstall();
+    
+    printf("AAA\n");
+    
+    Object *consoleMT = object_send(methodTableMT, symbol("new:"), 1);
+    
+    printf("BBB\n");
+    
+    Object *console = object_send(objectProto, newSymbol);
     console->methodTable = consoleMT;
     
-    Object *methodClosure =
-        closure_newInternal(closureProto, console_printTest, "vo");
-    methodTable_addClosure(consoleMT, symbol("printTest"), methodClosure);
+    methodTable_addClosure(consoleMT, symbol("printTest"),
+		closure_newInternal(closureProto, console_printTest, "vo"));
     
     send(console, "printTest");
     
     /* 5. Install other base components */
     
-    Object *traitMT = methodTable_new(objectMT, 1);
+    Object *traitMT = methodTable_new(methodTableMT, 1);
     Object *traitProto = object_new(objectProto);
     traitProto->methodTable = traitMT;
     
     methodTable_addClosure(traitMT, symbol("new"),
         closure_newInternal(closureProto, trait_new, "oo"));
     
-    numberInstall();
     stringInstall();
 }

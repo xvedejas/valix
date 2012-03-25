@@ -63,6 +63,8 @@ volatile umax timerTicks;
 const Size systemStackSize;
 void timerWait(int ticks);
 
+extern volatile u32 indention;
+
 extern u8 inb(u16 port);
 extern void outb(u16 port, u8 data);
 extern u16 inw(u16 port);

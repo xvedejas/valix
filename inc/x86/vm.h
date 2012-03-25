@@ -75,16 +75,30 @@ struct object
 #define symbol(str) (symbol_new(symbolProto, str))
 
 Object *objectProto, *objectMT, *symbolProto, *methodTableMT, *varTableProto,
-    *closureProto, *lookupSymbol, *trueObject, *falseObject;
+    *closureProto, *bindSymbol, *getSymbol, *trueObject, *falseObject, *newSymbol, *DNUSymbol;
 
 extern Object *symbol_new(Object *self, String string);
-extern Object *object_send(Object *self, Object *message, ...);
 extern Object *object_bind(Object *self, Object *symbol);
 extern void vmInstall();
 extern void methodTable_addClosure(Object *self, Object *symbol, Object *closure);
 extern Object *closure_newInternal(Object *self, void *function, String argString);
 extern Object *returnTrue(Object *self);
 extern Object *returnFalse(Object *self);
+extern Object *closure_with(Object *self, ...);
+
+#define object_send(self, message, ...)\
+({\
+    Object *method = NULL;\
+	method = object_bind(self, message);\
+	if (method == NULL)\
+	{\
+		method = object_bind(self, symbol("doesNotUnderstand:"));\
+		assert(method != NULL, "does not understand does not understand...\n");\
+	}\
+    (method == NULL)?\
+        closure_with(method, self, message):\
+        closure_with(method, self, ## __VA_ARGS__);\
+})
 
 #define send(obj, messagestr, ...)\
     object_send(obj, symbol(messagestr), ## __VA_ARGS__)

@@ -113,8 +113,14 @@ void put(String str)
     while (str[i]) putch(str[i++]);
 }
 
+volatile u32 indention = 0;
+
 void printf(const char *format, ...)
-{   if (format == NULL)
+{
+	int i;
+	for (i = 0; i < indention; i++)
+	    put("--");
+	if (format == NULL)
         put("<<NULLSTR>>");
 
     char numBuff[20];

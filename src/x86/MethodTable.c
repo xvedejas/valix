@@ -25,54 +25,69 @@
  * method objects. Its size is static, so the number of methods to put into the
  * table must be known on allocation. */
 
-MethodTable *methodTableDataNew(Size size)
+MethodTable *methodTableDataNew(Size number)
 {
-    Size buckets = size + (size >> 1);
+    Size buckets = number + (number >> 1);
     MethodTable *table = malloc(sizeof(MethodTable) +
         sizeof(MethodTableBucket) * buckets);
-    table->capacity = size;
+    table->capacity = number;
     table->entries = 0;
-    memsetd(table->buckets, 0, sizeof(MethodTableBucket) * buckets >> 4);
+    memset(table->buckets, 0, sizeof(MethodTableBucket) * buckets);
     table->size = buckets;
     return table;
 }
 
 void methodTableDataAdd(MethodTable *table, Object *symbol, Object *method)
 {
-    assert(++table->entries <= table->capacity,
+	printf("methodTableAdd table %x symbol %s %x\n", table, symbol->data, symbol);
+	table->entries++;
+    assert(table->entries <= table->capacity,
         "methodTable error, did you make the methodTable large enough?");
-    Size size = table->size;
-    Size hash = valueHash(symbol) % size;
+    assert(table != NULL && symbol != NULL && method != NULL, "NULL error");
+    Size capacity = table->capacity;
+    assert(table->size != 0, "Method table %x is of size zero", table);
+    Size hash = valueHash(symbol) % capacity;
     MethodTableBucket *buckets = table->buckets;
     while (buckets[hash][0] != NULL)
-        hash = (hash + 1) % size;
+        hash = (hash + 1) % capacity;
     buckets[hash][0] = symbol;
     buckets[hash][1] = method;
 }
 
 Object *methodTableDataGet(MethodTable *table, Object *symbol)
 {
-    Size size = table->size;
-    Size hash = valueHash(symbol) % size;
+	assert(table != NULL && symbol != NULL, "NULL error");
+    Size capacity = table->capacity;
+    assert(table->size != 0, "Method table %x is of size zero", table);
+    Size hash = valueHash(symbol) % capacity;
     MethodTableBucket *buckets = table->buckets;
+    Size start = hash;
     while (buckets[hash][0] != symbol)
+    {
         if (buckets[hash][0] == NULL)
             return NULL;
         else
-            hash = (hash + 1) % size;
+            hash = (hash + 1) % capacity;
+        if (hash == start)
+			return NULL;
+	}
     return buckets[hash][1];
 }
 
 void methodTableDataDebug(MethodTable *table)
 {
-    printf(" ===[MethodTable size %i]===\n", table->capacity);
-    Size i;
+    printf(" ===[MethodTable %x capacity %i entries %i]===\n", table, table->capacity, table->entries);
+    Size i, count = 0;
     for (i = 0; i < table->capacity; i++)
     {
         if (table->buckets[i][0] != NULL)
+        {
             printf("key %x value %x\n",
                 table->buckets[i][0],
                 table->buckets[i][1]);
+            count++;
+		}
     }
+    assert(count == table->entries, "methodTable error");
     printf(" ===[DONE]===\n");
 }

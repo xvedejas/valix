@@ -1,4 +1,4 @@
-/*  Copyright (C) 2011 Xander Vedejas <xvedejas@gmail.com>
+/*  Copyright (C) 2012 Xander Vedejas <xvedejas@gmail.com>
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -11,8 +11,7 @@
  *  GNU General Public License for more details.
  *
  *  You should have received a copy of the GNU General Public License
- *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
+ *  along with this program.  If not, see <http://www.gnu.org/licenses/>
  */
 
 #include <threading.h>
@@ -31,7 +30,6 @@
     __asm__ __volatile__("mov $0x20, %%eax;" ::: "eax");   \
     __asm__ __volatile__("outb %%al, $0x20;sti" ::: "eax");
 
-Thread *currentThread;
 u32 threadCount;
 volatile u32 ticksUntilSwitch = 0;
 const u32 systemClockFreq = 5000;
@@ -68,8 +66,8 @@ inline void leaveThread() // doesn't end the thread, just gives up control tempo
 
 void threadPromote(Thread *thread)
 {
-    /* Move a thread up so it's next. This is desired for quick response for
-     * threads that were previously waiting on a mutex or sleeping. */
+    /* Move a thread up so it's next. This is desired for quick response
+     * for threads that were previously waiting on a mutex or sleeping. */
     threadingLock();
     thread->previous->next = thread->next;
     thread->next->previous = thread->previous;
@@ -99,9 +97,9 @@ void switchThreads()
     if (unlikely(destination == currentThread)) /* No thread to switch to. Return. */
         return;
     
-    /// todo: note the available stack size remaining for the thread. If the
-    /// amount is unusually low, show a warning. If the stack size is zero or
-    /// negative, panic.
+    /// todo: note the available stack size remaining for the thread.
+    /// If the amount is unusually low, show a warning. If the stack
+    /// size is zero or negative, panic.
     
     switch (destination->status)
     {
@@ -146,8 +144,8 @@ void schedule()
     Thread *thread = currentThread->next;
     do
     {
-        /* We don't worry about paused threads here. They will be waked by the
-         * action of unlocking a mutex most likely. */
+        /* We don't worry about paused threads here. They will be woken
+         * by the action of unlocking a mutex most likely. */
         if (thread->status == sleeping)
         {
             if (timerTicks > thread->sleepOverTime)
@@ -159,8 +157,9 @@ void schedule()
         }
         else if (thread->status == zombie)
         {
-            /// todo: if the thread has a mutex lock or is waiting on a mutex,
-            /// then unlock the mutex or remove it from the waiting queue.
+            /// todo: if the thread has a mutex lock or is waiting on a
+            /// mutex, then unlock the mutex or remove it from the
+            /// waiting queue.
             if (thread == currentThread)
             {
                 if (unlikely(thread->next == thread))
@@ -199,6 +198,7 @@ Thread *spawn(String name, ThreadFunc (*func)())
     thread->next->previous = thread;
     thread->previous = currentThread;
     thread->waitingNext = NULL;
+    thread->process = NULL;
     currentThread->next = thread;
     threadingUnlock();
     return thread;
@@ -257,6 +257,14 @@ MutexReply mutexAcquireLock(Mutex *mutex)
     mutex->thread = currentThread;
     mutex->locked = true;
     return (MutexReply){ .accepted = true, .mutex = mutex };
+}
+
+/* A read lock will block general locks, but allow other threads to acquire
+ * read locks of their own */
+MutexReply mutexAcquireReadLock(Mutex *mutex)
+{
+    panic("not implemented");
+    return (MutexReply){ .accepted = false, .mutex = NULL };
 }
 
 /* When a mutex lock is completely released (multiplicity 0) then we want

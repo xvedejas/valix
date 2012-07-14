@@ -1,4 +1,4 @@
-/*  Copyright (C) 2011 Xander Vedejas <xvedejas@gmail.com>
+/*  Copyright (C) 2012 Xander Vedejas <xvedejas@gmail.com>
  *  Conversion functions Copyright 1988 Regents of the University of California
  *
  *  This program is free software: you can redistribute it and/or modify
@@ -32,6 +32,7 @@ VarList *varListDataNew(Size size)
     return table;
 }
 
+/* Set the value of a variable in a given world */
 void varListDataSetValue(VarList *table, Object *var, Object *world, Object *value)
 {
     assert(++table->entries <= table->capacity, "varList error");
@@ -62,6 +63,7 @@ void varListDataSetValue(VarList *table, Object *var, Object *world, Object *val
     buckets[hash].next = newListItem;
 }
 
+/* Get the value of a variable in a given world */
 Object *varListDataGet(VarList *table, Object *var, Object *world)
 {
     Size size = table->size;

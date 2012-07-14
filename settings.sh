@@ -9,4 +9,4 @@ CCARGS="-O3 -m32 -nostdlib -nostartfiles -nodefaultlibs"
 LDARGS=""
 BUILDLOG="buildlog.txt"
 GRUB_MKRESCUE=`which grub-mkrescue`
-QEMU=`which qemu`
+QEMU="kvm"

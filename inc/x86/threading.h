@@ -1,4 +1,4 @@
-/*  Copyright (C) 2011 Xander Vedejas <xvedejas@gmail.com>
+/*  Copyright (C) 2012 Xander Vedejas <xvedejas@gmail.com>
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -11,8 +11,7 @@
  *  GNU General Public License for more details.
  *
  *  You should have received a copy of the GNU General Public License
- *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
- *
+ *  along with this program.  If not, see <http://www.gnu.org/licenses/>
  */
 
 #ifndef __threading_h__
@@ -21,8 +20,8 @@
 
 /* threading.h deals with threads, which are in this case simultaneous
  * executions of the kernel binary. Valix "processes" only exist from a
- * userspace point of view, and are, at the lowest level, actually just kernel
- * threads. */
+ * userspace point of view, and are, at the lowest level, actually just
+ * kernel threads. */
 
 #define ThreadFunc void __attribute__((fastcall))
 #define threadingLock() threadingLockObj++
@@ -80,7 +79,11 @@ typedef struct thread
     /* If this thread is waiting on a mutex, any other threads in line for the
      * same mutex */
     struct thread *waitingNext;
+    /* The corresponding process in the vm, if any (else NULL) */
+    struct object *process;
 } Thread;
+
+Thread *currentThread;
 
 /* Thread destruction must remove the thread's pid from any mutex that believes
  * the thread might be waiting on it. This should only be a problem when killing
@@ -103,7 +106,8 @@ void threadPromote(Thread *thread);
 typedef struct mutex
 {
     bool locked;
-    /* How many times it is locked */
+    /* How many times it is locked. A thread can request a lock on a resource
+     * multiple times, and it must release that resource that many times */
     u32 multiplicity;
     /* Thread under control of this mutex */
     Thread *thread;

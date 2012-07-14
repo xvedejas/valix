@@ -1,4 +1,4 @@
-/*  Copyright (C) 2011 Xander Vedejas <xvedejas@gmail.com>
+/*  Copyright (C) 2012 Xander Vedejas <xvedejas@gmail.com>
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -97,13 +97,18 @@ extern Size memUsed();
 extern Size memFree();
 extern void mmInstall(MultibootStructure *multiboot);
 
+/* malloc() will allocate memory then identify the allocated memory with the
+ * current thread. When the thread ends, it will automatically free the memory
+ * that it keeps track of. Use kalloc() for memory which has a lifetime not
+ * associated with the current thread. */
 #define malloc(_size) _kalloc(_size, getCurrentThread(), __FILE__, __LINE__)
 #define kalloc(_size, _thread) _kalloc(_size, _thread, __FILE__, __LINE__)
+#define free(_mem) _free(_mem, __FILE__, __LINE__)
 
 extern void *_kalloc(Size size, struct thread *thread, String file, Size line);
 extern void *calloc(Size amount, Size elementSize);
 extern bool isAllocated(void *memory);
-extern void free(void *memory);
+extern void _free(void *memory, String file, Size line);
 extern void *realloc(void *memory, Size size);
 extern void meminfo();
 extern void coreDump();

@@ -1,4 +1,4 @@
-;  Copyright (C) 2011 Xander Vedėjas <xvedejas@gmail.com>
+;  Copyright (C) 2012 Xander Vedėjas <xvedejas@gmail.com>
 ;
 ;  This program is free software: you can redistribute it and/or modify
 ;  it under the terms of the GNU General Public License as published by
@@ -65,19 +65,19 @@ startGdt:
     gdtGranularity1 : db 0
     gdtBaseHigh1    : db 0
     
-    gdtLimitLow2   : dw 0xFFFF
-    gdtBaseLow2    : dw 0
-    gdtBaseMiddle2 : db 0
+    gdtLimitLow2    : dw 0xFFFF
+    gdtBaseLow2     : dw 0
+    gdtBaseMiddle2  : db 0
     gdtAccess2      : db 0x9A
     gdtGranularity2 : db 0xCF
-    gdtBaseHigh2   : db 0
+    gdtBaseHigh2    : db 0
     
-    gdtLimitLow3   : dw 0xFFFF
-    gdtBaseLow3    : dw 0
-    gdtBaseMiddle3 : db 0
+    gdtLimitLow3    : dw 0xFFFF
+    gdtBaseLow3     : dw 0
+    gdtBaseMiddle3  : db 0
     gdtAccess3      : db 0x92
     gdtGranularity3 : db 0xCF
-    gdtBaseHigh3   : db 0
+    gdtBaseHigh3    : db 0
 endGdt:
 gp:
     gpLimit: rw 1
@@ -142,6 +142,7 @@ isrCommonStub:
     add esp, 8     ; Cleans up the pushed error code and pushed ISR number
     sti
     iret           ; pops 5 things at once: CS, EIP, EFLAGS, SS, and ESP
+    
 rept 16 i:0
 {
     public irq#i
@@ -151,6 +152,7 @@ rept 16 i:0
         push 32 + i
         jmp irqCommonStub
 }
+
 extern irqHandler
 irqCommonStub:
     pusha
@@ -175,15 +177,15 @@ irqCommonStub:
     iret
 
 reboot:
-    mov al,0x02
-@@: mov bl,al
-    and bl,0x02
-    cmp bl,0
+    mov al, 0x02
+@@: mov bl, al
+    and bl, 0x02
+    cmp bl, 0
     je @f
-    in al,0x64
+    in al, 0x64
     jmp @b
-@@: mov al,0xFE
-    out 0x64,al
+@@: mov al, 0xFE
+    out 0x64, al
     cli
     hlt
 

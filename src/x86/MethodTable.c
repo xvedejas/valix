@@ -1,4 +1,4 @@
-/*  Copyright (C) 2011 Xander Vedejas <xvedejas@gmail.com>
+/*  Copyright (C) 2012 Xander Vedejas <xvedejas@gmail.com>
  *  Conversion functions Copyright 1988 Regents of the University of California
  *
  *  This program is free software: you can redistribute it and/or modify
@@ -20,10 +20,6 @@
 #include <data.h>
 #include <vm.h>
 #include <cstring.h>
-
-/* The MethodTable data type is a hashtable mapping symbol objects to
- * method objects. Its size is static, so the number of methods to put into the
- * table must be known on allocation. */
 
 MethodTable *methodTableDataNew(Size number)
 {

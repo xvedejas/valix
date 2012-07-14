@@ -1,4 +1,4 @@
-/*  Copyright (C) 2011 Xander Vedejas <xvedejas@gmail.com>
+/*  Copyright (C) 2012 Xander Vedejas <xvedejas@gmail.com>
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -95,16 +95,6 @@ Size matchKeyword(String source, Size start)
     return 0;
 }
 
-Size matchSymbol(String source, Size start)
-{
-    Size index = 0;
-    while (source[start + index] != ' ' &&
-           source[start + index] != '\n' &&
-           source[start + index] != '\t' &&
-           source[start + index] != '\0') index++;
-    return index;
-}
-
 Size matchNumber(String source, Size start)
 {
     Size index;
@@ -162,6 +152,28 @@ Size matchString(String source, Size start)
     }
     lexerError("this should never be reached");
     return 0;
+}
+
+/// Todo: if the symbol contents switch from alnum to special characters or
+/// vice-versa, also stop matching for it
+Size matchSymbol(String source, Size start)
+{
+    Size index = 0;
+    /* The contents of any string are treated like a symbol with '#'.
+     * For example, (#abc == #"abc"), and #"a b c" must be written this way  */
+    if (source[start + index] == '"')
+        return matchString(source, start);
+    do
+    {
+        switch (source[start + index])
+        {
+            case ' ': case '\n': case '\t': case '\0': case ',': case '[':
+            case ']': case '(': case ')': case '{': case '}':
+                return index;
+            default: break;
+        }        
+        index++;
+    } while (true);
 }
 
 Size matchComment(String source, Size start)
@@ -237,7 +249,7 @@ Token *lex(String source, Token *lastToken)
     {
         switch(source[i])
         {
-            case '#': // #symbol
+            case '#': // denots a #symbol, a unique string
             {
                 i++;
                 Size length = matchSymbol(source, i);
@@ -265,7 +277,8 @@ Token *lex(String source, Token *lastToken)
                     i += length;
                     break;
                 }
-            } /* Do not break here, fall through */
+            } /* Do not break here, fall through because '/' is not actually
+                 representing the start of a comment */
             case '=': case '@': case '%':
             {
                 if (source[i] == '=' && source[i+1] == ' ')
@@ -336,17 +349,17 @@ Token *lex(String source, Token *lastToken)
                 i += length;
                 return tokenNew(stringToken, data, i);
             } break;
-            case '(': i++; column++; return tokenNew(openParenToken, NULL, i);    break;
-            case ')': i++; column++; return tokenNew(closeParenToken, NULL, i);   break;
-            case '{': i++; column++; return tokenNew(openBraceToken, NULL, i);    break;
-            case '}': i++; column++; return tokenNew(closeBraceToken, NULL, i);   break;
-            case '[': i++; column++; return tokenNew(openBracketToken, NULL, i);  break;
-            case ']': i++; column++; return tokenNew(closeBracketToken, NULL, i); break;
-            case '.': i++; column++; return tokenNew(stopToken, NULL, i);         break;
-            case ',': i++; column++; return tokenNew(commaToken, NULL, i);        break;
-            case ':': i++; column++; return tokenNew(colonToken, NULL, i);        break;
-            case ';': i++; column++; return tokenNew(semiToken, NULL, i);         break;
-            case '|': i++; column++; return tokenNew(pipeToken, NULL, i);         break;
+case '(': i++; column++; return tokenNew(openParenToken, NULL, i);    break;
+case ')': i++; column++; return tokenNew(closeParenToken, NULL, i);   break;
+case '{': i++; column++; return tokenNew(openBraceToken, NULL, i);    break;
+case '}': i++; column++; return tokenNew(closeBraceToken, NULL, i);   break;
+case '[': i++; column++; return tokenNew(openBracketToken, NULL, i);  break;
+case ']': i++; column++; return tokenNew(closeBracketToken, NULL, i); break;
+case '.': i++; column++; return tokenNew(stopToken, NULL, i);         break;
+case ',': i++; column++; return tokenNew(commaToken, NULL, i);        break;
+case ':': i++; column++; return tokenNew(colonToken, NULL, i);        break;
+case ';': i++; column++; return tokenNew(semiToken, NULL, i);         break;
+case '|': i++; column++; return tokenNew(pipeToken, NULL, i);         break;
             case '\n':
                 line++;
                 column = 0;

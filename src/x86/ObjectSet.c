@@ -1,4 +1,4 @@
-/*  Copyright (C) 2011 Xander Vedejas <xvedejas@gmail.com>
+/*  Copyright (C) 2012 Xander Vedejas <xvedejas@gmail.com>
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -73,8 +73,11 @@ void _objectSetTestResize(ObjectSet *set)
     set->B = calloc(sizeof(ObjectSetBucket), set->sizeB);
 }
 
+// (Forward declaration)
 bool _objectSetAdd(ObjectSet *set, Object *obj, bool doMove);
 
+/* Copies one object from table A to table B. If there are no more objects in
+ * table A, then it deallocates table A, replacing it with table B */
 void _objectSetCopyFromAToB(ObjectSet *set)
 {
     if (set->entriesA == 0)
@@ -102,7 +105,7 @@ void _objectSetCopyFromAToB(ObjectSet *set)
     {
         set->A[i].key = next->key;
         set->A[i].next = next->next;
-        free(next);
+        free(next); /// there is a problem here, "next" is sometimes 0x1...
     }
     else
     {

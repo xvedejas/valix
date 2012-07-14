@@ -1,4 +1,4 @@
-/*  Copyright (C) 2011 Xander Vedejas <xvedejas@gmail.com>
+/*  Copyright (C) 2012 Xander Vedejas <xvedejas@gmail.com>
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -25,6 +25,7 @@
 // General Functions //
 ///////////////////////
 
+// Hash string by its contents
 extern Size stringHash(String s);
 // Increase some size by 50% rounded up
 extern Size nextSize(Size size);
@@ -49,6 +50,21 @@ extern bool isStringInterned(InternTable *table, String string);
 /////////////////////
 // Stack Interface //
 /////////////////////
+
+// FILO data structure
+
+typedef struct
+{
+	/* "size" is the number of items, "capacity" is the number of items the
+	 * stack can hold until a resize is needed. */
+	Size size, capacity;
+	void **array;
+} Stack;
+
+Stack *stackNew();
+void stackPush(Stack *stack, void *value);
+void *stackPop(Stack *stack);
+void stackDel(Stack *stack);
 
 /////////////////////////////
 // StringBuilder Interface //

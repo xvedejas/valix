@@ -1,4 +1,4 @@
-/*  Copyright (C) 2011 Xander Vedejas <xvedejas@gmail.com>
+/*  Copyright (C) 2012 Xander Vedejas <xvedejas@gmail.com>
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -21,6 +21,9 @@
 
 #include <main.h>
 #include <vm.h>
+
+/* ObjectSet is an unordered set of vm objects. It is designed as a hash table
+ * so that checking whether an item is in the set is a fast operation. */
 
 typedef struct objectSetBucket
 {

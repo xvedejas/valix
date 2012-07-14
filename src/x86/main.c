@@ -1,4 +1,4 @@
-/*  Copyright (C) 2011 Xander Vedejas <xvedejas@gmail.com>
+/*  Copyright (C) 2012 Xander Vedejas <xvedejas@gmail.com>
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -85,6 +85,7 @@ void outd(u16 port, u32 data)
     asm volatile("outl %1, %0" :: "dN" (port), "a" (data));
 }
 
+/* Lets us print to serial out */
 void debugInstall()
 {   
     outb(0x3f8 + 1, 0x00);
@@ -193,7 +194,8 @@ void printf(const char *format, ...)
 void _panic(String file, u32 line)
 {
     printf("\n\nPineapple pieces in brine...\n");
-    printf("File: '%s'\nLine: %i\nThread: %s %i\n", file, line, getCurrentThread()->name, getCurrentThread()->pid);
+    printf("File: '%s'\nLine: %i\nThread: %s %i\n", file, line,
+        getCurrentThread()->name, getCurrentThread()->pid);
     endThread();
 }
 
@@ -244,7 +246,8 @@ void pciinfo()
                     continue;
 
                 // Get the basic PCI header information
-                PciConfigHeaderBasic header = pciGetBasicConfigHeader(bus, dev, func);
+                PciConfigHeaderBasic header =
+                    pciGetBasicConfigHeader(bus, dev, func);
 
                 // ONLY mess with the bars for header type 0
                 if (header.headerType)
@@ -281,7 +284,11 @@ void pciinfo()
 
 ThreadFunc testVM()
 {
-    compile(getstring());
+	while (true)
+	{
+        interpret(compile(getstring()));
+        printf("mem used: %x\n", memUsed());
+	}
     printf("\nDone.");
 }
 

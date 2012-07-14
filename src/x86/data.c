@@ -1,4 +1,4 @@
- /*  Copyright (C) 2011 Xander Vedejas <xvedejas@gmail.com>
+ /*  Copyright (C) 2012 Xander Vedejas <xvedejas@gmail.com>
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -31,6 +31,8 @@ Size nextSize(Size size)
 
 Size valueHash(void *value)
 {
+    /* This seems to work fine enough for pointers, but we probably want to find
+     * a hashing method that distributes results more evenly across 32 bits */
     return (Size)value >> 2;
 }
 
@@ -119,13 +121,51 @@ void stringBuilderPrint(StringBuilder *sb)
         putch(sb->s[i]);
 }
 
+//////////////////////////
+// Stack Implementation //
+//////////////////////////
+
+// FILO data structure
+
+const Size stackInitialCapacity = 4;
+
+Stack *stackNew()
+{
+	Stack *stack = malloc(sizeof(Stack));
+	stack->size = 0;
+	stack->capacity = stackInitialCapacity;
+	stack->array = malloc(sizeof(void*) * stackInitialCapacity);
+	return stack;
+}
+
+void stackPush(Stack *stack, void *value)
+{
+	if (stack->size >= stack->capacity)
+	{
+		stack->capacity = nextSize(stack->capacity);
+		stack->array = realloc(stack->array, stack->capacity);
+	}
+	stack->array[stack->size++] = value;
+}
+
+void *stackPop(Stack *stack)
+{
+	/// todo: shrink the stack if the size is significantly lower than capacity
+	return stack->array[--stack->size];
+}
+
+void stackDel(Stack *stack)
+{
+	free(stack->array);
+	free(stack);
+}
+
 ////////////////////////////////
 // InternTable Implementation //
 ////////////////////////////////
 
 /* The intern table returns a number (0, 1, 2, 3...) for each unique string
- * given. The same number is always returned for the same string. The limit is
- * the processor word size. */
+ * given. The same number is always returned for the same string. */
 
 InternTable *internTableNew()
 {

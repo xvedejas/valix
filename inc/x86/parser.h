@@ -1,4 +1,4 @@
-/*  Copyright (C) 2011 Xander Vedejas <xvedejas@gmail.com>
+/*  Copyright (C) 2012 Xander Vedejas <xvedejas@gmail.com>
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -50,6 +50,7 @@ typedef enum
     extendedBC32 = 0xF2, // 32 bits
     extendedBC64 = 0xF3, // 64 bits
     extendedBC128 = 0xF4, // 128 bits
+    // etc
 } bytecodeCommand;
 
 extern const String bytecodes[];

@@ -118,7 +118,7 @@ void acpiInstall()
         printf("ACPI Enabled\n");
     }
     
-    // next we'll want to parse the dsdt
+    /// next we'll want to parse the dsdt
     
     acpiInstalled = true;
 }

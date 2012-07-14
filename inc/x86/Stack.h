@@ -1,4 +1,4 @@
- /*  Copyright (C) 2011 Xander Vedejas <xvedejas@gmail.com>
+/*  Copyright (C) 2012 Xander Vedejas <xvedejas@gmail.com>
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -17,8 +17,26 @@
  *      Xander Vedėjas <xvedejas@gmail.com>
  */
  
-#include <Process.h>
-#include <threading.h>
-#include <mm.h>
+#ifndef __Stack_h__
+#define __Stack_h__
+#include <main.h>
 
+/////////////////////
+// Stack Interface //
+/////////////////////
+
+// FILO data structure
+
+typedef struct
+{
+	/* "size" is the number of items, "capacity" is the number of items the
+	 * stack can hold until a resize is needed. */
+	Size size, capacity;
+	void **array;
+} Stack;
+
+Stack *stackNew();
+void stackPush(Stack *stack, void *value);
+void *stackPop(Stack *stack);
+void stackDel(Stack *stack);
 

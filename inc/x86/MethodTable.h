@@ -1,4 +1,4 @@
- /*  Copyright (C) 2011 Xander Vedejas <xvedejas@gmail.com>
+ /*  Copyright (C) 2012 Xander Vedejas <xvedejas@gmail.com>
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -21,6 +21,10 @@
 
 #include <vm.h>
 #include <main.h>
+
+/* The MethodTable data type is a hashtable mapping symbol objects to
+ * method objects. Its size is static, so the number of methods to put into the
+ * table must be known on allocation. */
 
 typedef Object *MethodTableBucket[2];
 

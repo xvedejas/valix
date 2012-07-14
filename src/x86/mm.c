@@ -1,4 +1,4 @@
-/*  Copyright (C) 2011 Xander Vedejas <xvedejas@gmail.com>
+/*  Copyright (C) 2012 Xander Vedejas <xvedejas@gmail.com>
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -307,7 +307,7 @@ bool isAllocated(void *memory)
     return true;
 }
 
-void free(void *memory)
+void _free(void *memory, String file, Size line)
 {
     mutexAcquireLock(&mmLockMutex);
     if (unlikely(memory == NULL))
@@ -326,19 +326,21 @@ void free(void *memory)
     
     if (unlikely(header->startMagic != mmMagic || header->endMagic != mmMagic))
     {
-        /* This is not necessarily a bad thing, just happens when the memory given to be
-         * freed is in the stack or something, not handled by the memory manager */
+        /* This is not an end-all thing, just happens when the memory given to
+         * be freed is in the stack or something, not handled by the memory
+         * manager. It's probably a symptom of a bug, however. */
         printf("Incorrect freeing of unallocated pointer at %x, ignoring.\n", memory);
+        printf("Called from %s, line %i\n", file, line);
         mutexReleaseLock(&mmLockMutex);
         return;
     }
     
     if (unlikely(header->free))
     {
-        /* This is not a bad thing, but probably shouldn't happen either. */
-#ifndef __release__
+        /* This is not an end-all thing, but really shouldn't happen either. */
         printf("Memory at %x already freed, ignoring.\n", memory);
-#endif
+        printf("Called from %s, line %i\n", file, line);
+        
         mutexReleaseLock(&mmLockMutex);
         return;
     }

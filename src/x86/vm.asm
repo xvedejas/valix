@@ -1,4 +1,4 @@
-;  Copyright (C) 2011 Xander Vedėjas <xvedejas@gmail.com>
+;  Copyright (C) 2012 Xander Vedėjas <xvedejas@gmail.com>
 ;
 ;  This program is free software: you can redistribute it and/or modify
 ;  it under the terms of the GNU General Public License as published by
@@ -21,35 +21,6 @@ include '../../inc/x86/asm.inc'
 ; Instead, we rely on the VM's ability to check types and perform implicit
 ; conversions by sending messages to objects to obtain the desired C type if an
 ; object is given instead.
-func callInternalOld
-    function equ [ebp+8]
-    argc     equ [ebp+12]
-    self     equ [ebp+16]
-    va_list  equ [ebp+20]
-    
-    mov ecx, argc
-    mov ebx, ecx
-    
-    cmp ecx, 0
-    je @f
-    
-    mov eax, va_list
-    ; eax += (ebx = 4*ecx)
-    shl ebx, 2
-    add eax, ebx
-    
-topOld:
-    lea eax, [eax-4]
-    push dword [eax]
-    loop topOld
-
-@@: push dword self
-    
-    call dword function
-    add esp, ebx
-    add esp, 4
-endfunc
-
 func callInternal
     function equ [ebp+8]
     argc     equ [ebp+12]

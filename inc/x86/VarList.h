@@ -1,4 +1,4 @@
-/*  Copyright (C) 2011 Xander Vedejas <xvedejas@gmail.com>
+/*  Copyright (C) 2012 Xander Vedejas <xvedejas@gmail.com>
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -20,7 +20,11 @@
 #define __VarList_h__
 
 #include <main.h>
-#include <vm.h>
+
+/* This is essentially a hash table mapping variable symbols to a list. Each
+ * item in the list is basically a (world, value) tuple. */
+
+typedef struct object Object;
 
 typedef struct varListItem
 {

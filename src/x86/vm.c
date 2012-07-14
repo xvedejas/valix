@@ -1,4 +1,4 @@
- /*  Copyright (C) 2011 Xander Vedejas <xvedejas@gmail.com>
+ /*  Copyright (C) 2012 Xander Vedejas <xvedejas@gmail.com>
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -27,6 +27,8 @@
 #include <VarList.h>
 #include <Number.h>
 #include <String.h>
+#include <parser.h>
+#include <threading.h>
 
 /* TODO:
  * 
@@ -34,6 +36,37 @@
  * bytecode extend command
  * 
  */
+
+// call as readValue(process->bytecode, &process->IP);
+// This function reads in a 32-bit value from bytecode
+Size readValue(u8 *bytecode, Size *IP)
+{	u8 _val = *bytecode;
+	Size result = -1;
+	if ((_val & 0xF0) == 0xF0)
+	{
+		*IP++;
+		switch (_val & 0x0F)
+		{
+			case 0:
+			    result = bytecode[*IP];
+			    *IP++;
+			break;
+			case 1:
+			    result = bytecode[*IP] | (bytecode[*IP + 1] << 8);
+			    *IP += 2;
+			break;
+			case 2:
+				result = bytecode[*IP] | (bytecode[*IP + 1] << 8)
+					| (bytecode[*IP + 2] << 16) | (bytecode[*IP + 3] << 24);
+			    *IP += 4;
+			break;
+			default:
+			    panic("Not implemented");
+			break;
+		}
+	}
+	return result;
+}
 
 ObjectSet *globalObjectSet;
 
@@ -44,6 +77,7 @@ extern Object *callInternal(void *function, Size argc, va_list args);
 Object *object_bind(Object *self, Object *symbol);
 Object *methodTable_get(Object *self, Object *symbol);
 
+/* Always use this method when creating new objects */
 Object *object_new(Object *self)
 {
     Object *new = malloc(sizeof(Object));
@@ -277,6 +311,17 @@ Object *closure_newInternal(Object *self, void *function, String argString)
     return new;
 }
 
+Object *closure_new(Object *self, Object *process)
+{
+	u8 *bytecode = ((Process*)process->data)->bytecode;
+	Size *IP = &((Process*)process->data)->IP;
+	Size varCount = readValue(bytecode, IP); // does not include arg count
+	Size argCount = readValue(bytecode, IP);
+	printf("var count %i, arg count %i\n", varCount, argCount);
+	panic("not implemented");
+	return NULL;
+}
+
 Object *methodTable_get(Object *self, Object *symbol)
 {
 	return methodTableDataGet(self->data, symbol);
@@ -320,6 +365,37 @@ Object *trait_new(Object *self)
 {
     panic("Not implemented");
     return NULL;
+}
+
+Object *scope_new(Object *self, Object *parent)
+{
+	panic("Not implemented");
+	return NULL;
+}
+
+/* This does not create a new thread for the process. This only tries to make a
+ * new process object corresponding to the current thread. */
+Object *process_new(Object *self, Object *block)
+{
+	if (currentThread->process != NULL)
+		return currentThread->process;
+    Object *process = object_new(self);
+    Process *data = malloc(sizeof(Process));
+    process->data = data;
+    
+    data->global = scope_new(scopeProto, block);
+    data->scope = scope_new(scopeProto, block);
+    data->parent = NULL;
+    data->values = stackNew();
+    data->scopes = stackNew();
+    currentThread->process = process;
+    return process;
+}
+
+Object *process_spawn(Object *self, Object *block)
+{
+	panic("not implemented!");
+	return NULL;
 }
 
 void vmInstall()
@@ -413,8 +489,162 @@ void vmInstall()
     Object *traitProto = object_new(objectProto);
     traitProto->methodTable = traitMT;
     
+    Object *scopeMT = methodTable_new(methodTableMT, 1);
+    Object *scopeProto = object_new(objectProto);
+    scopeProto->methodTable = scopeMT;
+    
     methodTable_addClosure(traitMT, symbol("new"),
         closure_newInternal(closureProto, trait_new, "oo"));
     
     stringInstall();
+}
+
+Object *scope_lookupVar(Object *scope, Object *symbol)
+{
+	panic("not implemented");
+	return NULL;
+}
+
+void scope_setVar(Object *scope, Object *symbol, Object *value)
+{
+    panic("not implemented");
+}
+
+/* This function is called by interpret at the beginning of executing a
+ * closure, to account for the header which tells info about the variables and
+ * arguments available to the closure */
+void closureSetup(Object *process)
+{
+	panic("not implemented");
+}
+
+/* Sets up intern table from the bytecode header */
+void bytecodeSetup(Object *process)
+{
+	u8 *bytecode = ((Process*)process->data)->bytecode;
+	/* The first byte(s) are the number of interned symbols present in the
+	 * bytecode segment */
+	Size symbolCount = readValue(bytecode, &((Process*)process->data)->IP);
+}
+
+/* We are entering a new scope. The new scope's caller is the last scope. */
+void processPushScope(Object *processObj, Object *scopeObj)
+{
+    Scope *scope = scopeObj->data;
+    Process *process = processObj->data;
+	scope->caller = process->scope;
+    stackPush(process->scopes, scope);
+}
+
+/* We are exiting the current scope, back to the caller scope. */
+Object *processPopScope(Object *processObj)
+{
+    Process *process = processObj->data;
+    return stackPop(process->scopes);
+    /* It is important to note that we do not free the scope we are leaving
+     * here. In fact, some of its local variables could still be referenced
+     * by closures defined in that scope and possibly returned by that scope.
+     * This is part of the reason we rely on garbage collection to destroy
+     * the scope later on */
+}
+
+void processPushValue()
+{
+	panic("not implemented");
+}
+
+Object *processPopValue()
+{
+	panic("not implemented");
+    return NULL;
+}
+
+#define currentScope process->scope
+#define currentBlock process->scope->block
+#define stack process->stack
+
+void interpret(u8 *bytecode)
+{
+	if (currentThread->process == NULL)
+		currentThread->process = process_new(objectProto, closureProto);
+	Object *process = currentThread->process;
+	
+	/* first, the byte code has a section of interned variable names which we
+	 * must turn into a table */
+	bytecodeSetup(process);
+	closureSetup(process);
+	Object *closure = closure_new(objectProto, process);
+	// If there is no current process, we create one.
+	
+	while (true)
+	{
+		printf("%x\n", *bytecode);
+		switch (*bytecode)
+		{
+			case integerBC:
+				panic("not implemented");
+            break;
+			case doubleBC:
+				panic("not implemented");
+            break;
+			case stringBC:
+				panic("not implemented");
+            break;
+			case charBC:
+				panic("not implemented");
+            break;
+			case symbolBC:
+				panic("not implemented");
+            break;
+			case arrayBC:
+				panic("not implemented");
+            break;
+			case blockBC:
+				/*Object *closure = */closure_new(closureProto, process);
+				// increment bytecode until the end of this closure
+				panic("not implemented");
+            break;
+			case variableBC:
+				panic("not implemented");
+            break;
+			case messageBC:
+				panic("not implemented");
+            break;
+			case stopBC:
+				panic("not implemented");
+            break;
+			case setBC:
+				panic("not implemented");
+            break;
+			case endBC:
+				panic("not implemented");
+            break;
+			case objectBC:
+				panic("not implemented");
+            break;
+			case traitBC:
+				panic("not implemented");
+            break;
+			case extendedBC8:
+				panic("not implemented");
+            break;
+			case extendedBC16:
+				panic("not implemented");
+            break;
+			case extendedBC32:
+				panic("not implemented");
+            break;
+			case extendedBC64:
+				panic("not implemented");
+            break;
+			case extendedBC128:
+				panic("not implemented");
+            break;
+			default:
+				panic("not implemented");
+			break;
+		}
+		bytecode++;
+	}
+	panic("not implemented");
 }

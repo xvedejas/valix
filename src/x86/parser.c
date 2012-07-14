@@ -1,4 +1,4 @@
-/*  Copyright (C) 2011 Xander Vedejas <xvedejas@gmail.com>
+/*  Copyright (C) 2012 Xander Vedejas <xvedejas@gmail.com>
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -47,7 +47,7 @@ const Size maxKeywordCount = 8;
  * objDef ::= '@{' stmt (',' stmt)* '|'
  *     (Keyword (',' Keyword)* '|')? methodList '}'
  * traitDef ::= '#{' methodList '}'
- * value ::= array | block | Integer | Double | String | Char | objDef | traitDef
+ * value ::= array | block | Int | Double | String | Char | objDef | traitDef
  * array ::= '[' (stmt (',' stmt)*)? ']'
  * 
  * top ::= blockHeader stmt
@@ -223,6 +223,7 @@ u8 *compile(String source)
         stringBuilderAppendChar(ps->sb, byte);
     }
     
+    // lsb out first
     void outWord(u16 word, ParseStructure *ps)
     {
         outByte(extendedBC16, ps);
@@ -230,6 +231,7 @@ u8 *compile(String source)
         outByte((word >> 8) & 0xFF, ps);
     }
     
+    // lsb out first
     void outDWord(u32 dword, ParseStructure *ps)
     {
         outByte(extendedBC32, ps);
@@ -238,6 +240,22 @@ u8 *compile(String source)
         outByte((dword >> 16) & 0xFF, ps);
         outByte((dword >> 24) & 0xFF, ps);
     }
+    
+    // lsb out first
+    // For 64-bit code
+    /*
+    void outQWord(u64 qword, ParseStructure *ps)
+    {
+        outByte(extendedBC64, ps);
+        outByte(qword & 0xFF, ps);
+        outByte((qword >> 8) & 0xFF, ps);
+        outByte((qword >> 16) & 0xFF, ps);
+        outByte((qword >> 24) & 0xFF, ps);
+        outByte((qword >> 32) & 0xFF, ps);
+        outByte((qword >> 40) & 0xFF, ps);
+        outByte((qword >> 48) & 0xFF, ps);
+        outByte((qword >> 56) & 0xFF, ps);
+    }*/
     
     void outVal(Size word, ParseStructure *ps)
     {
@@ -505,7 +523,7 @@ u8 *compile(String source)
             } break;
             case openObjectBraceToken:
             {
-                /* Format:
+                /* Output Format:
                  * 
                  * [ObjectBC] [trait count] [var count] [var intern]* [method count]
                  * 

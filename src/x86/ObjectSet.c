@@ -48,11 +48,13 @@ ObjectSet *objectSetNew()
     return set;
 }
 
+/* This is the threshhold at which we need to start expanding the hash table */
 Size _objectSetThreshhold(Size size)
 {
     return (size >> 1) + (size >> 2); // 75% rounded down
 }
 
+/* This is the next size of hashtable to create */
 Size _objectSetNextSize(Size oldSize)
 {
     return oldSize << 1; // 200%
@@ -60,8 +62,8 @@ Size _objectSetNextSize(Size oldSize)
 
 void _objectSetTestResize(ObjectSet *set)
 {
-    /* Here, we have just added an element to A. B should be NULL. See if we
-     * need to create B. */
+    /* This is called after adding an element to A when B is NULL. See if we
+     * need to create a new B because we've exceeded the threshhold */
     
     assert(set->B == NULL, "ObjectSet error");
     
@@ -106,6 +108,7 @@ void _objectSetCopyFromAToB(ObjectSet *set)
         set->A[i].key = next->key;
         set->A[i].next = next->next;
         free(next); /// there is a problem here, "next" is sometimes 0x1...
+        /// requires more debugging
     }
     else
     {

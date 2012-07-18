@@ -70,7 +70,13 @@ PciConfigHeaderBasic pciGetBasicConfigHeader(u8 bus, u8 slot, u8 func)
     pciHeader.classSubclass             = pciConfigReadByte(bus, slot, func, 0x0A);
     pciHeader.classBase                 = pciConfigReadByte(bus, slot, func, 0x0B);
     pciHeader.headerType                = pciConfigReadByte(bus, slot, func, 0x0E);
-    
+    pciHeader.baseAddr[0]               = pciConfigReadDword(bus, slot, func, 0x10);
+    pciHeader.baseAddr[1]               = pciConfigReadDword(bus, slot, func, 0x14);
+    pciHeader.baseAddr[2]               = pciConfigReadDword(bus, slot, func, 0x18);
+    pciHeader.baseAddr[3]               = pciConfigReadDword(bus, slot, func, 0x1C);
+    pciHeader.baseAddr[4]               = pciConfigReadDword(bus, slot, func, 0x20);
+    pciHeader.baseAddr[5]               = pciConfigReadDword(bus, slot, func, 0x24);
+    pciHeader.interruptLine             = pciConfigReadByte(bus, slot, func, 0x3C);
     return pciHeader;
 }
 

@@ -61,7 +61,6 @@ typedef s8 *String;
 
 volatile umax timerTicks;
 const Size systemStackSize;
-void timerWait(int ticks);
 
 extern volatile u32 indention;
 
@@ -73,6 +72,7 @@ extern void outw(u16 port, u16 data);
 extern void outws(u16 port, u16 *data, Size size);
 extern u32 ind(u16 port);
 extern void outd(u16 port, u32 data);
+extern void outl(u32 port, u32 data);
 
 extern void printf(const char *format, ...);
 extern void putch(u8 c);

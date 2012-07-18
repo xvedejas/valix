@@ -162,10 +162,16 @@ u8 getchar()
     u8 c;
     while (true)
     {
+        /* Input from serial port */
+        if (inb(0x3f8 + 5) & 0x01)
+            return inb(0x3f8);
+            
         Keystroke key = lastStroke;
+        lastStroke.scancode = 0;
+        
         if (key.scancode == 0x00)
             continue;
-        lastStroke.scancode = 0;
+        
         c = translateQWERTY(key);
         if (c != 0)
             return c;
@@ -180,7 +186,7 @@ String getstring()
     Size i = 0;
     Size end = 0;
     u8 c;
-    while ((c = getchar()) != '\n')
+    for (c = getchar(); c != '\n' && c != '\r'; c = getchar())
     {
         switch (c)
         {

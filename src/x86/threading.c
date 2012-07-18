@@ -157,6 +157,7 @@ void schedule()
         }
         else if (thread->status == zombie)
         {
+            /* Here we delete the thread */
             /// todo: if the thread has a mutex lock or is waiting on a
             /// mutex, then unlock the mutex or remove it from the
             /// waiting queue.
@@ -328,4 +329,16 @@ bool threadExists(Thread *thread)
     } while ((current = current->next) != first);
     threadingUnlock();
     return false;
+}
+
+Timer timerSet(Size milliseconds)
+{
+    Timer timer = { .end = timerTicks + milliseconds * systemClockFreq / 1000,
+                    .thread = currentThread };
+    return timer;
+}
+
+bool timerDone(Timer t)
+{
+    return timerTicks = t.end;
 }

@@ -44,4 +44,8 @@ typedef struct
     VarBucket buckets[0];
 } VarList;
 
+VarList *varListDataNew(Size size);
+void varListDataSet(VarList *table, Object *var, Object *world, Object *value);
+Object *varListLookup(VarList *table, Object *var, Object *world);
+
 #endif

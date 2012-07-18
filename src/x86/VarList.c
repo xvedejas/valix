@@ -32,8 +32,9 @@ VarList *varListDataNew(Size size)
     return table;
 }
 
-/* Set the value of a variable in a given world */
-void varListDataSetValue(VarList *table, Object *var, Object *world, Object *value)
+/* Set the value of a variable in a given world. If the world isn't in this
+ * list yet, it adds it. */
+void varListDataSet(VarList *table, Object *var, Object *world, Object *value)
 {
     assert(++table->entries <= table->capacity, "varList error");
     Size size = table->size;
@@ -43,8 +44,8 @@ void varListDataSetValue(VarList *table, Object *var, Object *world, Object *val
         hash = (hash + 1) % size;
     VarBucket *bucket = &buckets[hash];
     bucket->var = var;
-    /* Find world */
     
+    /* Find world */
     VarListItem *item = bucket->next;
     while (item != NULL)
     {
@@ -55,7 +56,7 @@ void varListDataSetValue(VarList *table, Object *var, Object *world, Object *val
         }
         item = item->next;
     }
-    /* World not found, create new */
+    /* World not found, create new one */
     VarListItem *newListItem = malloc(sizeof(VarListItem));
     newListItem->world = world;
     newListItem->value = value;
@@ -63,8 +64,10 @@ void varListDataSetValue(VarList *table, Object *var, Object *world, Object *val
     buckets[hash].next = newListItem;
 }
 
-/* Get the value of a variable in a given world */
-Object *varListDataGet(VarList *table, Object *var, Object *world)
+/* Get the value of a variable in a given world. If the world isn't found or
+ * the variable isn't found, returns NULL */
+ /// todo: raise errors instead of returning NULL
+Object *varListLookup(VarList *table, Object *var, Object *world)
 {
     Size size = table->size;
     Size hash = valueHash(var) % size;

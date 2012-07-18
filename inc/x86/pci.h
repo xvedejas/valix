@@ -68,6 +68,8 @@ typedef struct pciConfigHeaderBasic
     u8 classSubclass;
     u8 classProgrammingInterface;
     u8 headerType;
+    u32 baseAddr[6];
+    u8 interruptLine;
 } PciConfigHeaderBasic;
 
 typedef struct pciConfigCompatDeviceList
@@ -75,6 +77,11 @@ typedef struct pciConfigCompatDeviceList
     u32 count;
     PciConfigHeaderBasic *basicHeaders;
 } PciConfigCompatDeviceList;
+
+typedef struct pci_device
+{
+    PciConfigHeaderBasic header;
+} PciDevice;
 
 u8 pciConfigReadByte(u8 bus, u8 slot, u8 func, u8 offset);
 u16 pciConfigReadWord(u8 bus, u8 slot, u8 func, u8 offset);

@@ -85,15 +85,14 @@ struct object
  * scopes. */
 typedef struct scope
 {
-	VarList variables; // Map<variable symbol, list of (world, value) pairs>
+	VarList *variables; // Map<variable symbol, list of (world, value) pairs>
     /* Each scope has a _single_ world. That is, when a new world is created, it
      * requires a new scope. By default, scopes defined within a world also
      * exist in that world. The real effect is on the state of variables seen in
      * the parent scope, not in the current one. */
 	Object *thisWorld;
-	Object *containing; // parent scope that we can look for variables in
-	///Object *block; /// closure (I don't think this member is necessary)
-	/// note that not all scopes have a corresponding block anyway
+    // parent scope (where this was declared) that we can look for variables in
+	Object *containing;
 	Object *caller; // scope that this scope was called from
 } Scope;
 
@@ -102,7 +101,7 @@ typedef struct process
 	Object *global; // process-global scope (contrasting with "universal" scope)
 	Object *scope; // current scope of execution
 	Object *parent; // parent process
-    Stack *values;
+    Stack *values; // stack for saving values during statement execution
     Stack *scopes;
     u8 *bytecode; // beginning of bytecode
     Size IP; // an instruction pointer, pointing to the bytecode being read
@@ -110,7 +109,8 @@ typedef struct process
 
 typedef struct world
 {
-    
+    /* World of the parent scope, recorded here for faster lookup */
+    Object *parent;
 } World;
 
 #define symbol(str) (symbol_new(symbolProto, str))

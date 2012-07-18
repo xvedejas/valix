@@ -31,6 +31,7 @@
 #include <lexer.h>
 #include <vm.h>
 #include <acpi.h>
+#include <rtl8139.h>
 
 bool withinISR = false;
 const Size systemStackSize = 0x1000;
@@ -219,13 +220,6 @@ u32 time()
     return timerTicks; /* get fancier later, with formatting possibly */
 }
 
-void timerWait(int ticks) /* probably don't want to use this, use sleep() */
-{   
-    u32 eticks;
-    eticks = timerTicks + ticks;
-    while (timerTicks < eticks);
-}
-
 void timerInstall()
 {
     timerTicks = 0;
@@ -233,7 +227,7 @@ void timerInstall()
     timerPhase(systemClockFreq);
 }
 
-void pciinfo()
+void pci()
 {
     u16 bus, dev, func;
     for (bus = 0; bus < 256; bus++)
@@ -253,11 +247,20 @@ void pciinfo()
                 if (header.headerType)
                     continue;
 
-                printf("\n[%x", (void*)(u32)header.vendorId);
-                printf(":%x] ", (void*)(u32)header.deviceId);
-                printf("rev: %u ", (void*)(u32)header.revisionId);
-                printf("class: %x\n\n", (void*)(u32)header.classBase);
-
+                //printf("\n[%x", (void*)(u32)header.vendorId);
+                //printf(":%x] ", (void*)(u32)header.deviceId);
+                //printf("rev: %u ", (void*)(u32)header.revisionId);
+                //printf("class: %x\n\n", (void*)(u32)header.classBase);
+                
+                printf("device %x\n", header.deviceId);
+                if (header.deviceId == 0x8139)
+                {
+                    //rtl_install(&header);
+                    //rtl8139_probe(&header);
+                    //rtl8139_invoke_interrupt(&header);
+                }
+                
+                /*
                 u8 bar;
                 printf("BAR         Type      Value\n");
                 printf("------------------------------------------------------------\n");
@@ -275,7 +278,7 @@ void pciinfo()
                     printf("%x", pciGetBarValue(bus, dev, func, bar));
 
                     printf("\n");
-                }
+                }*/
             }
         }
     }
@@ -322,8 +325,7 @@ void kmain(u32 magic, MultibootStructure *multiboot, void *stackPointer)
     
     spawn("VM interactive shell", testVM);
     
-    
-    
+    pci();
     
     return; /* kills kernel thread */
 }

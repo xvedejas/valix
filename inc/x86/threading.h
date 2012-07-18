@@ -96,6 +96,7 @@ void sleep(u32 milliseconds);
 void threadsDebug();
 bool threadExists(Thread *thread);
 void threadPromote(Thread *thread);
+extern inline void leaveThread(); // give up control, idle
 
 ///////////////////////////////////////////////////////////////////////////////
 // Mutex Interface                                                           //
@@ -138,5 +139,16 @@ Mutex *mutexNew();
 MutexReply mutexAcquireLock(Mutex *mutex);
 void mutexReleaseLock(Mutex *mutex);
 void mutexDel(Mutex *mutex);
+
+// Timer Interface
+
+typedef struct
+{
+    u32 end;
+    Thread *thread;
+} Timer;
+
+Timer timerSet(Size milliseconds);
+bool timerDone(Timer t);
 
 #endif

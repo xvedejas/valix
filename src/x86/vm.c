@@ -72,6 +72,8 @@ ObjectSet *globalObjectSet;
 
 StringMap *globalSymbolTable;
 
+Object *globalScope;
+
 // argc doesn't include self
 extern Object *callInternal(void *function, Size argc, va_list args);
 Object *object_bind(Object *self, Object *symbol);
@@ -499,13 +501,45 @@ void vmInstall()
     stringInstall();
 }
 
-Object *scope_lookupVar(Object *scope, Object *symbol)
+/* This is looking up a variable, beginning with the local scope. The chain of
+ * lookup is to try the current world in the current scope, then the current
+ * world in the parent scope, then the parent world in the parent scope, etc.
+ * 
+ * The worst case runtime is highly dependent on the number of scopes we have
+ * to look through. That should be more reason to prefer more-local variables
+ * to more-global ones. */
+ /// Todo: stop the lookup if the scope reaches the global scope. Return NULL.
+Object *scope_lookupVar(Object *self, Object *symbol)
 {
-	panic("not implemented");
-	return NULL;
+	Scope *scope = self->data;
+    Object *world = scope->thisWorld;
+    Object *thisWorld = world;
+    Object *value;
+    do
+    {
+        value = varListLookup(scope->variables, symbol, world);
+        if (world == scope->thisWorld)
+        {
+            if (scope == (Scope*)globalScope->data)
+                panic("lookup Error: variable not found!");
+            assert(scope->containing != NULL, "lookup error");
+            scope = scope->containing->data;
+            world = thisWorld;
+        }
+        else
+        {
+            world = ((World*)world->data)->parent;
+            if (unlikely(world == NULL))
+                return NULL;
+        }
+    } while (value == NULL);
+    return value;
 }
 
-void scope_setVar(Object *scope, Object *symbol, Object *value)
+/* This should mimic the previous function in the way it finds a variable.
+ * All variables must be declared at the top of their scope, so it does not
+ * ever create a variable if it doesn't find one */
+void scope_setVar(Object *self, Object *symbol, Object *value)
 {
     panic("not implemented");
 }
@@ -527,19 +561,21 @@ void bytecodeSetup(Object *process)
 	Size symbolCount = readValue(bytecode, &((Process*)process->data)->IP);
 }
 
-/* We are entering a new scope. The new scope's caller is the last scope. */
-void processPushScope(Object *processObj, Object *scopeObj)
+/* We are entering a new scope. The new scope's caller is the last scope.
+ * Typically operates on currentThread->process */
+void process_pushScope(Object *self, Object *scopeObj)
 {
     Scope *scope = scopeObj->data;
-    Process *process = processObj->data;
+    Process *process = self->data;
 	scope->caller = process->scope;
     stackPush(process->scopes, scope);
 }
 
-/* We are exiting the current scope, back to the caller scope. */
-Object *processPopScope(Object *processObj)
+/* We are exiting the current scope, back to the caller scope.
+ * Typically operates on currentThread->process */
+Object *process_popScope(Object *self)
 {
-    Process *process = processObj->data;
+    Process *process = self->data;
     return stackPop(process->scopes);
     /* It is important to note that we do not free the scope we are leaving
      * here. In fact, some of its local variables could still be referenced
@@ -548,12 +584,14 @@ Object *processPopScope(Object *processObj)
      * the scope later on */
 }
 
-void processPushValue()
+/* Typically operates on currentThread->process */
+void process_pushValue(Object *self)
 {
 	panic("not implemented");
 }
 
-Object *processPopValue()
+/* Typically operates on currentThread->process */
+Object *process_popValue(Object *self)
 {
 	panic("not implemented");
     return NULL;
@@ -601,7 +639,7 @@ void interpret(u8 *bytecode)
             break;
 			case blockBC:
 				/*Object *closure = */closure_new(closureProto, process);
-				// increment bytecode until the end of this closure
+				// increment bytecode until the end of this closure definition
 				panic("not implemented");
             break;
 			case variableBC:

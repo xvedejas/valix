@@ -45,11 +45,11 @@ String tokenTypeNames[] =
     "semiToken",         // ;
     "pipeToken",         // |
     /* symbols */
-    "symbolToken",
-    "keywordToken",
-    "specialCharToken",
-    "objectDefToken",
-    "traitDefToken"
+    "symbolToken",       // #abc
+    "keywordToken",      // abc
+    "specialCharToken",  // * + , 
+    "objectDefToken",    // @{
+    "traitDefToken"      // %{
 };
 
 void lexerError(String message)

@@ -33,8 +33,8 @@ VarList *varListDataNew(Size size)
 }
 
 /* Set the value of a variable in a given world. If the world isn't in this
- * list yet, it adds it. */
-void varListDataSet(VarList *table, Object *var, Object *world, Object *value)
+ * list yet, it returns false. */
+bool varListDataSet(VarList *table, Object *var, Object *world, Object *value)
 {
     assert(++table->entries <= table->capacity, "varList error");
     Size size = table->size;
@@ -52,16 +52,11 @@ void varListDataSet(VarList *table, Object *var, Object *world, Object *value)
         if (item->world == world)
         {
             item->value = value;
-            return;
+            return true;
         }
         item = item->next;
     }
-    /* World not found, create new one */
-    VarListItem *newListItem = malloc(sizeof(VarListItem));
-    newListItem->world = world;
-    newListItem->value = value;
-    newListItem->next = buckets[hash].next;
-    buckets[hash].next = newListItem;
+    return false;
 }
 
 /* Get the value of a variable in a given world. If the world isn't found or

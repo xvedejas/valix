@@ -34,7 +34,7 @@ const Size maxKeywordCount = 8;
  * 
  * 
  * stmt ::= expr ('.' expr)* '.'?
- * expr ::= value (Keyword (':' value (Keyword ':' value)*)? | Special value)
+ * expr ::= value (Keyword ':' value)* | Special expr
  * blockHeader ::=
  *     ((Keyword (',' Keyword)* '|') |
  *     ('|' Keyword (',' Keyword)* '|') |
@@ -47,7 +47,8 @@ const Size maxKeywordCount = 8;
  * objDef ::= '@{' stmt (',' stmt)* '|'
  *     (Keyword (',' Keyword)* '|')? methodList '}'
  * traitDef ::= '#{' methodList '}'
- * value ::= array | block | Int | Double | String | Char | objDef | traitDef
+ * value ::= { array | block | Int | Double | String |
+ *           Char | objDef | traitDef | '(' stmt ')' } keyword*
  * array ::= '[' (stmt (',' stmt)*)? ']'
  * 
  * top ::= blockHeader stmt
@@ -169,9 +170,15 @@ u8 *compile(String source)
         }
     }
     
+    /* We only lex as we need to. This lexes the next token and sets
+     * the variable curToken accordingly. This also does not allow going back;
+     * that is, it frees the previous tokens. Use lookahead() if you don't want
+     * to dispose of the current token yet. */
     inline void nextToken()
     {
+        Token *previous = curToken;
         curToken = lex(source, curToken);
+        ///tokenDel(previous); // when this line is uncommented, there is a memory error: investigate
         source += curToken->end;
     }
     
@@ -201,6 +208,7 @@ u8 *compile(String source)
         return interned;
     }
     
+    /* Look ahead by lexing until the next token, then backtracking */
     Token *lookahead(Size n)
     {
         Token *token = curToken;
@@ -355,49 +363,46 @@ u8 *compile(String source)
     
     void parseExpr()
     {
-        parseValue();       
-        while (curToken->type == keywordToken || curToken->type == specialCharToken)
+        parseValue();
+        while (true)
         {
-            if (curToken->type == keywordToken)
+            /* if the current token is a keyword with an argument, that is,
+             * it is a keyword token followed by a colon token */
+            if (curToken->type == keywordToken &&
+                lookahead(1)->type == colonToken)
             {
+                /* A list for all keywords comprising this message */
                 String keywords[maxKeywordCount];
                 Size i = 0;
-                bool isUnary = false;
-                while (curToken->type == keywordToken)
+                while (curToken->type == keywordToken &&
+                    lookahead(1)->type == colonToken)
                 {
-                    parserRequire(i < maxKeywordCount, "More keywords than allowed in one message");
+                    parserRequire(i < maxKeywordCount, "More keywords than "
+                        "allowed in one message");
                     keywords[i++] = curToken->data;
                     nextToken();
-                    if (curToken->type != colonToken) // unary message
-                    {
-                        parserRequire(i == 1, "Expected ':' token. Useparenthesis around binary messages.");
-                        outByte(symbolBC, node);
-                        outVal(intern(keywords[0]), node);
-                        outByte(messageBC, node);
-                        outByte(0, node); // argument count
-                        isUnary = true;
-                        break;
-                    }
                     nextToken();
                     parseValue();
                 }
-                if (isUnary)
-                    continue;
                 outByte(symbolBC, node);
                 outVal(methodNameIntern(i, keywords), node);
                 outByte(messageBC, node);
                 outVal(i, node);
             }
-            else
+            /* Otherwise we assume we have a binary message, which makes use
+             * of a non alphanumeric symbol and must have one argument */
+            else if (curToken->type == specialCharToken)
             {
                 Size binaryMessage = intern(curToken->data);
                 nextToken();
-                parseValue();
+                parseExpr();
                 outByte(symbolBC, node);
                 outVal(binaryMessage, node);
                 outByte(messageBC, node);
                 outByte(1, node); // number of arguments
             }
+            else
+                break;
         }
     }
     
@@ -449,11 +454,13 @@ u8 *compile(String source)
                 outVal(intern(keywords[0]), node);
             
             outByte(blockBC, node);
-            parserRequire(curToken->type == openBraceToken, "Expected '{' token");
+            parserRequire(curToken->type == openBraceToken,
+                "Expected '{' token");
             nextToken();
             parseBlockHeader(true, argc);
             parseStmt();
-            parserRequire(curToken->type == closeBraceToken, "Expected '}' token");
+            parserRequire(curToken->type == closeBraceToken,
+                "Expected '}' token");
             nextToken();
             outByte(endBC, node);
         }
@@ -517,21 +524,22 @@ u8 *compile(String source)
                 outByte(blockBC, node);
                 parseBlockHeader(false, 0);
                 parseStmt();
-                parserRequire(curToken->type == closeBraceToken, "Expected '}' token");
+                parserRequire(curToken->type == closeBraceToken,
+                    "Expected '}' token");
                 nextToken();
                 outByte(endBC, node);
             } break;
             case openObjectBraceToken:
             {
-                /* Output Format:
-                 * 
-                 * [ObjectBC] [trait count] [var count] [var intern]* [method count]
-                 * 
-                 * traits are popped from the stack, as is the object's
-                 * prototype (the first in the list of traits, but is not a
-                 * trait itself)
-                 * 
-                 */
+        /* Output Format:
+         * 
+         * [ObjectBC] [trait count] [var count] [var intern]* [method count]
+         * 
+         * traits are popped from the stack, as is the object's
+         * prototype (the first in the list of traits, but is not a
+         * trait itself)
+         * 
+         */
                 
                 Size traitc = 0,
                      varc = 0;
@@ -545,12 +553,14 @@ u8 *compile(String source)
                 
                 while (curToken->type != pipeToken)
                 {
-                    parserRequire(curToken->type == commaToken, "Expected ',' token");
+                    parserRequire(curToken->type == commaToken,
+                        "Expected ',' token");
                     nextToken();
                     parseStmt();
                     traitc++;
                 }
-                parserRequire(curToken->type == pipeToken, "Expected '|' token");
+                parserRequire(curToken->type == pipeToken,
+                    "Expected '|' token");
                 nextToken();
                 
                 outByte(objectBC, node);
@@ -595,7 +605,8 @@ u8 *compile(String source)
             {
                 nextToken();
                 parseStmt();
-                parserRequire(curToken->type == closeParenToken, "Expected ')' token");
+                parserRequire(curToken->type == closeParenToken,
+                    "Expected ')' token");
                 nextToken();
             } break;
             case keywordToken:
@@ -604,7 +615,8 @@ u8 *compile(String source)
                 {
                     Size keyword = intern(curToken->data);
                     nextToken();
-                    parserRequire(curToken->type == eqToken, "Expected '=' token");
+                    parserRequire(curToken->type == eqToken,
+                        "Expected '=' token");
                     nextToken();
                     parseExpr();
                     outByte(setBC, node);
@@ -621,6 +633,26 @@ u8 *compile(String source)
             {
                 parserRequire(false, "Parser Error");
             } break;
+        }
+        /* Here we look for unary messages. This is done here instead of
+         * parseExpr() because we want unary messages to take precendence
+         * over other messages so that you can write:
+         *      5 * "5" asInt
+         * rather than requiring:
+         *      5 * ("5" asInt)
+         * 
+         * It's really personal taste, but this is also how Smalltalk
+         * tends to do it. Since Smalltalk is probably the closest language
+         * syntactically, it makes sense to mimic it here.
+         *                                                                 */
+        while (curToken->type == keywordToken &&
+            lookahead(1)->type != colonToken)
+        {
+            outByte(symbolBC, node);
+            outVal(intern(curToken->data), node);
+            outByte(messageBC, node);
+            outByte(0, node); // message argument count
+            nextToken();
         }
     }
     
@@ -640,7 +672,8 @@ u8 *compile(String source)
     
     StringBuilder *cleanup(bool all)
     {
-        /* if "all" is true, then we don't leave any output to return at all. */
+        /* if "all" is true, then we don't leave any output to return.
+         * This routine deletes all the existing parse structures. */
         Token *token = curToken;
         do tokenDel(token); while ((token = token->previous) != NULL);
         internTableDel(symbolTable);
@@ -667,6 +700,11 @@ u8 *compile(String source)
     /* Build symbol table */
     
     outVal(symbolTable->count, root);
+    
+    // Uncomment to test cleanup
+    cleanup(true);
+    return NULL;
+    
     Size i;
     for (i = 0; i < symbolTable->count; i++)
         outStr(symbolTable->table[i], root);

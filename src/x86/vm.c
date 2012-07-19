@@ -538,7 +538,8 @@ Object *scope_lookupVar(Object *self, Object *symbol)
 
 /* This should mimic the previous function in the way it finds a variable.
  * All variables must be declared at the top of their scope, so it does not
- * ever create a variable if it doesn't find one */
+ * ever create a variable if it doesn't find one (this should be taken care
+ * of by the varList routine). */
 void scope_setVar(Object *self, Object *symbol, Object *value)
 {
     panic("not implemented");
@@ -559,6 +560,8 @@ void bytecodeSetup(Object *process)
 	/* The first byte(s) are the number of interned symbols present in the
 	 * bytecode segment */
 	Size symbolCount = readValue(bytecode, &((Process*)process->data)->IP);
+    
+    panic("not implemented");
 }
 
 /* We are entering a new scope. The new scope's caller is the last scope.
@@ -585,16 +588,17 @@ Object *process_popScope(Object *self)
 }
 
 /* Typically operates on currentThread->process */
-void process_pushValue(Object *self)
+void process_pushValue(Object *self, Object *value)
 {
-	panic("not implemented");
+    Process *process = self->data;
+    stackPush(process->values, value);
 }
 
 /* Typically operates on currentThread->process */
 Object *process_popValue(Object *self)
 {
-	panic("not implemented");
-    return NULL;
+	Process *process = self->data;
+    return stackPop(process->values);
 }
 
 #define currentScope process->scope

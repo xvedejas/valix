@@ -45,7 +45,11 @@ typedef struct
 } VarList;
 
 VarList *varListDataNew(Size size);
-void varListDataSet(VarList *table, Object *var, Object *world, Object *value);
-Object *varListLookup(VarList *table, Object *var, Object *world);
+/* Set the value of a variable in a given world. If the world isn't in this
+ * list yet, it returns false. */
+extern bool varListDataSet(VarList *table, Object *var, Object *world, Object *value);
+/* Get the value of a variable in a given world. If the world isn't found or
+ * the variable isn't found, returns NULL */
+extern Object *varListLookup(VarList *table, Object *var, Object *world);
 
 #endif

@@ -287,12 +287,12 @@ void pci()
 
 ThreadFunc testVM()
 {
-	while (true)
-	{
-        interpret(compile(getstring()));
-        printf("mem used: %x\n", memUsed());
-	}
-    printf("\nDone.");
+    printf("mem used: %x\n", memUsed());
+    String input = "object do: 5 factorial and: #test";
+    printf("\n%s\n", input);
+    u8 *bytecode = compile(input);
+    ///interpret(bytecode); // uncomment to test interpreter
+    printf("mem used: %x\n", memUsed());
 }
 
 /* This is the very first C function to be called. Here we initialize the various
@@ -324,8 +324,9 @@ void kmain(u32 magic, MultibootStructure *multiboot, void *stackPointer)
     printf("Welcome to Valix Pre-Alpha 1. Type \"help\" for usage information.\n\n");
     
     spawn("VM interactive shell", testVM);
+    while (true);
     
-    pci();
+    //pci();
     
     return; /* kills kernel thread */
 }

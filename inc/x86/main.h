@@ -76,7 +76,7 @@ extern void outl(u32 port, u32 data);
 
 extern void printf(const char *format, ...);
 extern void putch(u8 c);
-extern void _panic(String file, u32 line);
+extern void _panic(char *file, u32 line);
 
 extern void *linkKernelEntry;
 extern void *linkKernelEnd;

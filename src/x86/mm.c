@@ -68,7 +68,7 @@ void mmInstall(MultibootStructure *multiboot)
         previousFreeBlock = header;
     }
 
-    while (mmap - multiboot->mmapAddr < multiboot->mmapLength)
+    while ((u32)(mmap - multiboot->mmapAddr) < multiboot->mmapLength)
     {
         assert(mmap != NULL, "Memory check fail");
         if (mmap->type == 1) // free block
@@ -181,7 +181,7 @@ inline void addToUsedList(MemoryHeader *block)
     firstUsedBlock = block;
 }
 
-void *_kalloc(Size size, Thread *thread, String file, Size line)
+void *_kalloc(Size size, Thread *thread, char *file, Size line)
 {
     /* Thread may be null */
     mutexAcquireLock(&mmLockMutex);
@@ -307,7 +307,7 @@ bool isAllocated(void *memory)
     return true;
 }
 
-void _free(void *memory, String file, Size line)
+void _free(void *memory, char *file, Size line)
 {
     mutexAcquireLock(&mmLockMutex);
     if (unlikely(memory == NULL))

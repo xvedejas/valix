@@ -1,3 +1,4 @@
+ 
 /*  Copyright (C) 2012 Xander Vedejas <xvedejas@gmail.com>
  *
  *  This program is free software: you can redistribute it and/or modify
@@ -14,29 +15,14 @@
  *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *
  *  Maintained by:
- *      Xander Vedėjas <xvedejas@gmail.com>
+ *      Tim Sarbin <tim.sarbin@gmail.com>
  */
- 
-#ifndef __Stack_h__
-#define __Stack_h__
+
+#ifndef _parser_tests_h_
+#define _parser_tests_h_
+
 #include <main.h>
 
-/////////////////////
-// Stack Interface //
-/////////////////////
+extern void compile_test();
 
-// FILO data structure
-
-typedef struct
-{
-	/* "size" is the number of items, "capacity" is the number of items the
-	 * stack can hold until a resize is needed. */
-	Size size, capacity;
-	void **array;
-} Stack;
-
-Stack *stackNew();
-void stackPush(Stack *stack, void *value);
-void *stackPop(Stack *stack);
-void stackDel(Stack *stack);
-
+#endif // _parser_tests_h_

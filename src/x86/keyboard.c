@@ -211,8 +211,8 @@ String getstring()
             } break;
             case (u8)'\x93': // end
             {
-                int n = end;
-                while (n-- != i)
+                Size n = end;
+                while (n --> i)
                     putch('\x92'); // right
                 i = end;
             } break;

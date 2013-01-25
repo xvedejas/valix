@@ -57,9 +57,13 @@ Size stringHash(String s)
 // StringBuilder Implementation //
 //////////////////////////////////
 
-StringBuilder *stringBuilderNew(String initial)
+StringBuilder *stringBuilderAlloc()
 {
-    StringBuilder *sb = malloc(sizeof(StringBuilder));
+    return malloc(sizeof(StringBuilder));
+}
+
+StringBuilder *stringBuilderNew(StringBuilder *sb, String initial)
+{
     if (initial == NULL)
     {
         sb->size = 0;
@@ -76,9 +80,14 @@ StringBuilder *stringBuilderNew(String initial)
     return sb;
 }
 
-void stringBuilderDel(StringBuilder *sb)
+StringBuilder *stringBuilderDel(StringBuilder *sb)
 {
     free(sb->s);
+    return sb;
+}
+
+void stringBuilderFree(StringBuilder *sb)
+{
     free(sb);
 }
 
@@ -129,9 +138,13 @@ void stringBuilderPrint(StringBuilder *sb)
 
 const Size stackInitialCapacity = 4;
 
-Stack *stackNew()
+Stack *stackAlloc()
 {
-	Stack *stack = malloc(sizeof(Stack));
+    return malloc(sizeof(Stack));
+}
+
+Stack *stackNew(Stack *stack)
+{
 	stack->size = 0;
 	stack->capacity = stackInitialCapacity;
 	stack->array = malloc(sizeof(void*) * stackInitialCapacity);
@@ -154,10 +167,20 @@ void *stackPop(Stack *stack)
 	return stack->array[--stack->size];
 }
 
-void stackDel(Stack *stack)
+void *stackTop(Stack *stack)
+{
+    return stack->array[stack->size - 1];
+}
+
+Stack *stackDel(Stack *stack)
 {
 	free(stack->array);
-	free(stack);
+    return stack;
+}
+
+void stackFree(Stack *stack)
+{
+    free(stack);
 }
 
 ////////////////////////////////
@@ -190,13 +213,14 @@ Size internString(InternTable *table, String string)
         table->table = realloc(table->table, table->capacity);
     }
     assert(i == table->count, "intern error");
-    table->table[i] = string;
+    table->table[i] = strdup(string);
     table->count++;
     return i;
 }
 
 void internTableDel(InternTable *table)
 {
+    /// free all strings
     free(table->table);
     free(table);
 }

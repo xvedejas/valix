@@ -48,8 +48,6 @@ String tokenTypeNames[] =
     "symbolToken",       // #abc
     "keywordToken",      // abc
     "specialCharToken",  // * + , 
-    "objectDefToken",    // @{
-    "traitDefToken"      // %{
 };
 
 void lexerError(String message)
@@ -218,28 +216,32 @@ void tokenDel(Token *token)
 }
 
 /* Lexes a single token at a time */
-Token *lex(String source, Token *lastToken)
+Token *lex(String source, Size lastTokenEnd, Token *lastToken)
 {
-    Size i = 0;
+    //printf("lexing starting at: %s\n", source + lastTokenEnd);
+    Size i = lastTokenEnd;
     Size line, column;
     if (lastToken == NULL)
     {
+        /* For some reason, the standard seems to be that lines are 1-indexed
+         * and columns are 0-indexed. */
         line = 1,
         column = 0;
     }
     else
     {
-        line = lastToken->line;
+        line = lastToken->line; /// or maybe lastToken->end?
         column = lastToken->col;
     }
     
-    Token *tokenNew(TokenType type, String data, Size end)
+    Token *tokenNew(TokenType type, String data, Size start, Size end)
     {
         Token* token = malloc(sizeof(Token));
         token->type = type;
         token->data = data;
         token->line = line;
         token->col = column;
+        token->start = start;
         token->end = end;
         token->previous = lastToken;
         return token;
@@ -249,15 +251,15 @@ Token *lex(String source, Token *lastToken)
     {
         switch(source[i])
         {
-            case '#': // denots a #symbol, a unique string
+            case '#': // denots a #symbol, a unique string object literal
             {
                 i++;
                 Size length = matchSymbol(source, i);
-                String data = malloc(sizeof(char) * (length + 1));
-                strlcpy(data, source + i, length);
+                String data = strldup(source + i, length);
+                Token *token = tokenNew(symbolToken, data, i, i + length);
                 column += length;
                 i += length;
-                return tokenNew(symbolToken, data, i);
+                return token;
             } break;
             case '/':
             {
@@ -268,7 +270,8 @@ Token *lex(String source, Token *lastToken)
                     for (n = 0; n < length; n++)
                     {
                         if (source[i + n] == '\n')
-                        {   column = 0;
+                        {
+                            column = 0;
                             line++;
                         }
                         else
@@ -279,37 +282,30 @@ Token *lex(String source, Token *lastToken)
                 }
             } /* Do not break here, fall through because '/' is not actually
                  representing the start of a comment */
-            case '=': case '@': case '%':
+            case '=':
             {
                 if (source[i] == '=' && source[i+1] == ' ')
                 {
+                    Token *token = tokenNew(eqToken, NULL, i, i + 1);
                     column++;
                     i++;
-                    return tokenNew(eqToken, NULL, i);
-                }
-                else if (source[i+1] == '{')
-                {
-                    if (source[i] == '@')
-                    {
-                        column += 2;
-                        i += 2;
-                        return tokenNew(openObjectBraceToken, NULL, i);
-                    } else if (source[i] == '%')
-                    {
-                        column += 2;
-                        i += 2;
-                        return tokenNew(openTraitBraceToken, NULL, i);
-                    }
+                    return token;
                 }
             } /* Do not break here, fall through */
-            case 'a' ... 'z': case 'A' ... 'Z': case '~': case '`': case '!':
-            case '$': case '^': case '&': case '*': case '-': case '+':
-            case '_': case '?': case '<': case '>': case '\\':
+            /* These cases cover non-reserved characters than can either be
+             * alphanumeric keywords or "special-character" keywords which are
+             * strictly non-alphanumeric and act as binary messages. */
+            case 'a' ... 'z': case 'A' ... 'Z': case '\\':
+            case '!': case '$': case '^': case '&': case '*':
+            case '-': case '+': case '_': case '?': case '<':
+            case '>': case '@': case '%': case '~': case '`':
             {
                 Size length = matchKeyword(source, i);
-                String data = malloc(sizeof(char) * (length + 1));
-                strlcpy(data, source + i, length);
-                Token *token = tokenNew(undefToken, NULL, 0);
+                //printf("Keyword length: %i\n", length);
+                String data = strldup(source + i, length);
+                Token *token = tokenNew(undefToken, data, i, i + length);
+                i += length;
+                column += length;
                 switch (data[0])
                 {
                     case 'a' ... 'z': case 'A' ... 'Z': case '_':
@@ -319,47 +315,108 @@ Token *lex(String source, Token *lastToken)
                         token->type = specialCharToken;
                     break;
                 }
-                token->data = data;
-                column += length;
-                token->col = column;
-                i += length;
-                token->end = i;
                 return token;
             } break;
             case '0' ... '9':
             {
                 Size length = matchNumber(source, i);
-                String data = malloc(sizeof(char) * (length + 1));
-                strlcpy(data, source + i, length);
+                String data = strldup(source + i, length);
                 TokenType type = undefToken;
                 if (strchr(data, '.'))
                     type = doubleToken;
                 else
                     type = integerToken;
+                Token *token = tokenNew(type, data, i, i + length);
                 column += length;
                 i += length;
-                return tokenNew(type, data, i);
+                return token;
             } break;
             case '"':
             {
                 Size length = matchString(source, i);
-                String data = malloc(sizeof(char) * (length - 1));
-                strlcpy(data, source + i + 1, length - 2);
+                String data = strldup(source + i + 1, length - 2);
+                Token *token = tokenNew(stringToken, data, i, i + length);
                 column += length;
                 i += length;
-                return tokenNew(stringToken, data, i);
+                return token;
             } break;
-case '(': i++; column++; return tokenNew(openParenToken, NULL, i);    break;
-case ')': i++; column++; return tokenNew(closeParenToken, NULL, i);   break;
-case '{': i++; column++; return tokenNew(openBraceToken, NULL, i);    break;
-case '}': i++; column++; return tokenNew(closeBraceToken, NULL, i);   break;
-case '[': i++; column++; return tokenNew(openBracketToken, NULL, i);  break;
-case ']': i++; column++; return tokenNew(closeBracketToken, NULL, i); break;
-case '.': i++; column++; return tokenNew(stopToken, NULL, i);         break;
-case ',': i++; column++; return tokenNew(commaToken, NULL, i);        break;
-case ':': i++; column++; return tokenNew(colonToken, NULL, i);        break;
-case ';': i++; column++; return tokenNew(semiToken, NULL, i);         break;
-case '|': i++; column++; return tokenNew(pipeToken, NULL, i);         break;
+            case '(':
+            {
+                Token *token = tokenNew(openParenToken, NULL, i, i + 1);
+                i++;
+                column++;
+                return token;
+            } break;
+            case ')':
+            {
+                Token *token = tokenNew(closeParenToken, NULL, i, i + 1);
+                i++;
+                column++;
+                return token;
+            } break;
+            case '{':
+            {
+                Token *token = tokenNew(openBraceToken, NULL, i, i + 1);
+                i++;
+                column++;
+                return token;
+            } break;
+            case '}':
+            {
+                Token *token = tokenNew(closeBraceToken, NULL, i, i + 1);
+                i++;
+                column++;
+                return token;
+            } break;
+            case '[':
+            {
+                Token *token = tokenNew(openBracketToken, NULL, i, i + 1);
+                i++;
+                column++;
+                return token;
+            } break;
+            case ']':
+            {
+                Token *token = tokenNew(closeBracketToken, NULL, i, i + 1);
+                i++;
+                column++;
+                return token;
+            } break;
+            case '.':
+            {
+                Token *token = tokenNew(stopToken, NULL, i, i + 1);
+                i++;
+                column++;
+                return token;
+            } break;
+            case ',':
+            {
+                Token *token = tokenNew(commaToken, NULL, i, i + 1);
+                i++;
+                column++;
+                return token;
+            } break;
+            case ':':
+            {
+                Token *token = tokenNew(colonToken, NULL, i, i + 1);
+                i++;
+                column++;
+                return token;
+            } break;
+            case ';':
+            {
+                Token *token = tokenNew(semiToken, NULL, i, i + 1);
+                i++;
+                column++;
+                return token;
+            } break;
+            case '|':
+            {
+                Token *token = tokenNew(pipeToken, NULL, i, i + 1);
+                i++;
+                column++;
+                return token;
+            } break;
             case '\n':
                 line++;
                 column = 0;
@@ -370,7 +427,7 @@ case '|': i++; column++; return tokenNew(pipeToken, NULL, i);         break;
                 i++;
             break;
             case '\0':
-                return tokenNew(EOFToken, NULL, i);
+                return tokenNew(EOFToken, NULL, i, i);
             break;
             case ' ':
             default:

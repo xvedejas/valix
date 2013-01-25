@@ -26,36 +26,36 @@
 #include <stdarg.h>
 #include <VarList.h>
 #include <Number.h>
+#include <cstring.h>
 #include <String.h>
 #include <parser.h>
 #include <threading.h>
 
-/* TODO:
- * 
- * think about how worlds relates to both variables and hidden internal data
- * bytecode extend command
- * 
- */
+/* The code in this file is some of the most complex in this project. Any
+ * changes to this code must be reviewed by Xander before the changes are
+ * pushed. */
 
 // call as readValue(process->bytecode, &process->IP);
-// This function reads in a 32-bit value from bytecode
+// This function reads in a value from bytecode which may be encoded in
+// 1, 2, or 4 bytes depending on format.
 Size readValue(u8 *bytecode, Size *IP)
 {	u8 _val = *bytecode;
-	Size result = -1;
-	if ((_val & 0xF0) == 0xF0)
+	Size result = _val;
+    *IP++;
+	if ((_val & 0xF0) == 0xF0) // value >= 0xF0
 	{
-		*IP++;
 		switch (_val & 0x0F)
 		{
-			case 0:
+			case 0: /* values from 0xF0 to 0xFF
+                      (which normally indicate more bytes) */
 			    result = bytecode[*IP];
 			    *IP++;
 			break;
-			case 1:
+			case 1: /* values from 0x100 to 0xFFFF */
 			    result = bytecode[*IP] | (bytecode[*IP + 1] << 8);
 			    *IP += 2;
 			break;
-			case 2:
+			case 2: /* values from 0x10000 to 0xFFFFFFFF */
 				result = bytecode[*IP] | (bytecode[*IP + 1] << 8)
 					| (bytecode[*IP + 2] << 16) | (bytecode[*IP + 3] << 24);
 			    *IP += 4;
@@ -66,6 +66,16 @@ Size readValue(u8 *bytecode, Size *IP)
 		}
 	}
 	return result;
+}
+
+// call as readString(process->bytecode, &process->IP)
+// This function reads a null-terminated byte string from bytecode. It does not
+// create a copy, it only provides a pointer to the string in bytecode.
+String readString(u8 *bytecode, Size *IP)
+{
+    String s = (String)bytecode;
+    *IP += strlen(s) + 1;
+    return s;
 }
 
 ObjectSet *globalObjectSet;
@@ -79,7 +89,8 @@ extern Object *callInternal(void *function, Size argc, va_list args);
 Object *object_bind(Object *self, Object *symbol);
 Object *methodTable_get(Object *self, Object *symbol);
 
-/* Always use this method when creating new objects */
+/* Always use this method when creating new objects. */
+/// Todo: separate constructor and allocator
 Object *object_new(Object *self)
 {
     Object *new = malloc(sizeof(Object));
@@ -90,6 +101,9 @@ Object *object_new(Object *self)
     return new;
 }
 
+/* There is a global set that tells us if a pointer points to an object in the
+ * VM. This is mostly a debugging tool which prevents us from treating arbitrary
+ * pointers as if they were objects. */
 inline bool isObject(void *ptr)
 {
     return objectSetHas(globalObjectSet, ptr);
@@ -109,6 +123,9 @@ bool object_isSymbol(Object *self)
     return (stringMapGet(globalSymbolTable, self->data) == self);
 }
 
+/* A symbol's data is a pointer to the string (not necessarily unique) that was
+ * first used to identify the symbol. It may be necessary to copy the string as
+ * to give the symbol object ownership of its data. */
 Object *__attribute__ ((pure)) symbol_new(Object *self, String string)
 {
     /* Symbol objects are unique, so given a string that already identifies an
@@ -126,9 +143,11 @@ Object *__attribute__ ((pure)) symbol_new(Object *self, String string)
 
 
 Object *closure_with(Object *self, ...)
-/*
-Executes a closure (self) with the given arguments
-*/
+    /*
+    ** Executes a closure (self) with the given arguments.
+    ** Intended to work with both user-defined and internal (C-function) closures
+    */
+    /// todo: support for 8-bit and 16-bit wide values
 {
 	assert(self != NULL && self->data != NULL, "NULL error");
     Closure *closureData = self->data;
@@ -150,7 +169,8 @@ Executes a closure (self) with the given arguments
                 
                 switch (expectedArgument)
                 {
-                    case 'u': // Expecting unsigned integer, if object, try to convert
+                    // Expecting unsigned integer, if object, try to convert
+                    case 'u':
                     {
                         if (isObject(argument))
                         {
@@ -158,7 +178,8 @@ Executes a closure (self) with the given arguments
                             *((void**)argptr) = send(argument, "asU32Int");
                         }
                     } break;
-                    case 's': // Expecting signed integer, if object, convert
+                    // Expecting signed integer, if object, convert
+                    case 's':
                     {
                         if (isObject(argument))
                         {
@@ -166,14 +187,16 @@ Executes a closure (self) with the given arguments
                                 symbol("asS32Int"));
                         }
                     } break;
-                    case 'o': // Expecting object
+                    // Expecting object
+                    case 'o':
                     {
                         if (!isObject(argument))
                             panic("VM Error, expected an object, given some "
                                   "other value. Please construct and pass a "
                                   "valid object. Arg %x.", argument);
                     } break;
-                    case 'S': // Expecting string, if object, convert
+                    // Expecting string, if object, convert
+                    case 'S':
                     {
                         if (isObject(argument))
                         {
@@ -189,8 +212,12 @@ Executes a closure (self) with the given arguments
             va_list arguments;
             va_start(arguments, self);
             /* We need to know the number of arguments to pass, so we must know
-             * what a method expects. To pass variable arguments, we will need
-             * to use a simple list object. */
+             * what a method expects. Passing variable numbers of arguments is
+             * not a planned feature; lists or arrays should be used instead.
+             * 
+             * Using callInternal() can make the program flow here a bit more
+             * ambiguous, since we're calling some arbitrary C function without
+             * regards to its type. */
             
             indention++;///
             void *result = callInternal(closureData->function,
@@ -214,14 +241,16 @@ Executes a closure (self) with the given arguments
         case userDefinedClosure:
         {
             panic("not implemented\n");
-            char *bytecode = closureData->bytecode;
-            
+            u8 *bytecode = closureData->bytecode;
+            /// This code will likely call interpret(), but some refactoring
+            /// will probably need to be done besides that
         } break;
         default: panic("vm error, closure type %i not known", closureData->type);
     }
     return NULL;
 }
 
+// This cache is to speed up lookups in object_bind
 struct methodCacheEntry
 {
     Object *methodTable, *symbol, *method;
@@ -231,7 +260,8 @@ Object *__attribute__ ((pure)) object_bind(Object *self, Object *symbol)
 {
     /* This function gives us a method closure from a generic object and a
      * symbol object. The result is guaranteed to be the same given the same
-     * input. Special care should be taken to remove any record of self's
+     * input, since an object does not gain or lose methods after definition.
+     * Special care should be taken to remove any record of self's
      * method table in the method cache if self is garbage collected. */
     if (!object_isSymbol(symbol))
         panic("sending something not a symbol");
@@ -273,7 +303,11 @@ Size __attribute__ ((pure)) getArgc(String argString)
     /* Here we determine the number of arguments expected by a closure based on
      * the string that tells us the types of its arguments, starting with the
      * type the closure returns after invokation. We do not count the return
-     * value or "self". */
+     * value.
+     * 
+     * For typical, user-defined closures, the arguments are all objects.
+     * However, for interfacing with C code, we need to know what sort of
+     * objects are allowed. */
     Size count = 0;
     while (true)
     {
@@ -284,21 +318,21 @@ Size __attribute__ ((pure)) getArgc(String argString)
                 count++;
             break;
             case '\0':
-            /* ignore first argument, which is return value, and the second
-             * argument (self) isn't counted */
+            /* Here, we're done. Ignore the first count, which was for return
+             * type and not any argument. */
                 return count - 1;
             default:
                 panic("Improperly formatted argstring, character %c",
                     argString[-1]);
         }
     }
-    return count - 2;
+    return 0;
 }
 
 /* The given argument string tells what sort of arguments are expected by the
  * given function.
  * 
- * Example: "SSou32s8" means (String,Object*,u32,s8), return value is a String
+ * Example: "SSous" means (String,Object*,u32,s32), return value is a String
  */
 Object *closure_newInternal(Object *self, void *function, String argString)
 {
@@ -353,7 +387,7 @@ Object *returnFalse(Object *self)
 void object_doesNotUnderstand(Object *self, Object *symbol)
 {
     /* Overrideable method called whenever an object does not understand some
-     * symbol */
+     * symbol. */
     printf("Object at %x does not understand symbol '%s'\n", self, symbol->data);
     panic("Error handling not currently implemented");
 }
@@ -376,7 +410,20 @@ Object *scope_new(Object *self, Object *parent)
 }
 
 /* This does not create a new thread for the process. This only tries to make a
- * new process object corresponding to the current thread. */
+ * new process object corresponding to the current thread.
+ * 
+ * Still, there should be at most one thread per process and at most one
+ * process per thread. Processes are considered interpreter processes when they
+ * are processing bytecode by means of the interpret() function. When the
+ * bytecode runs out, if the process is not doing some computation in a C
+ * subroutine, the process will exit.
+ * 
+ * Special care must be taken that a process has only one reference to its
+ * bytecode. The bytecode pointer should be swappable at any time (so that
+ * we may append more bytecode to the end, for example). */
+ /// todo: check that the bytecode pointer is swappable like this everywhere
+ /// todo: allow adding of new symbol indices in the middle of bytecode rather
+ ///       than only at the header (will require parser modification)
 Object *process_new(Object *self, Object *block)
 {
 	if (currentThread->process != NULL)
@@ -386,10 +433,11 @@ Object *process_new(Object *self, Object *block)
     process->data = data;
     
     data->global = scope_new(scopeProto, block);
-    data->scope = scope_new(scopeProto, block);
     data->parent = NULL;
-    data->values = stackNew();
-    data->scopes = stackNew();
+    stackNew(&data->values);
+    stackNew(&data->scopes);
+    stackPush(&data->scopes, scope_new(scopeProto, block));
+    // associate the process object with the system thread
     currentThread->process = process;
     return process;
 }
@@ -400,6 +448,11 @@ Object *process_spawn(Object *self, Object *block)
 	return NULL;
 }
 
+/* This function must be called before any VM actions may be done. After this
+ * function is called, any VM actions should be done in a thread with a
+ * Process defined for it. Helper functions may be created for this later, but
+ * the intention is not to use the VM much from C; instead, the intention is to
+ * allow the interpreter to call C functions via the VM. */
 void vmInstall()
 {
     globalSymbolTable = stringMapNew();
@@ -508,7 +561,6 @@ void vmInstall()
  * The worst case runtime is highly dependent on the number of scopes we have
  * to look through. That should be more reason to prefer more-local variables
  * to more-global ones. */
- /// Todo: stop the lookup if the scope reaches the global scope. Return NULL.
 Object *scope_lookupVar(Object *self, Object *symbol)
 {
 	Scope *scope = self->data;
@@ -548,18 +600,32 @@ void scope_setVar(Object *self, Object *symbol, Object *value)
 /* This function is called by interpret at the beginning of executing a
  * closure, to account for the header which tells info about the variables and
  * arguments available to the closure */
-void closureSetup(Object *process)
+void process_closureSetup(Object *process)
 {
 	panic("not implemented");
 }
 
 /* Sets up intern table from the bytecode header */
-void bytecodeSetup(Object *process)
+void process_bytecodeSetup(Object *self)
 {
-	u8 *bytecode = ((Process*)process->data)->bytecode;
+    Process *process = self->data;
+	u8 *bytecode = process->bytecode;
 	/* The first byte(s) are the number of interned symbols present in the
 	 * bytecode segment */
-	Size symbolCount = readValue(bytecode, &((Process*)process->data)->IP);
+    
+	Size symbolCount = readValue(bytecode, &process->IP);
+    /* Now we make a mapping from the index that, in the bytecode, represents
+     * the symbol to the actual symbol object. Because the symbols in the
+     * bytecode have contiguous indices starting from 0, we can allocate an
+     * array. */
+    
+    Object **symbols = malloc(sizeof(Object*) * symbolCount);
+    
+    Size i;
+    for (i = 0; i < symbolCount; i++)
+    {
+        symbols[i] = symbol(readString(bytecode, &process->IP));
+    }
     
     panic("not implemented");
 }
@@ -570,8 +636,8 @@ void process_pushScope(Object *self, Object *scopeObj)
 {
     Scope *scope = scopeObj->data;
     Process *process = self->data;
-	scope->caller = process->scope;
-    stackPush(process->scopes, scope);
+	scope->caller = stackTop(&process->scopes);
+    stackPush(&process->scopes, scope);
 }
 
 /* We are exiting the current scope, back to the caller scope.
@@ -579,7 +645,7 @@ void process_pushScope(Object *self, Object *scopeObj)
 Object *process_popScope(Object *self)
 {
     Process *process = self->data;
-    return stackPop(process->scopes);
+    return stackPop(&process->scopes);
     /* It is important to note that we do not free the scope we are leaving
      * here. In fact, some of its local variables could still be referenced
      * by closures defined in that scope and possibly returned by that scope.
@@ -591,14 +657,14 @@ Object *process_popScope(Object *self)
 void process_pushValue(Object *self, Object *value)
 {
     Process *process = self->data;
-    stackPush(process->values, value);
+    stackPush(&process->values, value);
 }
 
 /* Typically operates on currentThread->process */
 Object *process_popValue(Object *self)
 {
 	Process *process = self->data;
-    return stackPop(process->values);
+    return stackPop(&process->values);
 }
 
 #define currentScope process->scope
@@ -612,9 +678,9 @@ void interpret(u8 *bytecode)
 	Object *process = currentThread->process;
 	
 	/* first, the byte code has a section of interned variable names which we
-	 * must turn into a table */
-	bytecodeSetup(process);
-	closureSetup(process);
+	 * must turn into a table. */
+	process_bytecodeSetup(process);
+	process_closureSetup(process);
 	Object *closure = closure_new(objectProto, process);
 	// If there is no current process, we create one.
 	
@@ -662,9 +728,6 @@ void interpret(u8 *bytecode)
 				panic("not implemented");
             break;
 			case objectBC:
-				panic("not implemented");
-            break;
-			case traitBC:
 				panic("not implemented");
             break;
 			case extendedBC8:

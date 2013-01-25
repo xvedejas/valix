@@ -21,6 +21,11 @@
 #include <main.h>
 #include <threading.h>
 
+/* This file includes some abstract data types for use in coding in the kernel.
+ * These typically have both a Alloc/New and a Del/Free function associated
+ * with them. Alloc and Free are unnecessary if using stack allocation,
+ * otherwise all four should be used. */
+
 ///////////////////////
 // General Functions //
 ///////////////////////
@@ -61,10 +66,13 @@ typedef struct
 	void **array;
 } Stack;
 
-Stack *stackNew();
+Stack *stackAlloc();
+Stack *stackNew(Stack *stack);
 void stackPush(Stack *stack, void *value);
 void *stackPop(Stack *stack);
-void stackDel(Stack *stack);
+void *stackTop(Stack *stack);
+Stack *stackDel(Stack *stack);
+void stackFree(Stack *stack);
 
 /////////////////////////////
 // StringBuilder Interface //
@@ -76,9 +84,11 @@ typedef struct
     String s;
 } StringBuilder;
 
-extern StringBuilder *stringBuilderNew(String initial);
+extern StringBuilder *stringBuilderAlloc();
+extern StringBuilder *stringBuilderNew(StringBuilder *sb, String initial);
 /* note: Del will destroy both the string builder and its contents */
-extern void stringBuilderDel(StringBuilder *sb);
+extern StringBuilder *stringBuilderDel(StringBuilder *sb);
+extern void stringBuilderFree(StringBuilder *sb);
 extern void stringBuilderAppend(StringBuilder *sb, String s);
 extern void stringBuilderAppendN(StringBuilder *sb, String s, Size len);
 extern void stringBuilderAppendChar(StringBuilder *sb, char c);

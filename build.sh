@@ -110,14 +110,16 @@ for FILE in ${CFILES}; do
         notice "CC" "${FILE}"
         ${CC} ${AUTODEFINES} -nostdlib -nodefaultlibs -fno-stack-protector \
             -ffreestanding -fno-stack-limit -fno-stack-check -fno-builtin \
+            -fno-signed-char -Wextra \
             -O3 -nostdinc -Werror -g ${CCARGS} ${ARCHARGS} -Wall ${INCLUDE} -c \
             -Wno-unused -o $OUTPUT $FILE || error "C compilation failed"
     fi
     if $compiletoasm; then
         ${CC} ${AUTODEFINES} -S -nostdlib -nodefaultlibs -fno-stack-protector \
-            -ffreestanding -fno-stack-limit -fno-stack-check \
+            -ffreestanding -fno-stack-limit -fno-stack-check -fno-builtin \
+            -fno-signed-char -Wextra \
             -O3 -nostdinc -Werror -g ${CCARGS} ${ARCHARGS} -Wall ${INCLUDE} -c \
-            -Wno-unused -o $ASMOUTPUT $FILE || error "C compilation failed"
+            -Wno-unused -o $ASMOUTPUT $FILE || error "C to ASM compilation failed"
     fi
 done
 

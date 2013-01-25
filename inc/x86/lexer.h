@@ -47,8 +47,6 @@ typedef enum
     symbolToken,  // #symbolName
     keywordToken,
     specialCharToken,
-    openObjectBraceToken, // @{
-    openTraitBraceToken,  // #{
 } TokenType;
 
 extern String tokenTypeNames[];
@@ -58,15 +56,15 @@ typedef struct token
     String data;
     TokenType type;
     struct token *previous;
-    Size line, col, end; /* The index of the source marking the END of the token */
+    /* line: line of source code (1-indexed)
+     * col: column of source code (0-indexed)
+     * start: offset from source where this token begins
+     * end: offset from source where this token ends (right after) */
+    Size line, col, start, end;
 } Token;
 
-#define lexLoop(source, tokenName) Token *_next = lex(source), *tokenName;\
-    for (; (tokenName = _next)->data != NULL; free(tokenName->data),\
-    _next = tokenName->next, free(tokenName))
-
 extern void tokenDel(Token *token);
-extern Token *lex(String source, Token *lastToken);
+extern Token *lex(String source, Size lastTokenEnd, Token *lastToken);
 extern void testLexer(String source);
 
 #endif

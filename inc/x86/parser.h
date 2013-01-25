@@ -43,8 +43,8 @@ typedef enum
     stopBC     = 0x8A, // yield nil from expression
     setBC      = 0x8B, // set variable (next byte) to data on stack
     endBC      = 0x8C, // ends a block or file
-    objectBC   = 0x8D,
-    traitBC    = 0x8E,
+    objectBC   = 0x8D, // object definition
+    cascadeBC  = 0x8E, // cascading method calls
     extendedBC8 = 0xF0, // 8 bits, for 8-bit values that are 0xF0 or greater
     extendedBC16 = 0xF1, // 16 bits
     extendedBC32 = 0xF2, // 32 bits
@@ -54,5 +54,6 @@ typedef enum
 } bytecodeCommand;
 
 extern const String bytecodes[];
+extern const Size EOF;
 
 #endif

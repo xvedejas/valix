@@ -40,8 +40,8 @@ char *itoa(Size input, char *buffer, Size radix);
 // atoi
 // atol
 double strtod(const char *String, char **endPtr);
-long strtol(char *nptr, char **endptr, int base);
-unsigned long int strtoul(char *String, char **endPtr, int base);
+long strtol(char *nptr, char **endptr, Size base);
+unsigned long int strtoul(char *String, char **endPtr, Size base);
 void *sort(void *tbs);
 // strtoll
 // strtoul

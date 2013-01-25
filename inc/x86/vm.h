@@ -45,7 +45,7 @@ typedef struct closure
         };
         struct // userDefinedClosure
         {
-            char *bytecode;
+            u8 *bytecode;
             /* The "parent" is the _scope_ in which this closure was defined */ 
             Object *parent;
         };
@@ -99,10 +99,9 @@ typedef struct scope
 typedef struct process
 {
 	Object *global; // process-global scope (contrasting with "universal" scope)
-	Object *scope; // current scope of execution
 	Object *parent; // parent process
-    Stack *values; // stack for saving values during statement execution
-    Stack *scopes;
+    Stack values; // stack for saving values during statement execution
+    Stack scopes; // the "current scope" is the top of the stack
     u8 *bytecode; // beginning of bytecode
     Size IP; // an instruction pointer, pointing to the bytecode being read
 } Process;

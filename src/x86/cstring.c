@@ -10,6 +10,13 @@ String strdup(String s)
     return new;
 }
 
+String strldup(String src, Size count)
+{
+    String dest = malloc(sizeof(char) * (count + 1));
+    strlcpy(dest, src, count);
+    return dest;
+}
+
 u32 strcmp(String cs, String ct)
 {
     register signed char __res;
@@ -37,7 +44,7 @@ Size strlcpy(String dest, String src, Size count)
 {
     register u32 i = 0;
     while (*src && i++ < count) *dest++ = *src++;
-    *dest++ = 0;
+    *dest = 0;
     return i;
 }
 

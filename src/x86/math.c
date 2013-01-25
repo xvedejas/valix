@@ -22,7 +22,7 @@
 
 u32 floorlog2(u32 value)
 {
-    u32 register v = value; // 32-bit value to find the log2 of 
+    register u32 v = value; // 32-bit value to find the log2 of 
     const u32 b[] = {0x2, 0xC, 0xF0, 0xFF00, 0xFFFF0000};
     const u32 S[] = {1, 2, 4, 8, 16};
     register unsigned int result = 0;
@@ -60,7 +60,7 @@ u32 floorlog2(u32 value)
 u32 floorlog10(u32 value)
 {
     if (value == 0) return value;
-    u32 register v = value; // non-zero 32-bit integer value to compute the log base 10 of 
+    register u32 v = value; // non-zero 32-bit integer value to compute the log base 10 of 
     u32 t;          // temporary
 
     static u32 const powersOf10[] = 
@@ -73,8 +73,8 @@ u32 floorlog10(u32 value)
 
 u32 lowestBit(u32 value)
 {
-    u32 register v = value; // 32-bit word input to count zero bits on right
-    u32 register c = 32; // c will be the number of zero bits on the right
+    register u32 v = value; // 32-bit word input to count zero bits on right
+    register u32 c = 32; // c will be the number of zero bits on the right
     v &= -(s32)(v);
     if (v) c--;
     if (v & 0x0000FFFF) c -= 16;

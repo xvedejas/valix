@@ -48,7 +48,7 @@ static char cvtIn[] = {
 
 static char numerals[16] = "0123456789ABCDEF";
 
-long strtol(char *nptr, char **endptr, int base)
+long strtol(char *nptr, char **endptr, Size base)
 {
     long result;
     char *p = nptr;
@@ -223,7 +223,7 @@ double strtod(const char *String, char **endPtr)
         return fraction;
 }
 
-unsigned long int strtoul(String string, char **endPtr, int base)
+unsigned long int strtoul(String string, char **endPtr, Size base)
 {
     register char *p;
     register unsigned long int result = 0;

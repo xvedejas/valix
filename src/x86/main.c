@@ -25,6 +25,7 @@
 #include <threading.h>
 #include <types.h>
 #include <parser.h>
+#include <parser_tests.h>
 #include <video.h>
 #include <pci.h>
 #include <keyboard.h>
@@ -115,11 +116,11 @@ void put(String str)
     while (str[i]) putch(str[i++]);
 }
 
-volatile u32 indention = 0;
+volatile Size indention = 0;
 
 void printf(const char *format, ...)
 {
-	int i;
+	Size i;
 	for (i = 0; i < indention; i++)
 	    put("--");
 	if (format == NULL)
@@ -192,7 +193,7 @@ void printf(const char *format, ...)
     va_end(argptr);
 }
 
-void _panic(String file, u32 line)
+void _panic(char *file, u32 line)
 {
     printf("\n\nPineapple pieces in brine...\n");
     printf("File: '%s'\nLine: %i\nThread: %s %i\n", file, line,
@@ -291,7 +292,7 @@ ThreadFunc testVM()
     String input = "object do: 5 factorial and: #test";
     printf("\n%s\n", input);
     u8 *bytecode = compile(input);
-    ///interpret(bytecode); // uncomment to test interpreter
+    interpret(bytecode); // uncomment to test interpreter
     printf("mem used: %x\n", memUsed());
 }
 
@@ -323,8 +324,10 @@ void kmain(u32 magic, MultibootStructure *multiboot, void *stackPointer)
     asm volatile("sti;");
     printf("Welcome to Valix Pre-Alpha 1. Type \"help\" for usage information.\n\n");
     
-    spawn("VM interactive shell", testVM);
-    while (true);
+    compile_test();
+    
+    //spawn("VM interactive shell", testVM);
+    //while (true);
     
     //pci();
     

@@ -105,10 +105,10 @@ extern void mmInstall(MultibootStructure *multiboot);
 #define kalloc(_size, _thread) _kalloc(_size, _thread, __FILE__, __LINE__)
 #define free(_mem) _free(_mem, __FILE__, __LINE__)
 
-extern void *_kalloc(Size size, struct thread *thread, String file, Size line);
+extern void *_kalloc(Size size, struct thread *thread, char *file, Size line);
 extern void *calloc(Size amount, Size elementSize);
 extern bool isAllocated(void *memory);
-extern void _free(void *memory, String file, Size line);
+extern void _free(void *memory, char *file, Size line);
 extern void *realloc(void *memory, Size size);
 extern void meminfo();
 extern void coreDump();

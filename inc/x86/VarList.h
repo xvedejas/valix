@@ -21,8 +21,8 @@
 
 #include <main.h>
 
-/* This is essentially a hash table mapping variable symbols to a list. Each
- * item in the list is basically a (world, value) tuple. */
+/* This is essentially a hash table mapping variable symbols to a list of
+ * (world, value) tuples. */
 
 typedef struct object Object;
 
@@ -41,15 +41,20 @@ typedef struct varBucket
 typedef struct
 {
     Size size, capacity, entries;
+    /* size: number of buckets (typically 1.5x the number of symbols)
+     * capacity: number of symbols max we want to store in buckets
+     * entries: number of symbols we have stored in buckets */
     VarBucket buckets[0];
 } VarList;
 
-VarList *varListDataNew(Size size);
+extern VarList *varListDataNew(Size capacity, void **symbols);
+extern VarList *varListDataNewPairs(Size capacity, void **symbols);
 /* Set the value of a variable in a given world. If the world isn't in this
  * list yet, it returns false. */
 extern bool varListDataSet(VarList *table, Object *var, Object *world, Object *value);
 /* Get the value of a variable in a given world. If the world isn't found or
  * the variable isn't found, returns NULL */
 extern Object *varListLookup(VarList *table, Object *var, Object *world);
+extern void varListDebug(VarList *table);
 
 #endif

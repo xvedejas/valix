@@ -168,6 +168,8 @@ void parseStructureDebug(ParseStructure *root)
  *     Block           { :x :y | var1 var2 | x + y }
  * */
 
+#define PARSER_DEBUG
+
 u8 *compile(String source)
 {
     ParseStructure *root = parseStructureNew();
@@ -191,18 +193,24 @@ u8 *compile(String source)
     inline void nextToken()
     {
         Token *previous = curToken;
-        curToken = lex(source, ((previous == NULL)?0:curToken->end), curToken);
-        tokenDel(previous);
-        curToken->previous = NULL; // important to do this
+        if (unlikely(previous == NULL))
+        {
+            curToken = lex(source, 0, curToken);
+        }
+        else
+        {
+            curToken = lex(source, curToken->end, curToken);
+            tokenDel(previous);
+        }
+        /* it's important to do this:
+         * use lookahead if you want not to lose previous tokens */
+        curToken->previous = NULL;
     }
     
     /* Each block of bytecode has its own table of interned strings */
-    Size intern(String s)
+    inline Size intern(String s)
     {
-        printf("table %x interning '%s' ", symbolTable, s);
-        Size value = internString(symbolTable, s);
-        printf("-> %i\n", value);
-        return value;
+        return internString(symbolTable, s);
     }
     
     /* The following function takes an array of keywords and finds the
@@ -210,15 +218,15 @@ u8 *compile(String source)
      * or binary messages, just use intern() instead. */
     Size methodNameIntern(Size keywordCount, String *keywords)
     {
-        Size i = keywordCount,
-             j = 0,
-             length = 0;
-        for (j = 0; j < i; j++)
-            length += strlen(keywords[j]) + 1;
+        Size length = 0;
+        Size i;
+             
+        for (i = 0; i < keywordCount; i++)
+            length += strlen(keywords[i]) + 1;
         String messageName = calloc(length + 1, sizeof(char));
-        for (j = 0; j < i; j++)
+        for (i = 0; i < keywordCount; i++)
         {
-            strcat(messageName, keywords[j]);
+            strcat(messageName, keywords[i]);
             strcat(messageName, ":"); 
         }
         Size interned = intern(messageName);
@@ -308,6 +316,11 @@ u8 *compile(String source)
      * 
      * [VarCount] [interned vars...]
      */
+        #ifdef PARSER_DEBUG
+        printf("parseVars\n");
+        indention += 1;
+        #endif // PARSER_DEBUG
+        
         expectToken(pipeToken, "'|'");
         nextToken();
         
@@ -325,6 +338,10 @@ u8 *compile(String source)
         nextToken();
         outVal(varc, parseBlockNode);
         node = parseStructureCommit(parseBlockNode);
+        
+        #ifdef PARSER_DEBUG
+        indention -= 1;
+        #endif // PARSER_DEBUG
     }
     
     void parseBlockHeader()
@@ -337,6 +354,12 @@ u8 *compile(String source)
      * 
      * [ArgumentCount] [interned args...] parseVars()
      */
+        
+        #ifdef PARSER_DEBUG
+        printf("parseBlockHeader\n");
+        indention += 1;
+        #endif // PARSER_DEBUG
+        
         ParseStructure *parseBlockNode = node;
         Size argc = 0;
         node = parseStructurePush(node);
@@ -349,10 +372,18 @@ u8 *compile(String source)
             argc++;
             nextToken();
         }
+        // var count:
         if (curToken->type == pipeToken)
             parseVars();
+        else
+            outVal(0, parseBlockNode);
+        // arg count:
         outVal(argc, parseBlockNode);
         node = parseStructureCommit(parseBlockNode);
+        
+        #ifdef PARSER_DEBUG
+        indention -= 1;
+        #endif // PARSER_DEBUG
     }
     
     auto void parseValue();
@@ -370,14 +401,24 @@ u8 *compile(String source)
      * Note: the number of args for a message can always be determined
      * from its name, so that isn't specified in the bytecode.
      */
+     
+        #ifdef PARSER_DEBUG
+        printf("parseUnaryMsg\n");
+        indention += 1;
+        #endif // PARSER_DEBUG
+        
         while (curToken->type == keywordToken)
         {
             if (lookahead(1)->type == colonToken)
-                return;
+                break;
             outByte(messageBC, node); // bytecode "message"
             outVal(intern(curToken->data), node); // message name
             nextToken();
         }
+        
+        #ifdef PARSER_DEBUG
+        indention -= 1;
+        #endif // PARSER_DEBUG
     }
     
     void parseBinaryMsg()
@@ -393,6 +434,12 @@ u8 *compile(String source)
      * Note: the number of args for a message can always be determined
      * from its name, so that isn't specified in the bytecode.
      */
+        
+        #ifdef PARSER_DEBUG
+        printf("parseBinaryMsg\n");
+        indention += 1;
+        #endif // PARSER_DEBUG
+        
         // If we don't have a binary message yet, try unary, which can be a
         // special character or colon
         if (curToken->type != specialCharToken && curToken->type != colonToken)
@@ -401,7 +448,12 @@ u8 *compile(String source)
             // Still no? Well, there must not be a binary message. Return.
             if (curToken->type != specialCharToken &&
                 curToken->type != colonToken)
+            {
+                #ifdef PARSER_DEBUG
+                indention -= 1;
+                #endif // PARSER_DEBUG
                 return;
+            }
         }
         
         Size binaryMessage;
@@ -414,6 +466,10 @@ u8 *compile(String source)
         parseBinaryMsg();
         outByte(messageBC, node); // bytecode "message"
         outVal(binaryMessage, node); // message name
+        
+        #ifdef PARSER_DEBUG
+        indention -= 1;
+        #endif // PARSER_DEBUG
     }
     
     void parseKeywordMsg()
@@ -429,13 +485,23 @@ u8 *compile(String source)
      * Note: the number of args for a message can always be determined
      * from its name, so that isn't specified in the bytecode.
      */
+        #ifdef PARSER_DEBUG
+        printf("parseKeywordMsg\n");
+        indention += 1;
+        #endif // PARSER_DEBUG
+        
         // If we don't have a keyword message yet, try binary
         if (lookahead(1)->type != colonToken)
         {
             parseBinaryMsg();
             // Still no? Well, there must not be a keyword message. Return.
             if (curToken->type != keywordToken)
+            {
+                #ifdef PARSER_DEBUG
+                indention -= 1;
+                #endif // PARSER_DEBUG
                 return;
+            }
         }
         
         String keywords[maxKeywordCount];
@@ -445,7 +511,7 @@ u8 *compile(String source)
         {
             parserRequire(i < maxKeywordCount, "More keywords than "
                 "allowed in one message");
-            keywords[i++] = curToken->data;
+            keywords[i++] = strdup(curToken->data);
             nextToken();
             expectToken(colonToken, "':'");
             nextToken();
@@ -454,10 +520,18 @@ u8 *compile(String source)
         }
         outByte(messageBC, node); // bytecode "message"
         outVal(methodNameIntern(i, keywords), node); // message name
+        
+        #ifdef PARSER_DEBUG
+        indention -= 1;
+        #endif // PARSER_DEBUG
     }
     
     void parseExpr()
     {
+        #ifdef PARSER_DEBUG
+        printf("parseExpr\n");
+        indention += 1;
+        #endif // PARSER_DEBUG
         bool assignment = (lookahead(1)->type == eqToken);
         Size keyword; // interned variable if assignment is true
         if (assignment)
@@ -485,6 +559,10 @@ u8 *compile(String source)
             outByte(setBC, node);
             outVal(keyword, node);
         }
+        
+        #ifdef PARSER_DEBUG
+        indention -= 1;
+        #endif // PARSER_DEBUG
     }
     
     auto void parseStmt();
@@ -501,14 +579,17 @@ u8 *compile(String source)
      * 
      * Note: argc can be deduced by the method name
      */
+        #ifdef PARSER_DEBUG
+        printf("parseMethods\n");
+        indention += 1;
+        #endif // PARSER_DEBUG
         
         Size methodCount = 0;
         
         ///
         ParseStructure *methodCountNode = node;
         node = parseStructurePush(node);
-        
-        while (curToken->type != closeBraceToken)
+        while (curToken->type != closeBracketToken)
         {
             methodCount++;
             
@@ -527,7 +608,7 @@ u8 *compile(String source)
                 String keywords[maxKeywordCount];
                 Size keywordc = 0;
                 
-                keywords[keywordc] = curToken->data;
+                keywords[keywordc++] = strdup(curToken->data);
                 nextToken();
                 if (curToken->type == colonToken) // not unary message
                 {
@@ -542,7 +623,7 @@ u8 *compile(String source)
                         expectToken(keywordToken, "method keyword");
                         parserRequire(keywordc < maxKeywordCount,
                             "Message has too many keywords");
-                        keywords[keywordc] = curToken->data;
+                        keywords[keywordc++] = strdup(curToken->data);
                         nextToken();
                         expectToken(colonToken, "':'");
                         nextToken();
@@ -576,6 +657,10 @@ u8 *compile(String source)
         /* Go back and insert the number of methods at the beginning */
         outVal(methodCount, methodCountNode);
         node = parseStructureCommit(methodCountNode);
+        
+        #ifdef PARSER_DEBUG
+        indention -= 1;
+        #endif // PARSER_DEBUG
     }
     
     void parseObjectDef()
@@ -593,6 +678,11 @@ u8 *compile(String source)
      * The object definition is distinguished from the block definition by the
      * double colon at the beginning. 
      */
+        #ifdef PARSER_DEBUG
+        printf("parseObjectDef\n");
+        indention += 1;
+        #endif // PARSER_DEBUG
+        
         outByte(objectBC, node);
         
         Size traitc = 0,
@@ -624,10 +714,18 @@ u8 *compile(String source)
         /* Parse the method list */
         
         parseMethods();
+        
+        #ifdef PARSER_DEBUG
+        indention -= 1;
+        #endif // PARSER_DEBUG
     }
     
     void parseValue()
     {
+        #ifdef PARSER_DEBUG
+        printf("parseValue\n");
+        indention += 1;
+        #endif // PARSER_DEBUG
         switch (curToken->type)
         {
             case integerToken:
@@ -729,11 +827,16 @@ u8 *compile(String source)
                 parserRequire(false, "Parser Error");
             } break;
         }
+        #ifdef PARSER_DEBUG
+        indention -= 1;
+        #endif // PARSER_DEBUG
     }
     
     void parseStmt()
     {
-        printf("curtoken type %s\n", tokenTypeNames[curToken->type]);
+        #ifdef PARSER_DEBUG
+        printf("parseStmt\n");
+        #endif
         while (startsValue(curToken->type))
         {
             parseExpr();
@@ -771,7 +874,6 @@ u8 *compile(String source)
     }
     
     nextToken(); // get first token
-    printf("First token type %s data %s\n", tokenTypeNames[curToken->type], curToken->data);
     parseBlockHeader();
     parseStmt();
     outByte(EOF, node);

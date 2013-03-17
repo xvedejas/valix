@@ -30,6 +30,7 @@
 #include <String.h>
 #include <parser.h>
 #include <threading.h>
+#include <types.h>
 
 /* The code in this file is some of the most complex in this project. Any
  * changes to this code must be reviewed by Xander before the changes are
@@ -39,9 +40,10 @@
 // This function reads in a value from bytecode which may be encoded in
 // 1, 2, or 4 bytes depending on format.
 Size readValue(u8 *bytecode, Size *IP)
-{	u8 _val = *bytecode;
+{
+    u8 _val = bytecode[*IP];
 	Size result = _val;
-    *IP++;
+    *IP += 1;
 	if ((_val & 0xF0) == 0xF0) // value >= 0xF0
 	{
 		switch (_val & 0x0F)
@@ -49,7 +51,7 @@ Size readValue(u8 *bytecode, Size *IP)
 			case 0: /* values from 0xF0 to 0xFF
                       (which normally indicate more bytes) */
 			    result = bytecode[*IP];
-			    *IP++;
+			    *IP += 1;
 			break;
 			case 1: /* values from 0x100 to 0xFFFF */
 			    result = bytecode[*IP] | (bytecode[*IP + 1] << 8);
@@ -73,7 +75,7 @@ Size readValue(u8 *bytecode, Size *IP)
 // create a copy, it only provides a pointer to the string in bytecode.
 String readString(u8 *bytecode, Size *IP)
 {
-    String s = (String)bytecode;
+    String s = (String)(bytecode + *IP);
     *IP += strlen(s) + 1;
     return s;
 }
@@ -147,7 +149,7 @@ Object *closure_with(Object *self, ...)
     ** Executes a closure (self) with the given arguments.
     ** Intended to work with both user-defined and internal (C-function) closures
     */
-    /// todo: support for 8-bit and 16-bit wide values
+    /// todo: support for 8-bit and 16-bit wide values (?)
 {
 	assert(self != NULL && self->data != NULL, "NULL error");
     Closure *closureData = self->data;
@@ -219,12 +221,12 @@ Object *closure_with(Object *self, ...)
              * ambiguous, since we're calling some arbitrary C function without
              * regards to its type. */
             
-            indention++;///
+            //indention++;///
             void *result = callInternal(closureData->function,
                 closureData->argc + 1, arguments);
             /* The given type of "result" is what we currently have, but we want
              * to return an object, so here we do the proper conversion. */
-            indention--;///
+            //indention--;///
             switch (argString[0])
             {
                 case 'u':
@@ -347,15 +349,23 @@ Object *closure_newInternal(Object *self, void *function, String argString)
     return new;
 }
 
+/* An "external" or "user-defined" closure is user-defined and has an associated
+ * scope created each time it is being executed. Assume the scope has already
+ * been created and is the top scope known by the process. */
 Object *closure_new(Object *self, Object *process)
 {
-	u8 *bytecode = ((Process*)process->data)->bytecode;
-	Size *IP = &((Process*)process->data)->IP;
-	Size varCount = readValue(bytecode, IP); // does not include arg count
+    Process *processData = process->data;
+	u8 *bytecode = processData->bytecode;
+	Size *IP = &processData->IP;
 	Size argCount = readValue(bytecode, IP);
-	printf("var count %i, arg count %i\n", varCount, argCount);
-	panic("not implemented");
-	return NULL;
+	Size varCount = readValue(bytecode, IP); // does not include arg count
+    Object *closure = object_new(self);
+    Closure *closureData = closure->data;
+    Object *scope = stackTop(&processData->scopes);
+    closureData->type = userDefinedClosure;
+    closureData->parent = scope;
+    closureData->bytecode = bytecode + *IP;
+	return closure;
 }
 
 Object *methodTable_get(Object *self, Object *symbol)
@@ -372,6 +382,11 @@ void methodTable_addClosure(Object *self, Object *symbol, Object *closure)
 void console_printTest(Object *self)
 {
     printf("    VM CHECK: Success! console object at %x\n", self);
+}
+
+void console_print(Object *self, Object *str)
+{
+    printf("%S", str);
 }
 
 Object *returnTrue(Object *self)
@@ -403,10 +418,50 @@ Object *trait_new(Object *self)
     return NULL;
 }
 
-Object *scope_new(Object *self, Object *parent)
+/* Reads from the bytecode a list of symbols. */
+Object *scope_new(Object *self, Object *process, Object *containing,
+                  Object *caller, Size symbolCount)
 {
-	panic("Not implemented");
-	return NULL;
+    Process *processData = process->data;
+    
+    Object *scope = object_new(self);
+    Scope *scopeData = malloc(sizeof(Scope));
+    scope->data = scopeData;
+    scopeData->thisWorld = ((Scope*)caller->data)->thisWorld;
+    scopeData->containing = containing;
+    scopeData->caller = caller;
+    
+    /* Now we make a mapping from the index that, in the bytecode, represents
+     * the symbol to the actual symbol object. Because the symbols in the
+     * bytecode have contiguous indices starting from 0, we can allocate an
+     * array. */
+    if (symbolCount > 0)
+    {
+        Object **symbols = malloc(sizeof(Object*) * symbolCount);
+        
+        /* Create a list of variables for the scope that is the proper size. */
+        Size i;
+        for (i = 0; i < symbolCount; i++)
+            symbols[i] = processData->symbols[readValue(processData->bytecode,
+                                                        &processData->IP)];
+        scopeData->variables = varListDataNew(symbolCount, (void**)symbols);
+    }
+    
+    return scope;
+}
+
+Object *currentProcess()
+{
+	return getCurrentThread()->process;
+}
+
+Object *currentWorld()
+{
+	Process *process = getCurrentThread()->process->data;
+	if (process == NULL)
+		return ((Scope*)globalScope->data)->thisWorld;
+	Scope *scope = ((Object*)stackTop(&process->scopes))->data;
+	return scope->thisWorld;
 }
 
 /* This does not create a new thread for the process. This only tries to make a
@@ -424,7 +479,7 @@ Object *scope_new(Object *self, Object *parent)
  /// todo: check that the bytecode pointer is swappable like this everywhere
  /// todo: allow adding of new symbol indices in the middle of bytecode rather
  ///       than only at the header (will require parser modification)
-Object *process_new(Object *self, Object *block)
+Object *process_new(Object *self)
 {
 	if (currentThread->process != NULL)
 		return currentThread->process;
@@ -432,11 +487,14 @@ Object *process_new(Object *self, Object *block)
     Process *data = malloc(sizeof(Process));
     process->data = data;
     
-    data->global = scope_new(scopeProto, block);
     data->parent = NULL;
     stackNew(&data->values);
     stackNew(&data->scopes);
-    stackPush(&data->scopes, scope_new(scopeProto, block));
+    // create process scope
+    
+    stackPush(&data->scopes,
+              scope_new(scopeProto, process, globalScope, globalScope, 0));
+    assert(((Object*)stackTop(&data->scopes))->data != NULL, "");
     // associate the process object with the system thread
     currentThread->process = process;
     return process;
@@ -455,8 +513,10 @@ Object *process_spawn(Object *self, Object *block)
  * allow the interpreter to call C functions via the VM. */
 void vmInstall()
 {
-    globalSymbolTable = stringMapNew();
-    globalObjectSet = objectSetNew();
+    /* 0. Setup global tables */
+    
+    globalSymbolTable = stringMapNew(); /* string -> symbol */
+    globalObjectSet = objectSetNew(16/*1024*/);
     
     /* 1. create and initialize methodTables */
     
@@ -529,14 +589,16 @@ void vmInstall()
     
     numberInstall();
     
-    Object *consoleMT = object_send(methodTableMT, symbol("new:"), 1);
+    Object *consoleMT = object_send(methodTableMT, symbol("new:"), 2);
     Object *console = object_send(objectProto, newSymbol);
     console->methodTable = consoleMT;
     
     methodTable_addClosure(consoleMT, symbol("printTest"),
 		closure_newInternal(closureProto, console_printTest, "vo"));
+    methodTable_addClosure(consoleMT, symbol("print:"),
+		closure_newInternal(closureProto, console_print, "voo"));
     
-    send(console, "printTest");
+    send(console, "printTest"); // should print VM CHECK: Success!
     
     /* 5. Install other base components */
     
@@ -552,6 +614,18 @@ void vmInstall()
         closure_newInternal(closureProto, trait_new, "oo"));
     
     stringInstall();
+    
+    /* 6. Make components accessible by defining global variables */
+    
+    Object *symbols_array[] = { symbol("Console"), console, };
+    void **symbols = (void**)(Object**)symbols_array;
+    Size symbols_array_len = 1;
+    
+    globalScope = object_new(objectProto);
+    Scope *globalScopeData = malloc(sizeof(Scope));
+    globalScope->data = globalScopeData;
+    globalScopeData->variables =
+		varListDataNewPairs(symbols_array_len, symbols);
 }
 
 /* This is looking up a variable, beginning with the local scope. The chain of
@@ -563,29 +637,39 @@ void vmInstall()
  * to more-global ones. */
 Object *scope_lookupVar(Object *self, Object *symbol)
 {
+	/// todo: throw error instead of panicking
 	Scope *scope = self->data;
+	assert(scope != NULL, "lookup error");
     Object *world = scope->thisWorld;
     Object *thisWorld = world;
     Object *value;
-    do
+    while (true)
     {
         value = varListLookup(scope->variables, symbol, world);
+        if (value != NULL)
+            return value;
         if (world == scope->thisWorld)
         {
             if (scope == (Scope*)globalScope->data)
+            {
+				varListDebug(scope->variables);
                 panic("lookup Error: variable not found!");
+			}
             assert(scope->containing != NULL, "lookup error");
-            scope = scope->containing->data;
+            Scope *containing = scope->containing->data;
+            if (scope == containing) // root
+                panic("lookup Error: scope does not lead back to global scope");
+            scope = containing; // scope = scope->containing
             world = thisWorld;
         }
         else
         {
             world = ((World*)world->data)->parent;
             if (unlikely(world == NULL))
-                return NULL;
+                panic("lookup Error");
         }
-    } while (value == NULL);
-    return value;
+    }
+    return NULL;
 }
 
 /* This should mimic the previous function in the way it finds a variable.
@@ -594,39 +678,6 @@ Object *scope_lookupVar(Object *self, Object *symbol)
  * of by the varList routine). */
 void scope_setVar(Object *self, Object *symbol, Object *value)
 {
-    panic("not implemented");
-}
-
-/* This function is called by interpret at the beginning of executing a
- * closure, to account for the header which tells info about the variables and
- * arguments available to the closure */
-void process_closureSetup(Object *process)
-{
-	panic("not implemented");
-}
-
-/* Sets up intern table from the bytecode header */
-void process_bytecodeSetup(Object *self)
-{
-    Process *process = self->data;
-	u8 *bytecode = process->bytecode;
-	/* The first byte(s) are the number of interned symbols present in the
-	 * bytecode segment */
-    
-	Size symbolCount = readValue(bytecode, &process->IP);
-    /* Now we make a mapping from the index that, in the bytecode, represents
-     * the symbol to the actual symbol object. Because the symbols in the
-     * bytecode have contiguous indices starting from 0, we can allocate an
-     * array. */
-    
-    Object **symbols = malloc(sizeof(Object*) * symbolCount);
-    
-    Size i;
-    for (i = 0; i < symbolCount; i++)
-    {
-        symbols[i] = symbol(readString(bytecode, &process->IP));
-    }
-    
     panic("not implemented");
 }
 
@@ -673,35 +724,90 @@ Object *process_popValue(Object *self)
 
 void interpret(u8 *bytecode)
 {
-	if (currentThread->process == NULL)
-		currentThread->process = process_new(objectProto, closureProto);
-	Object *process = currentThread->process;
+    Object **symbols;
+    
+    Object *process, *scope, *closure;
+    // Check and see if there's no process in this thread. This tells us whether
+    // we are starting with a new file.
+    bool newFile = false;
+    if (currentThread->process == NULL)
+    {
+        // Creating a new process also creates a scope, but the closure must
+        // be created separately.
+        process = process_new(objectProto);
+        newFile = true;
+    }
+    else
+    {
+        process = currentThread->process;
+    }
+    
+    Process *processData = process->data;
+    scope = stackTop(&processData->scopes);
 	
-	/* first, the byte code has a section of interned variable names which we
-	 * must turn into a table. */
-	process_bytecodeSetup(process);
-	process_closureSetup(process);
-	Object *closure = closure_new(objectProto, process);
-	// If there is no current process, we create one.
+    if (newFile)
+    {
+        // 1. create process corresponding to this thread.
+        processData->bytecode = bytecode;
+        processData->IP = 0;
+        
+        // 2. Read the bytecode header defining interned symbols.
+        Size symbolCount = readValue(bytecode, &processData->IP);
+        
+        // This is a process-wide symbol list unique to the given bytecode.
+        symbols = malloc(sizeof(Object*) * symbolCount);
+        Size i;
+        for (i = 0; i < symbolCount; i++)
+        {
+            String s = readString(bytecode, &processData->IP);
+            symbols[i] = symbol(s);
+        }
+        
+        processData->symbols = symbols;
+        
+        // 3. Read the closure definition to determine file-global variables.
+        /* Format is roughly: [argc] [varc(not including argc)] args.. vars.. */
+        closure = closure_new(objectProto, process);
+    }
+    else
+    {
+        // If there was already a process, we assume that we're not starting at the
+        // beginning of a file, so we continue.
+        symbols = processData->symbols;
+    }
 	
 	while (true)
 	{
-		printf("%x\n", *bytecode);
-		switch (*bytecode)
+        Size value = readValue(bytecode, &processData->IP);
+		printf("%x, %s\n", value, bytecodes[value - 0x80]);
+		switch (value)
 		{
 			case integerBC:
-				panic("not implemented");
+			{
+                /* The value of the integer is given as a string. */
+				String s = readString(bytecode, &processData->IP);
+				Object *integer = integer32_new(integer32Proto,
+				                                strtoul(s, NULL, 10));
+				stackPush(&processData->values, integer);
+			}
             break;
 			case doubleBC:
+                /* The value of the double is given as a string. */
 				panic("not implemented");
             break;
 			case stringBC:
-				panic("not implemented");
+			{
+			    String s = readString(bytecode, &processData->IP);
+			    Object *str = string_new(stringProto, s);
+			    stackPush(&processData->values, str);
+			}
             break;
 			case charBC:
 				panic("not implemented");
             break;
 			case symbolBC:
+                /* use the symbol array to find the symbol object which has
+                 * already been created at the start of the file */
 				panic("not implemented");
             break;
 			case arrayBC:
@@ -713,13 +819,26 @@ void interpret(u8 *bytecode)
 				panic("not implemented");
             break;
 			case variableBC:
-				panic("not implemented");
+			{
+                /* We have found a variable, so we need to look up its value. */
+                Object *symbol = symbols[readValue(bytecode, &processData->IP)];
+                Object *value = scope_lookupVar(scope, symbol);
+				stackPush(&processData->values, value);
+			}
             break;
 			case messageBC:
-				panic("not implemented");
+			{
+				/* argc is the number of arguments not including recipient */
+				Object *symbol = symbols[readValue(bytecode, &processData->IP)];
+			    Object *arg = stackPop(&processData->values);
+			    Object *recipient = stackPop(&processData->values);
+			    Object *method = object_bind(recipient, symbol);
+			    object_send(recipient, symbol, arg);
+			}
             break;
 			case stopBC:
-				panic("not implemented");
+				/// todo: cleanup
+				return;
             break;
 			case setBC:
 				panic("not implemented");
@@ -746,10 +865,9 @@ void interpret(u8 *bytecode)
 				panic("not implemented");
             break;
 			default:
-				panic("not implemented");
+				panic("invalid bytecode");
 			break;
 		}
-		bytecode++;
 	}
 	panic("not implemented");
 }

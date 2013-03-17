@@ -77,10 +77,11 @@ struct object
 {
     struct object *parent;
     struct object *methodTable;
-    void *data; // with user-defined objects, the data is a scope object
+    void *data; // with user-defined objects, the data is a scope object.
+                // with internally defined objects, the data can be anything.
 };
 
-/* A scope is, in a sense, a running "instance" of a block. 
+/* A scope is, in a sense, a running "instance" of a block/"closure". 
  * It contains the values of local variables and knows about parent and calling
  * scopes. */
 typedef struct scope
@@ -98,12 +99,12 @@ typedef struct scope
 
 typedef struct process
 {
-	Object *global; // process-global scope (contrasting with "universal" scope)
 	Object *parent; // parent process
     Stack values; // stack for saving values during statement execution
     Stack scopes; // the "current scope" is the top of the stack
     u8 *bytecode; // beginning of bytecode
     Size IP; // an instruction pointer, pointing to the bytecode being read
+    Object **symbols; // array of symbols (for de-interning)
 } Process;
 
 typedef struct world
@@ -128,6 +129,8 @@ extern Object *returnTrue(Object *self);
 extern Object *returnFalse(Object *self);
 extern Object *closure_with(Object *self, ...);
 extern Object *methodTable_new(Object *self, u32 size);
+extern Object *currentProcess();
+extern Object *currentWorld();
 extern void interpret(u8 *bytecode);
 
 #define object_send(self, message, ...)\

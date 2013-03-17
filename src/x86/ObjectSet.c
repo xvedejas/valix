@@ -22,7 +22,7 @@
 #include <mm.h>
 #include <vm.h>
 
-/* We begin with bucket A, and bucket B is NULL. When A gets nearly full,
+/* We begin with table A, and table B is NULL. When A gets nearly full (~75%),
  * we create a new bucket B that is larger. When inserting to the Set, we
  * insert to B and then copy an item over from A to B. Once A is empty,
  * A becomes B and B is set to NULL again. This means we insert to B unless it
@@ -36,14 +36,15 @@
 
 const Size objectSetInitialSize = 5;
 
-ObjectSet *objectSetNew()
+ObjectSet *objectSetNew(Size initialSize)
 {
     ObjectSet *set = malloc(sizeof(ObjectSet));
-    set->sizeA = objectSetInitialSize;
+    sweep();
+    set->sizeA = max(initialSize, objectSetInitialSize);
     set->sizeB = 0;
     set->entriesA = 0;
     set->entriesB = 0;
-    set->A = calloc(sizeof(ObjectSetBucket), objectSetInitialSize);
+    set->A = calloc(sizeof(ObjectSetBucket), set->sizeA);
     set->B = NULL;
     return set;
 }
@@ -85,7 +86,6 @@ void _objectSetCopyFromAToB(ObjectSet *set)
     if (set->entriesA == 0)
     {
         // done moving stuff, get rid of A and move B to A
-        assert(set->entriesA == 0, "ObjectSet error");
         free(set->A);
         set->A = set->B;
         set->entriesA = set->entriesB;
@@ -119,30 +119,38 @@ void _objectSetCopyFromAToB(ObjectSet *set)
     assert(!_objectSetAdd(set, obj, false), "Stringset error");
 }
 
+extern MemoryHeader *firstUsedBlock; /// to remove later
+
 /* Returns true if already in the set */
 bool _objectSetAdd(ObjectSet *set, Object *obj, bool doMove)
 {
+    /// this function seems to be writing outside of allocated memory
+    /// after it is called 12 times...
     Size hash = valueHash(obj);
     ObjectSetBucket *bucket = &set->A[hash % set->sizeA];
     while (true)
     {
         if (bucket->key == obj)
-            return true;
+            return true; // already here, no need to add
         if (bucket->next == NULL)
             break;
         bucket = bucket->next;
     }
+    /* At end of chain in A (bucket->next is NULL) */
+    
+    /* But if we have a B table, we want to put it there */
     if (set->B != NULL)
     {
         bucket = &set->B[hash % set->sizeB];
         while (true)
         {
             if (bucket->key == obj)
-                return true;
+                return true; // already here, no need to add
             if (bucket->next == NULL)
                 break;
             bucket = bucket->next;
         }
+        /* At end of chain in B (bucket->next is NULL). Adding to B. */
         set->entriesB++;
     }
     else
@@ -151,14 +159,17 @@ bool _objectSetAdd(ObjectSet *set, Object *obj, bool doMove)
         _objectSetTestResize(set);
     }
     
-    /* Add the entry */
-    
+    /* Add the entry. "bucket" might be in either table. */
+    assert(firstUsedBlock->previous == NULL, "Sweep failed");
+    /* If the bucket has no key, we're at the first element in that bucket.
+     * If the bucket does have a key, we need to allocate a new element. */
     if (bucket->key != NULL)
     {
         bucket->next = malloc(sizeof(ObjectSetBucket));
         bucket = bucket->next;
         bucket->next = NULL;
     }
+    assert(firstUsedBlock->previous == NULL, "Sweep failed");
     bucket->key = obj;
     
     if (set->B != NULL && doMove)
@@ -269,6 +280,7 @@ bool objectSetHas(ObjectSet *set, Object *obj)
 void objectSetDebug(ObjectSet *set)
 {
     Size i;
+    printf("  ObjectSet at %x\n", set);
     printf(" ===[A size: %x]=== \n", set->sizeA);
     for (i = 0; i < set->sizeA; i++)
     {

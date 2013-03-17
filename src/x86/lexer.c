@@ -208,8 +208,9 @@ Size matchComment(String source, Size start)
     return 0;
 }
 
-void tokenDel(Token *token)
+inline void tokenDel(Token *token)
 {
+    assert(token != NULL, "lexer error");
     if (token->data != NULL)
         free(token->data);
     free(token);

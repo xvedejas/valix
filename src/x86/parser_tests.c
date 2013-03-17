@@ -19,11 +19,11 @@
 // note that this code would not work because array has not been declared.
 String input1 = "array = (1, 2, 3).";
 // This is the expected output, typed by hand, for the given input.
-u8 *output1 = (u8*)"\x01""array\x00\x00\x81""1\x00\x81""2\x00\x81""3\x00\x86\x03\x8B\x00\x8A";
+u8 *output1 = (u8*)"\x01""array\x00\x00\x00\x81""1\x00\x81""2\x00\x81""3\x00\x86\x03\x8B\x00\x8A";
 // 01      number of symbols defined
 // array   name of first symbol
 // 00      end of first symbol
-// 00      parseBlockHeader: no variables defined
+// 00 00   parseBlockHeader: no arguments defined, no variables defined
 // 81      integer
 // 1 00    value given by string "1"
 // 81 2 00 integer 2

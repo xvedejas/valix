@@ -119,22 +119,18 @@ inline void setColor(Buffer buffer, u32 pos, u32 color)
 	}
 }
 
-void putPixel(Buffer buffer, u32 x, u32 y, u32 color)
+inline void putPixel(Buffer buffer, u32 x, u32 y, u32 color)
 {
-    assert(x < buffer.width, "Index outside of range of video buffer");
-    assert(y < buffer.height, "Index outside of range of video buffer");
-    
-    u32 index = x * xstep(buffer) + y * ystep(buffer);
-    setColor(buffer, index, color);
+    //assert(x < buffer.width, "Index outside of range of video buffer");
+    //assert(y < buffer.height, "Index outside of range of video buffer");
+    setColor(buffer, x * xstep(buffer) + y * ystep(buffer), color);
 }
 
 u32 getPixel(Buffer buffer, u32 x, u32 y)
 {
-    assert(x < buffer.width, "Index outside of range of video buffer");
-    assert(y < buffer.height, "Index outside of range of video buffer");
-    
-    u32 index = x * xstep(buffer) + y * ystep(buffer);
-    return getColor(buffer, index);
+    //assert(x < buffer.width, "Index outside of range of video buffer");
+    //assert(y < buffer.height, "Index outside of range of video buffer");
+    return getColor(buffer, x * xstep(buffer) + y * ystep(buffer));
 }
 
 void drawChar(Buffer buffer, char c, u32 x, u32 y, u32 color)

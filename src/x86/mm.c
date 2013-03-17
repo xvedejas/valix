@@ -183,6 +183,8 @@ inline void addToUsedList(MemoryHeader *block)
 
 void *_kalloc(Size size, Thread *thread, char *file, Size line)
 {
+    // next line useful for debugging mm errors
+    //printf("allocating from %s, line %i\n", file, line);
     /* Thread may be null */
     mutexAcquireLock(&mmLockMutex);
     
@@ -292,7 +294,8 @@ void *realloc(void *memory, Size size)
 void *calloc(Size amount, Size elementSize)
 {
     void *mem = malloc(amount * elementSize);
-    return memset(mem, 0, amount * elementSize);
+    memset(mem, 0, amount * elementSize);
+    return mem;
 }
 
 bool isAllocated(void *memory)

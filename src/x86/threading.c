@@ -82,7 +82,7 @@ void threadPromote(Thread *thread)
 void endThread()
 {
     killThread(currentThread);
-    for (;;) asm("hlt");
+    for (;;) __asm__ __volatile__("hlt;");
 }
 
 void switchThreads()

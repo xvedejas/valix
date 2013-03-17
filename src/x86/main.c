@@ -166,14 +166,16 @@ void printf(const char *format, ...)
                     else
                         put(s);
                 } break;
-                /*case 'S': // vm string object
+                case 'S': // vm string object
                 {
                     Object *str = va_arg(argptr, Object*);
                     Size i;
-                    Size len = str->string->len;
+                    StringData *data = str->data;
+                    Size len = data->len;
+                    String s = data->string;
                     for (i = 0; i < len; i++)
-                        putch(str->string->string[i]);
-                } break;*/
+                        putch(s[i]);
+                } break;
                 case 'c':
                 {   
                     u8 c = va_arg(argptr, u32);
@@ -198,7 +200,7 @@ void _panic(char *file, u32 line)
     printf("\n\nPineapple pieces in brine...\n");
     printf("File: '%s'\nLine: %i\nThread: %s %i\n", file, line,
         getCurrentThread()->name, getCurrentThread()->pid);
-    endThread();
+    while (true) halt();
 }
 
 extern void schedule();
@@ -218,7 +220,7 @@ void timerPhase(int hz)
 
 u32 time()
 {   
-    return timerTicks; /* get fancier later, with formatting possibly */
+    return timerTicks;
 }
 
 void timerInstall()
@@ -289,9 +291,10 @@ void pci()
 ThreadFunc testVM()
 {
     printf("mem used: %x\n", memUsed());
-    String input = "object do: 5 factorial and: #test";
+    String input = "Console print: \"Hello, World!\n\".";
     printf("\n%s\n", input);
     u8 *bytecode = compile(input);
+    printf("compiled.\n");
     interpret(bytecode); // uncomment to test interpreter
     printf("mem used: %x\n", memUsed());
 }
@@ -301,15 +304,15 @@ ThreadFunc testVM()
 void kmain(u32 magic, MultibootStructure *multiboot, void *stackPointer)
 {
     videoInstalled = false;
+    debugInstall();
+    printf("Valix OS Pre-Alpha - Built on " __DATE__ " " __TIME__
+        "\nCompiled with gcc " __VERSION__ "...\n");
     gdtInstall();
     idtInstall();
     isrsInstall();
     irqInstall();
     timerInstall();
-    debugInstall();
-    printf("Valix OS Pre-Alpha - Built on " __DATE__ " " __TIME__
-        "\nCompiled with gcc " __VERSION__ "...\n");
-    acpiInstall();
+    //acpiInstall(); /// seems to have a bug
     videoInstall(multiboot);
     printf("video installed\n");
     mmInstall(multiboot);
@@ -319,15 +322,15 @@ void kmain(u32 magic, MultibootStructure *multiboot, void *stackPointer)
     
     vmInstall(); // must be after mmInstall
     printf("vm installed\n");
-    keyboardInstall(); // must be after mmInstall, threadingInstall
+    keyboardInstall(); // should be after mmInstall (for use of getstring)
     printf("keyboard installed\n");
     asm volatile("sti;");
     printf("Welcome to Valix Pre-Alpha 1. Type \"help\" for usage information.\n\n");
     
-    compile_test();
+    //compile_test();
     
-    //spawn("VM interactive shell", testVM);
-    //while (true);
+    spawn("VM interactive shell", testVM);
+    while (true);
     
     //pci();
     

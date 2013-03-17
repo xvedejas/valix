@@ -21,14 +21,76 @@
 #include <vm.h>
 #include <cstring.h>
 
-VarList *varListDataNew(Size size)
+/* Note on implementation:
+ * 
+ * This is a hash table with an open-addressing scheme. It is static at 150% of
+ * the minimum size to hold all entries.
+ * 
+ * Each bucket contains a symbol and a linked list, and each item in the linked
+ * list is a (world, value) pair. When the VarList is initialized, all buckets
+ * are created with empty linked lists.
+ * 
+ * ATTN: Currently it lacks a way to add worlds, this needs to be fixed before
+ * anything will work because worlds are required.
+ *  */
+
+VarList *varListDataNew(Size capacity, void **symbols)
 {
-    Size buckets = size + (size >> 1);
-    VarList *table = malloc(sizeof(VarList) + sizeof(VarBucket) * buckets);
-    table->capacity = size;
+	/* Given an array of symbols, create a new varList with those
+	 * symbols undefined */
+    Size size = capacity + (capacity >> 1);
+    VarList *table = calloc(sizeof(VarList) + sizeof(VarBucket) * size, 1);
+    table->capacity = capacity;
     table->entries = 0;
-    memsetd(table->buckets, 0, sizeof(VarBucket) * buckets >> 4);
-    table->size = buckets;
+    VarBucket *buckets = table->buckets;
+    //memsetd(buckets, 0, (sizeof(VarBucket) >> 2) * size);
+    table->size = size;
+    
+    Size hash;
+    Size i;
+    for (i = 0; i < capacity; i++)
+    {
+        void *var = symbols[i];
+        hash = valueHash(var) % size;
+        while (buckets[hash].var != NULL)
+			hash = (hash + 1) % size;
+        VarBucket *bucket = &table->buckets[hash];
+        bucket->var = var;
+    }
+    
+    return table;
+}
+
+VarList *varListDataNewPairs(Size capacity, void **symbols)
+{
+    /* Given an array of objects where each even-indexed one is a symbol
+     * and each odd-indexed one is its value, create a new varlist */
+    Size size = capacity + (capacity >> 1);
+    VarList *table = calloc(sizeof(VarList) + sizeof(VarBucket) * size, 1);
+    table->capacity = capacity;
+    table->entries = 0;
+    VarBucket *buckets = table->buckets;
+    //memsetd(buckets, 0, (sizeof(VarBucket) >> 2) * size);
+    table->size = size;
+    Object *world = currentWorld();
+    
+    Size hash;
+    Size i;
+    for (i = 0; i < capacity; i++)
+    {
+        void *var = symbols[i * 2];
+        hash = valueHash(var) % size;
+        while (buckets[hash].var != NULL)
+			hash = (hash + 1) % size;
+        VarBucket *bucket = &table->buckets[hash];
+        bucket->var = var;
+        VarListItem *item = malloc(sizeof(VarListItem));
+        bucket->next = item;
+        item->world = world;
+        item->value = symbols[i * 2 + 1];
+        item->next = NULL;
+    }
+    
     return table;
 }
 
@@ -41,7 +103,7 @@ bool varListDataSet(VarList *table, Object *var, Object *world, Object *value)
     Size hash = valueHash(var) % size;
     VarBucket *buckets = table->buckets;
     while (buckets[hash].var != NULL && buckets[hash].var != var)
-        hash = (hash + 1) % size;
+		hash = (hash + 1) % size;
     VarBucket *bucket = &buckets[hash];
     bucket->var = var;
     
@@ -65,13 +127,16 @@ bool varListDataSet(VarList *table, Object *var, Object *world, Object *value)
 Object *varListLookup(VarList *table, Object *var, Object *world)
 {
     Size size = table->size;
+    if (size == 0) return NULL;
     Size hash = valueHash(var) % size;
     VarBucket *buckets = table->buckets;
     while (buckets[hash].var != var)
+    {
         if (buckets[hash].var == NULL)
             return NULL;
         else
             hash = (hash + 1) % size;
+	}
     VarListItem *item = buckets[hash].next;
     while (item != NULL)
     {
@@ -80,4 +145,16 @@ Object *varListLookup(VarList *table, Object *var, Object *world)
         item = item->next;
     }
     return NULL;
+}
+
+void varListDebug(VarList *table)
+{
+	Size i;
+	VarBucket *buckets = table->buckets;
+	for (i = 0; i < table->size; i++)
+	{
+		Object *variable = buckets[i].var;
+		if (variable != NULL)
+			printf("Variable %s\n", variable->data);
+	}
 }

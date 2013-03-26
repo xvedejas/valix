@@ -40,13 +40,13 @@ typedef struct varBucket
 
 typedef struct
 {
-    Size size, capacity, entries;
+    Size size, capacity;
     /* size: number of buckets (typically 1.5x the number of symbols)
-     * capacity: number of symbols max we want to store in buckets
-     * entries: number of symbols we have stored in buckets */
+     * capacity: number of symbols max we want to store in buckets */
     VarBucket buckets[0];
 } VarList;
 
+/* The symbols we want to create variables for must be specified at creation. */
 extern VarList *varListDataNew(Size capacity, void **symbols);
 extern VarList *varListDataNewPairs(Size capacity, void **symbols);
 /* Set the value of a variable in a given world. If the world isn't in this

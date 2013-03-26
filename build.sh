@@ -164,7 +164,7 @@ if [[ $1 == "run-qemu" ]]; then
 fi
 
 if [[ $1 == "run-vbox" ]]; then
-    VBoxManage startvm "valix"
+    VBoxManage startvm "Valix"
 fi
 
 ${POST_BUILD} &

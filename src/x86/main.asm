@@ -40,8 +40,8 @@ mboot:
     dd 0  ; unused
     dd 0  ; unused
     dd 0   ; graphics mode type, 0 = gfx, 1 = text
-    dd 800 ; width
-    dd 600 ; height
+    dd 1280 ; width
+    dd 1024 ; height
     dd 24  ; depth, number of bits per pixel
     
 start:

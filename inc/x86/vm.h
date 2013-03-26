@@ -103,7 +103,7 @@ typedef struct process
     Stack values; // stack for saving values during statement execution
     Stack scopes; // the "current scope" is the top of the stack
     u8 *bytecode; // beginning of bytecode
-    Size IP; // an instruction pointer, pointing to the bytecode being read
+    Size IP; // index of bytecode
     Object **symbols; // array of symbols (for de-interning)
 } Process;
 
@@ -131,7 +131,8 @@ extern Object *closure_with(Object *self, ...);
 extern Object *methodTable_new(Object *self, u32 size);
 extern Object *currentProcess();
 extern Object *currentWorld();
-extern void interpret(u8 *bytecode);
+extern void interpret();
+extern void interpretBytecode(u8 *bytecode);
 
 #define object_send(self, message, ...)\
 ({\

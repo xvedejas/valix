@@ -23,8 +23,6 @@
 #include <data.h>
 #include <vm.h>
 
-const Size EOF = 0x04;
-
 const Size maxKeywordCount = 8;
 
 // For parser asserts
@@ -84,7 +82,8 @@ const String bytecodes[] =
     "set",
     "end",
     "object",
-    "cascade"
+    "cascade",
+    "end"
 };
 
 /* This is a linked list of string builders. When parsing it may be desirable
@@ -362,8 +361,8 @@ u8 *compile(String source)
         
         ParseStructure *parseBlockNode = node;
         Size argc = 0;
+        outVal(blockBC, node);
         node = parseStructurePush(node);
-        
         while (curToken->type == colonToken)
         {
             nextToken();
@@ -372,14 +371,15 @@ u8 *compile(String source)
             argc++;
             nextToken();
         }
+        // arg count:
+        outVal(argc, parseBlockNode);
+        printf("argc %i\n", argc);
+        node = parseStructureCommit(parseBlockNode);
         // var count:
         if (curToken->type == pipeToken)
             parseVars();
         else
-            outVal(0, parseBlockNode);
-        // arg count:
-        outVal(argc, parseBlockNode);
-        node = parseStructureCommit(parseBlockNode);
+            outVal(0, node);
         
         #ifdef PARSER_DEBUG
         indention -= 1;
@@ -413,6 +413,7 @@ u8 *compile(String source)
                 break;
             outByte(messageBC, node); // bytecode "message"
             outVal(intern(curToken->data), node); // message name
+            outVal(0, node); // argc
             nextToken();
         }
         
@@ -466,6 +467,7 @@ u8 *compile(String source)
         parseBinaryMsg();
         outByte(messageBC, node); // bytecode "message"
         outVal(binaryMessage, node); // message name
+        outVal(1, node); // argc
         
         #ifdef PARSER_DEBUG
         indention -= 1;
@@ -520,6 +522,7 @@ u8 *compile(String source)
         }
         outByte(messageBC, node); // bytecode "message"
         outVal(methodNameIntern(i, keywords), node); // message name
+        outVal(i, node); // argc
         
         #ifdef PARSER_DEBUG
         indention -= 1;
@@ -586,7 +589,6 @@ u8 *compile(String source)
         
         Size methodCount = 0;
         
-        ///
         ParseStructure *methodCountNode = node;
         node = parseStructurePush(node);
         while (curToken->type != closeBracketToken)
@@ -876,7 +878,7 @@ u8 *compile(String source)
     nextToken(); // get first token
     parseBlockHeader();
     parseStmt();
-    outByte(EOF, node);
+    outByte(EOFBC, node);
     
     /* Build symbol table */
     
@@ -893,10 +895,11 @@ u8 *compile(String source)
     /* Print the result */
     Size bytecodeSize = result->size;
     printf("compilation result:\n");
+    
     for (i = 0; i < bytecodeSize; i++)
     {
         u8 byte = result->s[i];
-        printf("%x ", byte);
+        printf("%2i: %2x ", i, byte);
         if (byte > 0x80)
             printf("%s\n", bytecodes[byte - 0x80]);
         else

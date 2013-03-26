@@ -40,7 +40,7 @@ void compile_test()
     Size i;
     if (result != NULL)
     {
-        for (i = 0; result[i] != EOF; i++)
+        for (i = 0; result[i] != EOFBC; i++)
         {
             if (result[i] == output1[i])
                 printf("-> %x\n", result[i]);

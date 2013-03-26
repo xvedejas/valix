@@ -41,9 +41,7 @@ VarList *varListDataNew(Size capacity, void **symbols)
     Size size = capacity + (capacity >> 1);
     VarList *table = calloc(sizeof(VarList) + sizeof(VarBucket) * size, 1);
     table->capacity = capacity;
-    table->entries = 0;
     VarBucket *buckets = table->buckets;
-    //memsetd(buckets, 0, (sizeof(VarBucket) >> 2) * size);
     table->size = size;
     
     Size hash;
@@ -68,9 +66,7 @@ VarList *varListDataNewPairs(Size capacity, void **symbols)
     Size size = capacity + (capacity >> 1);
     VarList *table = calloc(sizeof(VarList) + sizeof(VarBucket) * size, 1);
     table->capacity = capacity;
-    table->entries = 0;
     VarBucket *buckets = table->buckets;
-    //memsetd(buckets, 0, (sizeof(VarBucket) >> 2) * size);
     table->size = size;
     Object *world = currentWorld();
     
@@ -94,18 +90,27 @@ VarList *varListDataNewPairs(Size capacity, void **symbols)
     return table;
 }
 
-/* Set the value of a variable in a given world. If the world isn't in this
+/* Set the value of a variable in a given world. If the var/world isn't in this
  * list yet, it returns false. */
 bool varListDataSet(VarList *table, Object *var, Object *world, Object *value)
 {
-    assert(++table->entries <= table->capacity, "varList error");
     Size size = table->size;
+    if (size == 0) return false;
     Size hash = valueHash(var) % size;
     VarBucket *buckets = table->buckets;
-    while (buckets[hash].var != NULL && buckets[hash].var != var)
+    bool found = false;
+    Size i;
+    for (i = 0; i < size; i++)
+    {
+		if (buckets[hash].var == var)
+		{
+			found = true;
+		    break;
+		}
 		hash = (hash + 1) % size;
+	}
+	if (!found) return false;
     VarBucket *bucket = &buckets[hash];
-    bucket->var = var;
     
     /* Find world */
     VarListItem *item = bucket->next;
@@ -118,7 +123,13 @@ bool varListDataSet(VarList *table, Object *var, Object *world, Object *value)
         }
         item = item->next;
     }
-    return false;
+    /* If we did not find an entry for this world, create one */
+	item = malloc(sizeof(VarListItem));
+	item->next = bucket->next;
+	bucket->next = item;
+	item->world = world;
+	item->value = value;
+    return true;
 }
 
 /* Get the value of a variable in a given world. If the world isn't found or
@@ -130,13 +141,21 @@ Object *varListLookup(VarList *table, Object *var, Object *world)
     if (size == 0) return NULL;
     Size hash = valueHash(var) % size;
     VarBucket *buckets = table->buckets;
-    while (buckets[hash].var != var)
+    bool found = false;
+    Size i;
+    for (i = 0; i < size; i++)
     {
         if (buckets[hash].var == NULL)
             return NULL;
+        else if (buckets[hash].var == var)
+        {
+			found = true;
+			break;
+		}
         else
             hash = (hash + 1) % size;
 	}
+	if (!found) return NULL;
     VarListItem *item = buckets[hash].next;
     while (item != NULL)
     {
@@ -151,10 +170,20 @@ void varListDebug(VarList *table)
 {
 	Size i;
 	VarBucket *buckets = table->buckets;
+	printf("====VarList debug====\n");
 	for (i = 0; i < table->size; i++)
 	{
 		Object *variable = buckets[i].var;
+		VarListItem *item = buckets[i].next;
 		if (variable != NULL)
-			printf("Variable %s\n", variable->data);
+		{
+			printf("Variable '%s'\n", variable->data);
+			while (item != NULL)
+			{
+				printf("    world %x value %x\n", item->world, item->value);
+				item = item->next;
+			}
+		}
 	}
+	printf("====End VarList debug====\n");
 }

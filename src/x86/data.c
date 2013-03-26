@@ -167,6 +167,17 @@ void *stackPop(Stack *stack)
 	return stack->array[--stack->size];
 }
 
+/* Pops multiple items in array, up to caller to free array. */
+void **stackPopMany(Stack *stack, Size n)
+{
+	void **array = malloc(sizeof(void*) * n);
+	Size i;
+	for (i = 0; i < n; i++)
+		array[i] = stack->array[stack->size - i - 1];
+	stack->size -= n;
+	return array;
+}
+
 void *stackTop(Stack *stack)
 {
     return stack->array[stack->size - 1];

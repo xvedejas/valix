@@ -90,7 +90,7 @@ inline void setColor(Buffer buffer, u32 pos, u32 color)
     assert(pos < buffersize(buffer), "Index outside of range of video buffer");
     
     u32 oldColor  = getColor(buffer, pos);
-     u32 newColor = alphaBlend(oldColor, color);
+    u32 newColor = alphaBlend(oldColor, color);
     
     switch (buffer.bpp)
     {

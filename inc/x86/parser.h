@@ -45,6 +45,7 @@ typedef enum
     endBC      = 0x8C, // ends a block or file
     objectBC   = 0x8D, // object definition
     cascadeBC  = 0x8E, // cascading method calls
+    EOFBC      = 0x8F, // end of file
     extendedBC8 = 0xF0, // 8 bits, for 8-bit values that are 0xF0 or greater
     extendedBC16 = 0xF1, // 16 bits
     extendedBC32 = 0xF2, // 32 bits

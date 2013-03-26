@@ -66,13 +66,14 @@ typedef struct
 	void **array;
 } Stack;
 
-Stack *stackAlloc();
-Stack *stackNew(Stack *stack);
-void stackPush(Stack *stack, void *value);
-void *stackPop(Stack *stack);
-void *stackTop(Stack *stack);
-Stack *stackDel(Stack *stack);
-void stackFree(Stack *stack);
+extern Stack *stackAlloc();
+extern Stack *stackNew(Stack *stack);
+extern void stackPush(Stack *stack, void *value);
+extern void *stackPop(Stack *stack);
+extern void **stackPopMany(Stack *stack, Size n);
+extern void *stackTop(Stack *stack);
+extern Stack *stackDel(Stack *stack);
+extern void stackFree(Stack *stack);
 
 /////////////////////////////
 // StringBuilder Interface //
@@ -94,7 +95,7 @@ extern void stringBuilderAppendN(StringBuilder *sb, String s, Size len);
 extern void stringBuilderAppendChar(StringBuilder *sb, char c);
 /* note: ToString will destroy the string builder! */
 extern String stringBuilderToString(StringBuilder *sb);
-void stringBuilderPrint(StringBuilder *sb);
+extern void stringBuilderPrint(StringBuilder *sb);
 
 /////////////////////
 // Array Functions //

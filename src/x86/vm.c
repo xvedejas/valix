@@ -125,6 +125,11 @@ Object *closure_toString(Object *self)
 	return string_new(stringProto, strdup(strBuffer));
 }
 
+Object *symbol_toString(Object *self)
+{
+	return string_new(stringProto, strdup(self->data));
+}
+
 /* There is a global set that tells us if a pointer points to an object in the
  * VM. This is mostly a debugging tool which prevents us from treating arbitrary
  * pointers as if they were objects. */
@@ -168,6 +173,37 @@ Object *__attribute__ ((pure)) symbol_new(Object *self, String string)
 Object *scope_new(Object *self, Object *process, Object *containing,
                   Object *caller, bool readBytecode, Object **args);
 
+Size __attribute__ ((pure)) getArgc(String argString)
+{
+    /* Here we determine the number of arguments expected by a closure based on
+     * the string that tells us the types of its arguments, starting with the
+     * type the closure returns after invokation. We do not count the return
+     * value.
+     * 
+     * For typical, user-defined closures, the arguments are all objects.
+     * However, for interfacing with C code, we need to know what sort of
+     * objects are allowed. */
+    Size count = 0;
+    while (true)
+    {
+        switch (*argString++)
+        {
+            case 's': case 'u': // signedint, unsigned (word size)
+            case 'o': case 'S': case 'v': // object*, String, void
+                count++;
+            break;
+            case '\0':
+            /* Here, we're done. Ignore the first count, which was for return
+             * type and not any argument. */
+                return count - 1;
+            default:
+                panic("Improperly formatted argstring, character %c",
+                    argString[-1]);
+        }
+    }
+    return 0;
+}
+
 Object *closure_with(Object *self, ...)
     /*
     ** Executes a closure (self) with the given arguments.
@@ -180,17 +216,19 @@ Object *closure_with(Object *self, ...)
     Closure *closureData = self->data;
     va_list argptr;
     va_start(argptr, self);
-    Size arrayIndex = 0;
     switch (closureData->type)
     {
         case internalClosure:
         {
             /* type checking and implicit conversion */
             String argString = closureData->argString;
+            Size argc = getArgc(argString);
+			/* The new list of arguments we will build: */
+			void *arguments[argc];
             /* The first argument must be an object "self" */
             assert(isObject(self) && argString[1] == 'o', "vm error");
             Size i;
-            for (i = 0; i < closureData->argc; i++)
+            for (i = 0; i < argc; i++)
             {
                 char expectedArgument = argString[i + 1];
                 void *argument = va_arg(argptr, void*);
@@ -203,55 +241,60 @@ Object *closure_with(Object *self, ...)
                         if (isObject(argument))
                         {
 							printf("%s\n", argString);
-                            ((void**)argptr)[-1] = send(argument, "asU32Int");
+                            arguments[i] = send(argument, "asU32Int");
                         }
+                        else
+							arguments[i] = argument;
                     } break;
                     // Expecting signed integer, if object, convert
                     case 's':
                     {
                         if (isObject(argument))
                         {
-                            ((void**)argptr)[-1] = object_send(argument,
+                            arguments[i] = object_send(argument,
                                 symbol("asS32Int"));
                         }
+                        else
+							arguments[i] = argument;
                     } break;
                     // Expecting object
                     case 'o':
                     {
-                        if (!isObject(argument))
+                        if (isObject(argument))
                         {
+							arguments[i] = argument;
+						}
+						else
+						{
 							// try to see if it's an array of objects
-							Object *tryArg = ((Object**)argument)[arrayIndex];
-							if (isObject(tryArg))
-							{
-								((void**)argptr)[-1] = tryArg;
-								arrayIndex++;
-							}
-							else
-							{
-								panic("VM Error, expected an object, given "
-                                      "some other value %x. Please construct "
-                                      "and pass a valid object.", argument);
-							}
+							Object **args = (Object**)argument;
+							Size j;
+							for (j = 0; i < argc && isObject(args[j]); i++, j++)
+								arguments[i] = args[j];
+							
+							assert(j > 0, "Expected array of objects");
+							assert(i == argc, "List of objects must be "
+							       "correct length to cover all remaining "
+							       "arguments. Found %i, needed %i arguments.",
+							       i, argc);
 						}
                     } break;
                     // Expecting string, if object, convert
                     case 'S':
                     {
-						printf("expecting string\n");
                         if (isObject(argument))
                         {
-                            ((void**)argptr)[-1] = object_send(argument,
+                            arguments[i] = object_send(argument,
                                 symbol("asCString"));
                         }
+                        else
+							arguments[i] = argument;
                     } break;
                     default:
                         panic("vm error");
                 }
             }
             
-            va_list arguments;
-            va_start(arguments, self);
             /* We need to know the number of arguments to pass, so we must know
              * what a method expects. Passing variable numbers of arguments is
              * not a planned feature; lists or arrays should be used instead.
@@ -262,7 +305,7 @@ Object *closure_with(Object *self, ...)
             
             //indention++;///
             void *result = callInternal(closureData->function,
-                closureData->argc + 1, arguments);
+										argc + 1, (va_list)arguments);
             /* The given type of "result" is what we currently have, but we want
              * to return an object, so here we do the proper conversion. */
             //indention--;///
@@ -361,37 +404,6 @@ Object *__attribute__ ((pure)) object_bind(Object *self, Object *symbol)
     return method;
 }
 
-Size __attribute__ ((pure)) getArgc(String argString)
-{
-    /* Here we determine the number of arguments expected by a closure based on
-     * the string that tells us the types of its arguments, starting with the
-     * type the closure returns after invokation. We do not count the return
-     * value.
-     * 
-     * For typical, user-defined closures, the arguments are all objects.
-     * However, for interfacing with C code, we need to know what sort of
-     * objects are allowed. */
-    Size count = 0;
-    while (true)
-    {
-        switch (*argString++)
-        {
-            case 's': case 'u': // signedint, unsigned (word size)
-            case 'o': case 'S': case 'v': // object*, String, void
-                count++;
-            break;
-            case '\0':
-            /* Here, we're done. Ignore the first count, which was for return
-             * type and not any argument. */
-                return count - 1;
-            default:
-                panic("Improperly formatted argstring, character %c",
-                    argString[-1]);
-        }
-    }
-    return 0;
-}
-
 /* The given argument string tells what sort of arguments are expected by the
  * given function.
  * 
@@ -399,12 +411,10 @@ Size __attribute__ ((pure)) getArgc(String argString)
  */
 Object *closure_newInternal(Object *self, void *function, String argString)
 {
-    Size argc = getArgc(argString);
     Object *new = object_new(self);
     Closure *closure = malloc(sizeof(Closure));
     new->data = closure;
     closure->argString = argString;
-    closure->argc = argc;
     closure->function = function;
     closure->type = internalClosure;
     return new;
@@ -522,8 +532,11 @@ Object *scope_new(Object *self, Object *process, Object *containing,
 				symbols[i] = processSymbols[value];
 			}
 			scopeData->variables = varListDataNew(symbolCount, (void**)symbols);
-			for (i = 0; i < symbolCount; i++)
-				scope_setVar(scope, symbols[i], args[i]);
+			for (i = 0; i < argCount; i++)
+			{
+				// Set arguments in reverse order because they were from stack
+				scope_setVar(scope, symbols[i], args[argCount - 1 - i]);
+			}
 			free(symbols);
 		}
 		else
@@ -610,11 +623,11 @@ void vmInstall()
     methodTableMT->parent = objectProto;
     objectProto->methodTable = objectMT;
     
-    Object *symbolMT = methodTable_new(methodTableMT, 1);
+    Object *symbolMT = methodTable_new(methodTableMT, 2);
     symbolProto = object_new(objectProto);
     symbolProto->methodTable = symbolMT;
     
-    Object *closureMT = methodTable_new(methodTableMT, 2);
+    Object *closureMT = methodTable_new(methodTableMT, 5);
     closureProto = object_new(objectProto);
     closureProto->methodTable = closureMT;
     
@@ -650,9 +663,21 @@ void vmInstall()
     // symbol.new(self, string)
     methodTable_addClosure(symbolMT, symbol("new:"),
         closure_newInternal(closureProto, symbol_new, "ooS"));
+    // symbol.new(self, string)
+    methodTable_addClosure(symbolMT, symbol("toString"),
+        closure_newInternal(closureProto, symbol_toString, "oo"));
+    // closure.with(self, args)
+    methodTable_addClosure(closureMT, symbol("eval"),
+        closure_newInternal(closureProto, closure_with, "oo"));
     // closure.with(self, args)
     methodTable_addClosure(closureMT, symbol(":"),
         closure_newInternal(closureProto, closure_with, "ooo"));
+    // closure.with(self, args)
+    methodTable_addClosure(closureMT, symbol("::"),
+        closure_newInternal(closureProto, closure_with, "oooo"));
+    // closure.with(self, args)
+    methodTable_addClosure(closureMT, symbol(":::"),
+        closure_newInternal(closureProto, closure_with, "ooooo"));
     // closure.toString(self)
     methodTable_addClosure(closureMT, symbol("toString"),
         closure_newInternal(closureProto, closure_toString, "oo"));
@@ -906,7 +931,9 @@ void interpret()
 				Object *symbol = symbols[readValue(bytecode, IP)];
 				Size argc = readValue(bytecode, IP);
 				
-			    Object **args = (Object**)stackPopMany(valueStack, argc);
+				Object **args = NULL;
+				if (argc)
+				    args = (Object**)stackPopMany(valueStack, argc);
 			    Object *recipient = stackPop(valueStack);
 			    Object *method = object_bind(recipient, symbol);
 			    if (method == NULL)
@@ -931,7 +958,8 @@ void interpret()
 					printf("NOT entering new scope\n");
 					stackPush(valueStack, result);
 				}
-				free(args);
+				if (argc)
+					free(args);
 			}
             break;
 			case stopBC: /* Clears the current stack. Possibly will cause GC? */

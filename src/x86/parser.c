@@ -442,13 +442,12 @@ u8 *compile(String source)
         #endif // PARSER_DEBUG
         
         // If we don't have a binary message yet, try unary, which can be a
-        // special character or colon
-        if (curToken->type != specialCharToken && curToken->type != colonToken)
+        // special character
+        if (curToken->type != specialCharToken)
         {
             parseUnaryMsg();
             // Still no? Well, there must not be a binary message. Return.
-            if (curToken->type != specialCharToken &&
-                curToken->type != colonToken)
+            if (curToken->type != specialCharToken)
             {
                 #ifdef PARSER_DEBUG
                 indention -= 1;
@@ -457,11 +456,10 @@ u8 *compile(String source)
             }
         }
         
-        Size binaryMessage;
-        if (curToken->type == colonToken)
-            binaryMessage = intern(":");
-        else
-            binaryMessage = intern(curToken->data);
+        parserRequire(curToken->type == specialCharToken,
+					  "Expected special character for binary message");
+        
+        Size binaryMessage = intern(curToken->data);
         nextToken();
         parseValue();
         parseBinaryMsg();

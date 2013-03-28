@@ -40,7 +40,6 @@ typedef struct closure
         struct // internalClosure
         {
             String argString;
-            Size argc;
             void *function;
         };
         struct // userDefinedClosure

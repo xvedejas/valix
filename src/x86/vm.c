@@ -239,8 +239,6 @@ Object *closure_with(Object *self, ...)
             Size argc = getArgc(argString);
 			/* The new list of arguments we will build: */
 			void *arguments[argc];
-            /* The first argument must be an object "self" */
-            assert(isObject(self) && argString[1] == 'o', "vm error");
             Size i;
             for (i = 0; i < argc; i++)
             {
@@ -1074,7 +1072,6 @@ void interpret()
 				}
 			    else if (result != NULL)
 			    {
-					printf("NOT entering new scope\n");
 					stackPush(valueStack, result);
 				}
 				if (argc)

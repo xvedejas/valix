@@ -101,6 +101,7 @@ extern void stringBuilderPrint(StringBuilder *sb);
 // Array Functions //
 /////////////////////
 
+void reverse(void **array, Size n);
 void radixSort(u32 *array, Size n);
 u32 maxItem(u32 *array, Size n);
 void quickSort(u32 *array, Size n);

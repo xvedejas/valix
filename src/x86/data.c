@@ -251,6 +251,13 @@ bool isStringInterned(InternTable *table, String string)
 // Array Functions //
 /////////////////////
 
+void reverse(void **array, Size n)
+{
+	Size i;
+	for (i = 0; i < (n >> 1); i++)
+		swap(array[i], array[n - 1 - i]);
+}
+
 u32 maxItem(u32 *array, Size n)
 {
     register u32 v = 0;

@@ -130,6 +130,20 @@ Object *symbol_toString(Object *self)
 	return string_new(stringProto, strdup(self->data));
 }
 
+Object *boolean_toString(Object *self)
+{
+	if (self == trueObject)
+		return string_new(stringProto, strdup("true"));
+	if (self == falseObject)
+		return string_new(stringProto, strdup("false"));
+	return string_new(stringProto, strdup("bool"));
+	/// todo: delegate to super
+	/*
+	else
+		return super(self, "toString");
+		*/
+}
+
 /* There is a global set that tells us if a pointer points to an object in the
  * VM. This is mostly a debugging tool which prevents us from treating arbitrary
  * pointers as if they were objects. */
@@ -533,10 +547,7 @@ Object *scope_new(Object *self, Object *process, Object *containing,
 			}
 			scopeData->variables = varListDataNew(symbolCount, (void**)symbols);
 			for (i = 0; i < argCount; i++)
-			{
-				// Set arguments in reverse order because they were from stack
-				scope_setVar(scope, symbols[i], args[argCount - 1 - i]);
-			}
+				scope_setVar(scope, symbols[i], args[i]);
 			free(symbols);
 		}
 		else
@@ -598,6 +609,78 @@ Object *process_new(Object *self)
     // associate the process object with the system thread
     currentThread->process = process;
     return process;
+}
+
+Object *boolean_new(Object *self)
+{
+	panic("Cannot use boolean as a prototype");
+	return NULL;
+}
+
+Object *boolean_ifTrue(Object *self, Object *block)
+{
+	if (self == trueObject)
+		return send(block, "eval");
+	else
+		return NULL;
+}
+
+Object *boolean_ifFalse(Object *self, Object *block)
+{
+	if (self == falseObject)
+		return send(block, "eval");
+	else
+		return NULL;
+}
+
+Object *boolean_ifTrueifFalse(Object *self, Object *trueBlock,
+							                Object *falseBlock)
+{
+	printf("trueBlock %S, falseBlock %S\n", trueBlock, falseBlock);
+	if (self == trueObject)
+		return send(trueBlock, "eval");
+	else
+		return send(falseBlock, "eval");
+}
+
+Object *boolean_and(Object *self, Object *other)
+{
+	if (self == trueObject)
+		return other;
+	else
+		return self;
+}
+
+Object *boolean_or(Object *self, Object *other)
+{
+	if (self == trueObject)
+		return self;
+	else
+		return other;
+}
+
+Object *boolean_xor(Object *self, Object *other)
+{
+	if (self == trueObject)
+		return send(other, "not");
+	else
+		return other;
+}
+
+Object *boolean_eq(Object *self, Object *other)
+{
+	if (self == trueObject)
+		return other;
+	else
+		return send(other, "not");
+}
+
+Object *boolean_not(Object *self, Object *other)
+{
+	if (self == trueObject)
+		return falseObject;
+	else
+		return trueObject;
 }
 
 /* This function must be called before any VM actions may be done. After this
@@ -682,6 +765,8 @@ void vmInstall()
     methodTable_addClosure(closureMT, symbol("toString"),
         closure_newInternal(closureProto, closure_toString, "oo"));
     
+    /// to add: closure.whileTrue
+    
     /* 3. Do asserts to make sure things all connected correctly */
     assert(objectProto->parent == NULL, "vm error");
     assert(objectProto->methodTable == objectMT, "vm error");
@@ -698,10 +783,11 @@ void vmInstall()
     assert(closureMT->parent == methodTableMT, "vm error");
     assert(closureMT->methodTable == methodTableMT, "vm error");
     
+    
+    /* 4. Install other base components */
+    
     numberInstall();
     stringInstall();
-    /* 4. Test the system by creating a Console object from ObjectProto,
-     *    adding a printTest method, and calling it using the proper mechanisms */
     
     Object *consoleMT = object_send(methodTableMT, symbol("new:"), 3);
     Object *console = object_send(objectProto, newSymbol);
@@ -715,12 +801,36 @@ void vmInstall()
     methodTable_addClosure(consoleMT, symbol("printNl:"),
 		closure_newInternal(closureProto, console_printNl, "voo"));
     
-    methodTableDataDebug(consoleMT->data);
-    
     send(console, "print:", console);
     send(console, "printTest"); // should print VM CHECK: Success!
     
-    /* 5. Install other base components */
+    Object *booleanMT = object_send(methodTableMT, symbol("new:"), 10);
+    Object *boolean = object_send(objectProto, newSymbol);
+    boolean->methodTable = booleanMT;
+    
+    trueObject = object_send(boolean, symbol("new"));
+    falseObject = object_send(boolean, symbol("new"));
+    
+    methodTable_addClosure(booleanMT, symbol("new"),
+		closure_newInternal(closureProto, boolean_new, "vo"));
+    methodTable_addClosure(booleanMT, symbol("ifTrue:"),
+		closure_newInternal(closureProto, boolean_ifTrue, "ooo"));
+    methodTable_addClosure(booleanMT, symbol("ifFalse:"),
+		closure_newInternal(closureProto, boolean_ifFalse, "ooo"));
+    methodTable_addClosure(booleanMT, symbol("ifTrue:ifFalse:"),
+		closure_newInternal(closureProto, boolean_ifTrueifFalse, "oooo"));
+    methodTable_addClosure(booleanMT, symbol("and:"),
+		closure_newInternal(closureProto, boolean_and, "ooo"));
+    methodTable_addClosure(booleanMT, symbol("or:"),
+		closure_newInternal(closureProto, boolean_or, "ooo"));
+    methodTable_addClosure(booleanMT, symbol("xor:"),
+		closure_newInternal(closureProto, boolean_xor, "ooo"));
+    methodTable_addClosure(booleanMT, symbol("=="),
+		closure_newInternal(closureProto, boolean_eq, "ooo"));
+    methodTable_addClosure(booleanMT, symbol("not"),
+		closure_newInternal(closureProto, boolean_not, "oo"));
+    methodTable_addClosure(booleanMT, symbol("toString"),
+		closure_newInternal(closureProto, boolean_toString, "oo"));
     
     Object *traitMT = methodTable_new(methodTableMT, 1);
     Object *traitProto = object_new(objectProto);
@@ -740,9 +850,14 @@ void vmInstall()
     
     /* 6. Make components accessible by defining global variables */
     
-    Object *symbols_array[] = { symbol("Console"), console, };
+    Object *symbols_array[] =
+    {
+		symbol("Console"), console,
+		symbol("true"), trueObject,
+		symbol("false"), falseObject,
+	};
     void **symbols = (void**)(Object**)symbols_array;
-    Size symbols_array_len = 1;
+    Size symbols_array_len = 3;
     
     globalScope = object_new(objectProto);
     Scope *globalScopeData = malloc(sizeof(Scope));
@@ -909,6 +1024,7 @@ void interpret()
 				// increment bytecode until the end of closure definition
 				while (readValue(bytecode, IP) != endBC) {}
 				stackPush(valueStack, closureNew);
+				printf("created new %S\n", closureNew);
 			}
             break;
 			case variableBC:
@@ -933,7 +1049,10 @@ void interpret()
 				
 				Object **args = NULL;
 				if (argc)
+				{
 				    args = (Object**)stackPopMany(valueStack, argc);
+					reverse((void**)args, argc);
+				}
 			    Object *recipient = stackPop(valueStack);
 			    Object *method = object_bind(recipient, symbol);
 			    if (method == NULL)
@@ -948,7 +1067,7 @@ void interpret()
 				{
 					/* Entering a user-defined block. In this case, "result"
 					 * is the block being executed. */
-					printf("entering new scope\n");
+					printf("entering new scope, closure %S\n", result);
 					bytecode = processData->bytecode;
 					closure = result;
 					closureData = closure->data;

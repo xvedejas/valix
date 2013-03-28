@@ -379,8 +379,7 @@ void pci()
 ThreadFunc testVM()
 {
     printf("mem used: %x\n", memUsed());
-    String input = "| block | block = { :a :b b }. "
-				   "Console print: (block :\"FAIL\n\" :\"WIN\n\").";
+    String input = "Console print: (true ifTrue: {\"WIN\n\"} ifFalse: {\"FAIL\n\"})";
     printf("\n%s\n", input);
     u8 *bytecode = compile(input);
     printf("compiled.\n");

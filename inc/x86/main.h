@@ -35,7 +35,7 @@
 #define max(x,y) (((x)>(y))?(x):(y))
 #define mid(x,y,z) (((x)>(y))?(((y)>(z))?y:((x)>(z)?z:x)):(((y)>(z))?(((x)>(z))?x:z):y))
 #define delta(x,y) (max(x,y)-min(x,y))
-#define swap(x,y) { typeof(x) a = x; y = a; x = y; }
+#define swap(x,y) { typeof(x) a = x; x = y; y = a; }
 
 #define NULL ((void*)0)
 

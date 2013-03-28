@@ -116,48 +116,29 @@ void put(String str)
     while (str[i]) putch(str[i++]);
 }
 
-void putPadding(String str, Size padding)
-{
-	Size len;
-	put(str);
-	for (len = strlen(str); len < padding; len++)
-		putch(' ');
-}
-
 volatile Size indention = 0;
 
-void printf(const char *format, ...)
+void _sprintf(char *strBuffer, const char *format, va_list argptr)
 {
-	Size i;
-	for (i = 0; i < indention; i++)
-	    put("--");
 	if (format == NULL)
 	{
-        put("<<NULLSTR>>");
+        strcpy(strBuffer, "<<NULLSTR>>");
         return;
 	}
+	char numBuff[20];
 
-    char numBuff[20];
-    memset(numBuff, 0, sizeof(numBuff));
-    
     Size padding = 0;
     bool inSpecifier = false;
     
-    va_list argptr;
-    va_start(argptr, format);
-    
     while (*format)
-    {   
+    {
         if (*format == '%')
-        {   
+        {
             format++;
             inSpecifier = true;
         }
         else
-        {
-			putch(*format);
-			format++;
-		}
+			*strBuffer++ = *format++;
         
         padding = 0;
         while (inSpecifier)
@@ -170,71 +151,136 @@ void printf(const char *format, ...)
 					/* Print at least this width (pad with spaces) */
 					String fmtNew;
 					padding = strtoul((char*)format, &fmtNew, 10);
-					format = fmtNew;
+					format = fmtNew; // advance our format pointer
 					inSpecifier = true;
-				} continue;
+				} break;
 				case 'X': case 'x': case 'h':
 				{   
 					u32 d = va_arg(argptr, u32);
-					put("0x");
+					*strBuffer++ = '0';
+					*strBuffer++ = 'x';
 					itoa(d, numBuff, 16);
-					putPadding(numBuff, padding);
+					Size i;
+					Size len = strlen(numBuff);
+					for (i = 0; i < len; i++)
+						*strBuffer++ = numBuff[i];
+					for (; i < padding; i++)
+						*strBuffer++ = ' ';
 					format++;
 				} break;
 				case 'b':
 				{   
 					u32 d = va_arg(argptr, u32);
-					put("0b");
+					*strBuffer++ = '0';
+					*strBuffer++ = 'b';
 					itoa(d, numBuff, 2);
-					putPadding(numBuff, padding);
+					Size i;
+					Size len = strlen(numBuff);
+					for (i = 0; i < len; i++)
+						*strBuffer++ = numBuff[i];
+					for (; i < padding; i++)
+						*strBuffer++ = ' ';
 					format++;
 				} break;
 				case 'i': case 'd':
 				{   
 					u32 d = va_arg(argptr, u32);
 					itoa(d, numBuff, 10);
-					putPadding(numBuff, padding);
+					Size i;
+					Size len = strlen(numBuff);
+					for (i = 0; i < len; i++)
+						*strBuffer++ = numBuff[i];
+					for (; i < padding; i++)
+						*strBuffer++ = ' ';
 					format++;
 				} break;
 				case 's':
 				{   
 					String s = va_arg(argptr, String);
 					if (s == NULL)
-						putPadding("<<NULLSTR>>", padding);
-					else
-						putPadding(s, padding);
+						s = "<<NULLSTR>>";
+					Size len = strlen(s);
+					memcpy(strBuffer, s, len);
+					strBuffer += len;
+					if (padding > len)
+					{
+						memset(strBuffer, ' ', padding - len);
+						strBuffer += padding - len;
+					}
 					format++;
 				} break;
-				case 'S': // vm string object
+				case 'S': // vm object
 				{
-					Object *str = va_arg(argptr, Object*);
-					Size i;
+					Object *obj = va_arg(argptr, Object*);
+					assert(obj != NULL, "cannot print null object");
+					Object *str = send(obj, "toString");
+					assert(str != NULL, "cannot print null string object");
 					StringData *data = str->data;
 					Size len = data->len;
 					String s = data->string;
-					for (i = 0; i < len; i++)
-						putch(s[i]);
-					for ( ; i < padding; i++)
-						putch(' ');
+					memcpy(strBuffer, s, len);
+					strBuffer += len;
+					if (padding > len)
+					{
+						memset(strBuffer, ' ', padding - len);
+						strBuffer += padding - len;
+					}
 					format++;
 				} break;
 				case 'c':
 				{   
 					u8 c = va_arg(argptr, u32);
-					putch(c);
+					if (c < 32)
+					{
+						/* Nonprintable character, print value instead */
+						itoa(c, numBuff, 10);
+						Size i;
+						Size len = strlen(numBuff);
+						for (i = 0; i < len; i++)
+							*strBuffer++ = numBuff[i];
+						for (; i < padding; i++)
+							*strBuffer++ = ' ';
+					}
+					else
+					{
+						*strBuffer++ = c;
+					}
 					format++;
 				} break;
 				case '%':
 				{   
-					putch('%');
+					*strBuffer++ = '%';
 					format++;
 				} break;
-				case '\0': return;
+				case '\0':
+					*strBuffer++ = '\0';
+				return;
 				default: break;
 			}
 		}
     }
-    va_end(argptr);
+    *strBuffer++ = '\0';
+}
+
+void sprintf(char *strBuffer, const char *format, ...)
+{
+	va_list argptr;
+	va_start(argptr, format);
+	_sprintf(strBuffer, format, argptr);
+	va_end(argptr);
+}
+
+void printf(const char *format, ...)
+{
+	va_list argptr;
+	va_start(argptr, format);
+	char strBuffer[128];
+	_sprintf(strBuffer, format, argptr);
+	va_end(argptr);
+	Size i;
+	for (i = 0; i < indention; i++)
+	    put("--");
+	put(strBuffer);
 }
 
 void _panic(char *file, u32 line)
@@ -333,7 +379,7 @@ void pci()
 ThreadFunc testVM()
 {
     printf("mem used: %x\n", memUsed());
-    String input = "| str | str = \"Hello, World!\n\". Console print: str.";
+    String input = "| block | block = { :s Console printNl: s }. block :\"TEST\"";
     printf("\n%s\n", input);
     u8 *bytecode = compile(input);
     printf("compiled.\n");

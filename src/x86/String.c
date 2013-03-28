@@ -21,11 +21,6 @@
 #include <cstring.h>
 #include <mm.h>
 
-void stringInstall()
-{
-    stringProto = object_send(objectProto, symbol("new"));
-}
-
 Object *string_new(Object *self, String val)
 {
     Object *new = object_send(self, symbol("new"));
@@ -35,4 +30,25 @@ Object *string_new(Object *self, String val)
     stringData->len = len;
     memcpy(stringData->string, val, len);
     return new;
+}
+
+Object *string_toString(Object *self)
+{
+	return self;
+}
+
+void stringInstall()
+{
+    stringProto = object_send(objectProto, symbol("new"));
+    
+    /* Add a method table */
+    Object *stringMT = methodTable_new(methodTableMT, 2);
+    stringProto->methodTable = stringMT;
+    
+    // string.new
+    methodTable_addClosure(stringMT, symbol("new:"),
+        closure_newInternal(closureProto, string_new, "ooS"));
+    // string.toString
+    methodTable_addClosure(stringMT, symbol("toString"),
+        closure_newInternal(closureProto, string_toString, "oo"));
 }

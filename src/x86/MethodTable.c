@@ -78,8 +78,8 @@ void methodTableDataDebug(MethodTable *table)
     {
         if (table->buckets[i][0] != NULL)
         {
-            printf("key %x value %x\n",
-                table->buckets[i][0],
+            printf("key %18s value %S\n",
+                table->buckets[i][0]->data,
                 table->buckets[i][1]);
             count++;
 		}

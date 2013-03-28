@@ -95,6 +95,10 @@ typedef struct scope
     // parent scope (where this was declared) that we can look for variables in
 	Object *containing;
 	Object *caller; // scope that this scope was called from
+	/* The following data is for storage when executing a child scope */
+	Object *closure;
+	Size IP;
+	u8 *bytecode;
 } Scope;
 
 typedef struct process
@@ -138,14 +142,16 @@ extern void interpretBytecode(u8 *bytecode);
 ({\
     Object *method = NULL;\
 	method = object_bind(self, message);\
+	bool doesNotUnderstand = false;\
 	if (method == NULL)\
 	{\
+		doesNotUnderstand = true;\
 		method = object_bind(self, symbol("doesNotUnderstand:"));\
 		assert(method != NULL, "does not understand does not understand...\n");\
+		;\
 	}\
-    (method == NULL)?\
-        closure_with(method, self, message):\
-        closure_with(method, self, ## __VA_ARGS__);\
+	(doesNotUnderstand)?closure_with(method, self, message):\
+	closure_with(method, self, ## __VA_ARGS__);\
 })
 
 #define send(obj, messagestr, ...)\

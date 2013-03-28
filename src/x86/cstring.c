@@ -127,5 +127,6 @@ bool startswith(String string, String substring)
 
 bool endswith(String string, String substring)
 {
-    return !strncmp(string + strlen(string) - strlen(substring), substring, strlen(substring));
+    return !strncmp(string + strlen(string) - strlen(substring),
+				    substring, strlen(substring));
 }

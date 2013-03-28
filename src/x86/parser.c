@@ -373,13 +373,13 @@ u8 *compile(String source)
         }
         // arg count:
         outVal(argc, parseBlockNode);
-        printf("argc %i\n", argc);
-        node = parseStructureCommit(parseBlockNode);
         // var count:
         if (curToken->type == pipeToken)
             parseVars();
         else
-            outVal(0, node);
+            outVal(0, parseBlockNode);
+        
+        node = parseStructureCommit(parseBlockNode);
         
         #ifdef PARSER_DEBUG
         indention -= 1;
@@ -478,14 +478,15 @@ u8 *compile(String source)
     {
     /* Input syntax:
      * 
-     * binaryMsg? (keyword':' value binaryMsg?)*
+     * binaryMsg? (keyword?':' value binaryMsg?)*
      * 
      * Output syntax:
      * 
      * parseBinaryMsg() messageBC [interned name] parseValue() parseBinaryMsg()
      * 
      * Note: the number of args for a message can always be determined
-     * from its name, so that isn't specified in the bytecode.
+     * from its name, so that isn't specified in the bytecode. Also, an empty
+     * keyword with just a colon is an acceptable keyword message.
      */
         #ifdef PARSER_DEBUG
         printf("parseKeywordMsg\n");
@@ -493,7 +494,7 @@ u8 *compile(String source)
         #endif // PARSER_DEBUG
         
         // If we don't have a keyword message yet, try binary
-        if (lookahead(1)->type != colonToken)
+        if (lookahead(1)->type != colonToken && curToken->type != colonToken)
         {
             parseBinaryMsg();
             // Still no? Well, there must not be a keyword message. Return.
@@ -509,16 +510,29 @@ u8 *compile(String source)
         String keywords[maxKeywordCount];
         Size i = 0;
         
-        while (curToken->type == keywordToken)
+        while (true)
         {
-            parserRequire(i < maxKeywordCount, "More keywords than "
-                "allowed in one message");
-            keywords[i++] = strdup(curToken->data);
-            nextToken();
-            expectToken(colonToken, "':'");
-            nextToken();
-            parseValue();
-            parseBinaryMsg();
+			if (curToken->type == keywordToken)
+			{
+				parserRequire(i < maxKeywordCount, "More keywords than "
+					"allowed in one message");
+				keywords[i++] = strdup(curToken->data);
+				nextToken();
+				expectToken(colonToken, "':'");
+				nextToken();
+				parseValue();
+				parseBinaryMsg();
+			}
+            else if (curToken->type == colonToken)
+            {
+				parserRequire(i < maxKeywordCount, "More keywords than "
+					"allowed in one message");
+				keywords[i++] = "";
+				nextToken();
+				parseValue();
+				parseBinaryMsg();
+			}
+            else break;
         }
         outByte(messageBC, node); // bytecode "message"
         outVal(methodNameIntern(i, keywords), node); // message name
@@ -547,7 +561,7 @@ u8 *compile(String source)
         }
         /* parsing cascade (series of commands separated by semicolon) */
         parseValue();
-        while (curToken->type == keywordToken ||
+        while (curToken->type == keywordToken || curToken->type == colonToken ||
                curToken->type == specialCharToken)
         {
             parseKeywordMsg();

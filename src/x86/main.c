@@ -379,7 +379,7 @@ void pci()
 ThreadFunc testVM()
 {
     printf("mem used: %x\n", memUsed());
-    String input = "Console print: (5 < 3 ifTrue: {\"FAIL\n\"} ifFalse: {\"WIN\n\"})";
+    String input = "| i | i = 0. { i < 5 } whileTrue: { Console print: \"!\". i = i + 1. }";
     printf("\n%s\n", input);
     u8 *bytecode = compile(input);
     printf("compiled.\n");

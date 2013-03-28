@@ -449,6 +449,16 @@ Object *closure_new(Object *self, Object *process)
 	return closure;
 }
 
+void closure_whileTrue(Object *self, Object *block)
+{
+	Object *boolean = send(self, "eval");
+	while (boolean == trueObject)
+	{
+		send(block, "eval");
+		boolean = send(self, "eval");
+	}
+}
+
 Object *methodTable_get(Object *self, Object *symbol)
 {
 	return methodTableDataGet(self->data, symbol);
@@ -708,7 +718,7 @@ void vmInstall()
     symbolProto = object_new(objectProto);
     symbolProto->methodTable = symbolMT;
     
-    Object *closureMT = methodTable_new(methodTableMT, 5);
+    Object *closureMT = methodTable_new(methodTableMT, 6);
     closureProto = object_new(objectProto);
     closureProto->methodTable = closureMT;
     
@@ -762,8 +772,9 @@ void vmInstall()
     // closure.toString(self)
     methodTable_addClosure(closureMT, symbol("toString"),
         closure_newInternal(closureProto, closure_toString, "oo"));
-    
-    /// to add: closure.whileTrue
+    // closure.whileTrue(self, block)
+    methodTable_addClosure(closureMT, symbol("whileTrue:"),
+        closure_newInternal(closureProto, closure_whileTrue, "voo"));
     
     /* 3. Do asserts to make sure things all connected correctly */
     assert(objectProto->parent == NULL, "vm error");

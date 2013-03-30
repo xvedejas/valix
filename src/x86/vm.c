@@ -185,185 +185,44 @@ Object *__attribute__ ((pure)) symbol_new(Object *self, String string)
 }
 
 Object *scope_new(Object *self, Object *process, Object *containing,
-                  Object *caller, bool readBytecode, Object **args);
+                  Object *caller, bool readBytecode);
 
-Size __attribute__ ((pure)) getArgc(String argString)
+Object *_closure_with(Object *self, va_list argptr)
 {
-    /* Here we determine the number of arguments expected by a closure based on
-     * the string that tells us the types of its arguments, starting with the
-     * type the closure returns after invokation. We do not count the return
-     * value.
-     * 
-     * For typical, user-defined closures, the arguments are all objects.
-     * However, for interfacing with C code, we need to know what sort of
-     * objects are allowed. */
-    Size count = 0;
-    while (true)
-    {
-        switch (*argString++)
-        {
-            case 's': case 'u': // signedint, unsigned (word size)
-            case 'o': case 'S': case 'v': // object*, String, void
-                count++;
-            break;
-            case '\0':
-            /* Here, we're done. Ignore the first count, which was for return
-             * type and not any argument. */
-                return count - 1;
-            default:
-                panic("Improperly formatted argstring, character %c",
-                    argString[-1]);
-        }
-    }
-    return 0;
+	// If we are executing a block that expects some value that isn't an object,
+	// it is not guaranteed to get that value; it may get an object and it is
+	// the responsibility of that block to take care of the appropriate
+	// conversion.
+	
+	// This function will not always return an object either, but expects that
+	// if a function is called by the user which does not return an object,
+	// an error will be raised elsewhere.
+	
+	/// todo: if the arguments given are fewer than the required, do currying
+	Closure *closure = self->data;
+	switch (closure->type)
+	{
+		case userDefinedClosure:
+			return interpret(self);
+		break;
+		case internalClosure:
+		{
+			return callInternal(closure->function, closure->argc, argptr);
+		}
+	}
+	return NULL;
 }
 
 Object *closure_with(Object *self, ...)
-    /*
-    ** Executes a closure (self) with the given arguments.
-    ** Intended to work with both user-defined and internal (C-function) closures
-    */
-    /// todo: support for 8-bit and 16-bit wide values (?)
 {
-	assert(self != NULL, "NULL closure error");
-	assert(self->data != NULL, "NULL closure error");
-    Closure *closureData = self->data;
-    va_list argptr;
-    va_start(argptr, self);
-    switch (closureData->type)
-    {
-        case internalClosure:
-        {
-            /* type checking and implicit conversion */
-            String argString = closureData->argString;
-            Size argc = getArgc(argString);
-			/* The new list of arguments we will build: */
-			void *arguments[argc];
-            Size i;
-            for (i = 0; i < argc; i++)
-            {
-                char expectedArgument = argString[i + 1];
-                void *argument = va_arg(argptr, void*);
-                
-                switch (expectedArgument)
-                {
-                    // Expecting unsigned integer, if object, try to convert
-                    case 'u':
-                    {
-                        if (isObject(argument))
-                        {
-							printf("%s\n", argString);
-                            arguments[i] = send(argument, "asU32Int");
-                        }
-                        else
-							arguments[i] = argument;
-                    } break;
-                    // Expecting signed integer, if object, convert
-                    case 's':
-                    {
-                        if (isObject(argument))
-                        {
-                            arguments[i] = object_send(argument,
-                                symbol("asS32Int"));
-                        }
-                        else
-							arguments[i] = argument;
-                    } break;
-                    // Expecting object
-                    case 'o':
-                    {
-                        if (isObject(argument))
-                        {
-							arguments[i] = argument;
-						}
-						else
-						{
-							// try to see if it's an array of objects
-							Object **args = (Object**)argument;
-							Size j;
-							for (j = 0; i < argc && isObject(args[j]); i++, j++)
-								arguments[i] = args[j];
-							
-							assert(j > 0, "Expected array of objects");
-							assert(i == argc, "List of objects must be "
-							       "correct length to cover all remaining "
-							       "arguments. Found %i, needed %i arguments.",
-							       i, argc);
-						}
-                    } break;
-                    // Expecting string, if object, convert
-                    case 'S':
-                    {
-                        if (isObject(argument))
-                        {
-                            arguments[i] = object_send(argument,
-                                symbol("asCString"));
-                        }
-                        else
-							arguments[i] = argument;
-                    } break;
-                    default:
-                        panic("vm error");
-                }
-            }
-            
-            /* We need to know the number of arguments to pass, so we must know
-             * what a method expects. Passing variable numbers of arguments is
-             * not a planned feature; lists or arrays should be used instead.
-             * 
-             * Using callInternal() can make the program flow here a bit more
-             * ambiguous, since we're calling some arbitrary C function without
-             * regards to its type. */
-            
-            //indention++;///
-            void *result = callInternal(closureData->function,
-										argc + 1, (va_list)arguments);
-            /* The given type of "result" is what we currently have, but we want
-             * to return an object, so here we do the proper conversion. */
-            //indention--;///
-            switch (argString[0])
-            {
-                case 'u':
-                case 's': return integer32_new(integer32Proto, (s32)result);
-                case 'S': return string_new(stringProto, (String)result);
-                case 'v': return NULL;
-                case 'o':
-                default: return result;
-            }
-        } break;
-        /* If the closure is of type userDefinedClosure, we must execute
-         * bytecode instead of calling a function. Bytecode functions always
-         * return objects and expect objects as arguments. */
-        case userDefinedClosure:
-        {
-			Object *process = currentProcess();
-			Process *processData = process->data;
-			Stack *scopeStack = &processData->scopes;
-			
-			// save old bytecode and IP in scopeData struct
-			Object *scope = stackTop(scopeStack);
-			Scope *scopeData = scope->data;
-			scopeData->bytecode = processData->bytecode;
-			scopeData->IP = processData->IP;
-			// create new scope
-			processData->bytecode = closureData->bytecode;
-			processData->IP = 0;
-			scope = scope_new(scopeProto, process, closureData->parent,
-                              stackTop(&processData->scopes), true,
-							  (Object**)argptr);
-            scopeData = scope->data;
-            scopeData->closure = self;
-			stackPush(scopeStack, scope);
-			// now when we return to the interpret loop, it should see a new
-			// scope available.
-			
-			/// todo: for C code calling userDefined code, use different
-			/// strategy that returns values as expected.
-            return self;
-        } break;
-        default: panic("vm error, closure type %i not known", closureData->type);
-    }
-    return NULL;
+	va_list argptr;
+	va_start(argptr, self);
+	return _closure_with(self, argptr);
+}
+
+Object *closure_withArray(Object *self, Object **args)
+{
+	return _closure_with(self, (va_list)args);
 }
 
 // This cache is to speed up lookups in object_bind
@@ -421,15 +280,22 @@ Object *__attribute__ ((pure)) object_bind(Object *self, Object *symbol)
  * 
  * Example: "SSous" means (String,Object*,u32,s32), return value is a String
  */
-Object *closure_newInternal(Object *self, void *function, String argString)
+Object *closure_newInternal(Object *self, void *function, Size argc)
 {
     Object *new = object_new(self);
     Closure *closure = malloc(sizeof(Closure));
     new->data = closure;
-    closure->argString = argString;
+    closure->argc = argc;
     closure->function = function;
     closure->type = internalClosure;
     return new;
+}
+
+/* Raises an error */
+Object *newDisallowed(Object *self)
+{
+	panic("Cannot use this object as a prototype");
+	return NULL;
 }
 
 /* An "external" or "user-defined" closure is user-defined and has an associated
@@ -437,26 +303,23 @@ Object *closure_newInternal(Object *self, void *function, String argString)
 Object *closure_new(Object *self, Object *process)
 {
     Process *processData = process->data;
-	u8 *bytecode = processData->bytecode;
-	Size *IP = &processData->IP;	
+	u8 *bytecode = processData->bytecode - 1;
+	Size IP = processData->IP;	
     Object *closure = object_new(self);
     Closure *closureData = malloc(sizeof(Closure));
     closure->data = closureData;
     Object *scope = stackTop(&processData->scopes);
     closureData->type = userDefinedClosure;
     closureData->parent = scope;
-    closureData->bytecode = bytecode + *IP;
+    closureData->bytecode = bytecode + IP;
+    closureData->argc = bytecode[IP + 1];
 	return closure;
 }
 
 void closure_whileTrue(Object *self, Object *block)
 {
-	Object *boolean = send(self, "eval");
-	while (boolean == trueObject)
-	{
+	while (send(self, "eval") == trueObject)
 		send(block, "eval");
-		boolean = send(self, "eval");
-	}
 }
 
 Object *methodTable_get(Object *self, Object *symbol)
@@ -483,6 +346,13 @@ void console_print(Object *self, Object *str)
 void console_printNl(Object *self, Object *str)
 {
     printf("%S\n", str);
+}
+
+Object *console_toString(Object *self)
+{
+    char strBuffer[30];
+	sprintf(strBuffer, "<Console at %x>", self);
+	return string_new(stringProto, strdup(strBuffer));
 }
 
 Object *returnTrue(Object *self)
@@ -520,7 +390,7 @@ void scope_setVar(Object *self, Object *symbol, Object *value);
 /* Reads from the bytecode a list of symbols. Note: the scope's closure must
  * be set outside of this function. */
 Object *scope_new(Object *self, Object *process, Object *containing,
-                  Object *caller, bool readBytecode, Object **args)
+                  Object *caller, bool readBytecode)
 {
     Process *processData = process->data;
     
@@ -555,7 +425,7 @@ Object *scope_new(Object *self, Object *process, Object *containing,
 			}
 			scopeData->variables = varListDataNew(symbolCount, (void**)symbols);
 			for (i = 0; i < argCount; i++)
-				scope_setVar(scope, symbols[i], args[i]);
+				scope_setVar(scope, symbols[i], stackPop(valueStack));
 			free(symbols);
 		}
 		else
@@ -599,7 +469,7 @@ Object *currentWorld()
  * we may append more bytecode to the end, for example). */
  /// todo: check that the bytecode pointer is swappable like this everywhere
  /// todo: allow adding of new symbol indices in the middle of bytecode rather
- ///       than only at the header (will require parser modification)
+ ///       than only at the header
 Object *process_new(Object *self)
 {
 	if (currentThread->process != NULL)
@@ -729,52 +599,52 @@ void vmInstall()
     DNUSymbol = symbol("doesNotUnderstand:");
     // methodTable.get(self, symbol)
     methodTable_addClosure(methodTableMT, getSymbol,
-        closure_newInternal(closureProto, methodTable_get, "ooo"));
+        closure_newInternal(closureProto, methodTable_get, 2));
     // object.new(self)
     methodTable_addClosure(objectMT, newSymbol,
-        closure_newInternal(closureProto, object_new, "oo"));
+        closure_newInternal(closureProto, object_new, 1));
     // object.bind(self, symbol)
     methodTable_addClosure(objectMT, bindSymbol,
-		closure_newInternal(closureProto, object_bind, "ooo"));
+		closure_newInternal(closureProto, object_bind, 2));
     // object.doesNotUnderstand(self, message)
     methodTable_addClosure(objectMT, symbol("doesNotUnderstand:"),
-		closure_newInternal(closureProto, object_doesNotUnderstand, "voo"));
+		closure_newInternal(closureProto, object_doesNotUnderstand, 2));
     // object.methodTable(self)
     methodTable_addClosure(objectMT, symbol("methodTable"),
-        closure_newInternal(closureProto, object_methodTable, "oo"));
+        closure_newInternal(closureProto, object_methodTable, 1));
     // object.toString(self), will not work until after stringInstall()
     methodTable_addClosure(objectMT, symbol("toString"),
-        closure_newInternal(closureProto, object_toString, "oo"));
+        closure_newInternal(closureProto, object_toString, 1));
     // methodTable.new(self, size)
     methodTable_addClosure(methodTableMT, symbol("new:"),
-        closure_newInternal(closureProto, methodTable_new, "oou"));
+        closure_newInternal(closureProto, methodTable_new, 2));
     // methodTable.toString(self)
     methodTable_addClosure(methodTableMT, symbol("toString"),
-        closure_newInternal(closureProto, methodTable_toString, "oo"));
+        closure_newInternal(closureProto, methodTable_toString, 1));
     // symbol.new(self, string)
     methodTable_addClosure(symbolMT, symbol("new:"),
-        closure_newInternal(closureProto, symbol_new, "ooS"));
+        closure_newInternal(closureProto, symbol_new, 2));
     // symbol.new(self, string)
     methodTable_addClosure(symbolMT, symbol("toString"),
-        closure_newInternal(closureProto, symbol_toString, "oo"));
+        closure_newInternal(closureProto, symbol_toString, 1));
     // closure.with(self, args)
     methodTable_addClosure(closureMT, symbol("eval"),
-        closure_newInternal(closureProto, closure_with, "oo"));
+        closure_newInternal(closureProto, closure_with, 1));
     // closure.with(self, args)
     methodTable_addClosure(closureMT, symbol(":"),
-        closure_newInternal(closureProto, closure_with, "ooo"));
+        closure_newInternal(closureProto, closure_with, 2));
     // closure.with(self, args)
     methodTable_addClosure(closureMT, symbol("::"),
-        closure_newInternal(closureProto, closure_with, "oooo"));
+        closure_newInternal(closureProto, closure_with, 3));
     // closure.with(self, args)
     methodTable_addClosure(closureMT, symbol(":::"),
-        closure_newInternal(closureProto, closure_with, "ooooo"));
+        closure_newInternal(closureProto, closure_with, 4));
     // closure.toString(self)
     methodTable_addClosure(closureMT, symbol("toString"),
-        closure_newInternal(closureProto, closure_toString, "oo"));
+        closure_newInternal(closureProto, closure_toString, 1));
     // closure.whileTrue(self, block)
     methodTable_addClosure(closureMT, symbol("whileTrue:"),
-        closure_newInternal(closureProto, closure_whileTrue, "voo"));
+        closure_newInternal(closureProto, closure_whileTrue, 2));
     
     /* 3. Do asserts to make sure things all connected correctly */
     assert(objectProto->parent == NULL, "vm error");
@@ -794,21 +664,24 @@ void vmInstall()
     
     
     /* 4. Install other base components */
-    
     numberInstall();
     stringInstall();
     
-    Object *consoleMT = object_send(methodTableMT, symbol("new:"), 3);
+    Object *consoleMT = object_send(methodTableMT, symbol("new:"), 5);
     Object *console = object_send(objectProto, newSymbol);
     console->methodTable = consoleMT;
     printf("Console at %x\n", console);
     
     methodTable_addClosure(consoleMT, symbol("printTest"),
-		closure_newInternal(closureProto, console_printTest, "vo"));
+		closure_newInternal(closureProto, console_printTest, 1));
     methodTable_addClosure(consoleMT, symbol("print:"),
-		closure_newInternal(closureProto, console_print, "voo"));
+		closure_newInternal(closureProto, console_print, 2));
     methodTable_addClosure(consoleMT, symbol("printNl:"),
-		closure_newInternal(closureProto, console_printNl, "voo"));
+		closure_newInternal(closureProto, console_printNl, 2));
+    methodTable_addClosure(consoleMT, symbol("new"),
+		closure_newInternal(closureProto, newDisallowed, 1));
+    methodTable_addClosure(consoleMT, symbol("toString"),
+		closure_newInternal(closureProto, console_toString, 1));
     
     send(console, "print:", console);
     send(console, "printTest"); // should print VM CHECK: Success!
@@ -821,25 +694,25 @@ void vmInstall()
     falseObject = object_send(boolean, symbol("new"));
     
     methodTable_addClosure(booleanMT, symbol("new"),
-		closure_newInternal(closureProto, boolean_new, "vo"));
+		closure_newInternal(closureProto, boolean_new, 1));
     methodTable_addClosure(booleanMT, symbol("ifTrue:"),
-		closure_newInternal(closureProto, boolean_ifTrue, "ooo"));
+		closure_newInternal(closureProto, boolean_ifTrue, 2));
     methodTable_addClosure(booleanMT, symbol("ifFalse:"),
-		closure_newInternal(closureProto, boolean_ifFalse, "ooo"));
+		closure_newInternal(closureProto, boolean_ifFalse, 2));
     methodTable_addClosure(booleanMT, symbol("ifTrue:ifFalse:"),
-		closure_newInternal(closureProto, boolean_ifTrueifFalse, "oooo"));
+		closure_newInternal(closureProto, boolean_ifTrueifFalse, 3));
     methodTable_addClosure(booleanMT, symbol("and:"),
-		closure_newInternal(closureProto, boolean_and, "ooo"));
+		closure_newInternal(closureProto, boolean_and, 2));
     methodTable_addClosure(booleanMT, symbol("or:"),
-		closure_newInternal(closureProto, boolean_or, "ooo"));
+		closure_newInternal(closureProto, boolean_or, 2));
     methodTable_addClosure(booleanMT, symbol("xor:"),
-		closure_newInternal(closureProto, boolean_xor, "ooo"));
+		closure_newInternal(closureProto, boolean_xor, 2));
     methodTable_addClosure(booleanMT, symbol("=="),
-		closure_newInternal(closureProto, boolean_eq, "ooo"));
+		closure_newInternal(closureProto, boolean_eq, 2));
     methodTable_addClosure(booleanMT, symbol("not"),
-		closure_newInternal(closureProto, boolean_not, "oo"));
+		closure_newInternal(closureProto, boolean_not, 1));
     methodTable_addClosure(booleanMT, symbol("toString"),
-		closure_newInternal(closureProto, boolean_toString, "oo"));
+		closure_newInternal(closureProto, boolean_toString, 1));
     
     Object *traitMT = methodTable_new(methodTableMT, 1);
     Object *traitProto = object_new(objectProto);
@@ -847,7 +720,7 @@ void vmInstall()
     
     // trait new
     methodTable_addClosure(traitMT, symbol("new"),
-        closure_newInternal(closureProto, trait_new, "oo"));
+        closure_newInternal(closureProto, trait_new, 1));
     
     Object *scopeMT = methodTable_new(methodTableMT, 1);
     Object *scopeProto = object_new(objectProto);
@@ -935,27 +808,27 @@ void scope_setVar(Object *self, Object *symbol, Object *value)
 			break;
 		if (scope == (Scope*)globalScope->data)
             panic("setVar Error: variable '%s' not found!", symbol->data);
-        indention++;
         scope = scope->containing->data;
         /// todo: worlds (?)
     }
 }
 
-void interpret()
+Object *interpret(Object *closure)
 {
     Object *process = currentProcess();
-    
     assert(process != NULL, "Create a new process first.");
     
     Process *processData = process->data;
     Object **symbols = processData->symbols;
-    u8 *bytecode = processData->bytecode;
     Stack *valueStack = &processData->values;
     Stack *scopeStack = &processData->scopes;
-    Size *IP = &processData->IP;
     
-    if (processData->IP == 0) // new file
-    {   
+    u8 *bytecode = processData->bytecode;
+    Size *IP = &processData->IP;
+    Closure *closureData;
+    
+    if (closure == NULL) // new file
+    {
         // Read the bytecode header defining interned symbols.
         Size symbolCount = readValue(bytecode, IP);
         if (symbolCount > 0)
@@ -970,20 +843,23 @@ void interpret()
 			}
 			processData->symbols = symbols;
 		}
+		closure = closure_new(closureProto, process);
+		closureData = closure->data;
     }
+    else
+    {
+		closureData = closure->data;
+		processData->IP = closureData->bytecode - processData->bytecode;
+	}
     
     assert(readValue(bytecode, IP) == blockBC,
-			"Expected block: malformed bytecode");
-    
-    /* Now create the closure */
-    Object *closure = closure_new(closureProto, process);
-    Closure *closureData = closure->data;
+			"Expected block: malformed bytecode (IP=%i)", *IP-1);
     
     /* We've just begun executing a block, so create the scope for that block.
      * Note that scope_new reads bytecode to create its varlist. */
     {
 		Object *scope = scope_new(scopeProto, process, closureData->parent,
-								  stackTop(scopeStack), true, NULL);
+								  stackTop(scopeStack), true);
 		Scope *scopeData = scope->data;
 		scopeData->closure = closure;
 		stackPush(scopeStack, scope);
@@ -1033,7 +909,7 @@ void interpret()
 				// increment bytecode until the end of closure definition
 				while (readValue(bytecode, IP) != endBC) {}
 				stackPush(valueStack, closureNew);
-				printf("created new %S\n", closureNew);
+				Closure *data = closureNew->data;
 			}
             break;
 			case variableBC:
@@ -1050,19 +926,12 @@ void interpret()
 			} break;
 			case messageBC:
 			{
-				Object *previousScope = stackTop(scopeStack);
-				
 				/* argc is the number of arguments not including recipient */
 				Object *symbol = symbols[readValue(bytecode, IP)];
 				Size argc = readValue(bytecode, IP);
-				
-				Object **args = NULL;
-				if (argc)
-				{
-				    args = (Object**)stackPopMany(valueStack, argc);
-					reverse((void**)args, argc);
-				}
-			    Object *recipient = stackPop(valueStack);
+				Object **args = (Object**)stackAt(valueStack, argc);
+				Object *recipient = args[0];
+			    //printf("Sending %s to %S, argc %i\n", symbol->data, recipient, argc);
 			    Object *method = object_bind(recipient, symbol);
 			    if (method == NULL)
 			    {
@@ -1070,27 +939,20 @@ void interpret()
 							symbol->data, recipient);
 					panic("null method");
 				}
-			    Object *result = closure_with(method, recipient, args);
-			    
-			    if (stackTop(scopeStack) != previousScope)
-				{
-					/* Entering a user-defined block. In this case, "result"
-					 * is the block being executed. */
-					printf("entering new scope, closure %S\n", result);
-					bytecode = processData->bytecode;
-					closure = result;
-					closureData = closure->data;
-				}
-			    else if (result != NULL)
-			    {
-					stackPush(valueStack, result);
-				}
-				if (argc)
-					free(args);
+				
+				Object *scope = stackTop(scopeStack);
+				Scope *scopeData = scope->data;
+				scopeData->IP = processData->IP;
+				scopeData->bytecode = processData->bytecode;
+				
+				Object *result = closure_withArray(method, args);
+				
+				stackPopMany(valueStack, argc); // now args no longer needed on stack
+				stackPush(valueStack, result);
 			}
             break;
 			case stopBC: /* Clears the current stack. Possibly will cause GC? */
-				/// (todo)
+				//stackPop(valueStack);
             break;
 			case setBC:
 			{
@@ -1104,17 +966,16 @@ void interpret()
 				stackPop(scopeStack);
 				Object *scope = stackTop(scopeStack);
 				Scope *scopeData = scope->data;
-				bytecode = scopeData->bytecode;
-				*IP = scopeData->IP;
-				closure = scopeData->closure;
-				closureData = closure->data;
+				processData->IP = scopeData->IP;
+				processData->bytecode = scopeData->bytecode;
+				return stackPop(valueStack);
 			}
             break;
 			case objectBC: /* Define an object */
 				panic("not implemented");
             break;
             case EOFBC:
-				return;
+				return stackPop(valueStack);
             break;
 			default:
 				panic("invalid bytecode");
@@ -1134,5 +995,5 @@ void interpretBytecode(u8 *bytecode)
 	Process *processData = process->data;
 	processData->bytecode = bytecode;
 	processData->IP = 0;
-	interpret();
+	interpret(NULL);
 }

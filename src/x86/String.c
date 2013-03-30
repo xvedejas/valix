@@ -47,8 +47,8 @@ void stringInstall()
     
     // string.new
     methodTable_addClosure(stringMT, symbol("new:"),
-        closure_newInternal(closureProto, string_new, "ooS"));
+        closure_newInternal(closureProto, string_new, 2));
     // string.toString
     methodTable_addClosure(stringMT, symbol("toString"),
-        closure_newInternal(closureProto, string_toString, "oo"));
+        closure_newInternal(closureProto, string_toString, 1));
 }

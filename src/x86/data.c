@@ -156,26 +156,27 @@ void stackPush(Stack *stack, void *value)
 	if (stack->size >= stack->capacity)
 	{
 		stack->capacity = nextSize(stack->capacity);
-		stack->array = realloc(stack->array, stack->capacity);
+		stack->array = realloc(stack->array, stack->capacity * sizeof(void*));
 	}
 	stack->array[stack->size++] = value;
 }
 
 void *stackPop(Stack *stack)
 {
-	/// todo: shrink the stack if the size is significantly lower than capacity
+	assert(stack->size, "Stack underrun error");
 	return stack->array[--stack->size];
 }
 
-/* Pops multiple items in array, up to caller to free array. */
-void **stackPopMany(Stack *stack, Size n)
+void stackPopMany(Stack *stack, Size n)
 {
-	void **array = malloc(sizeof(void*) * n);
-	Size i;
-	for (i = 0; i < n; i++)
-		array[i] = stack->array[stack->size - i - 1];
+	assert(stack->size >= n, "Stack underrun error");
 	stack->size -= n;
-	return array;
+}
+
+/* Point to the nth item from the top of the stack */
+void **stackAt(Stack *stack, Size n)
+{
+	return stack->array + stack->size - (n + 1);
 }
 
 void *stackTop(Stack *stack)
@@ -192,6 +193,17 @@ Stack *stackDel(Stack *stack)
 void stackFree(Stack *stack)
 {
     free(stack);
+}
+
+void stackDebug(Stack *stack)
+{
+	printf("Stack debug: size %i capacity %i\n", stack->size, stack->capacity);
+	Size i;
+	for (i = 0; i < stack->size; i++)
+	{
+		printf("  %x\n", stack->array[i]);
+	}
+	printf("End stack debug.\n");
 }
 
 ////////////////////////////////

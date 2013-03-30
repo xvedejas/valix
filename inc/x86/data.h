@@ -70,10 +70,12 @@ extern Stack *stackAlloc();
 extern Stack *stackNew(Stack *stack);
 extern void stackPush(Stack *stack, void *value);
 extern void *stackPop(Stack *stack);
-extern void **stackPopMany(Stack *stack, Size n);
+extern void stackPopMany(Stack *stack, Size n);
+extern void **stackAt(Stack *stack, Size n);
 extern void *stackTop(Stack *stack);
 extern Stack *stackDel(Stack *stack);
 extern void stackFree(Stack *stack);
+extern void stackDebug(Stack *stack);
 
 /////////////////////////////
 // StringBuilder Interface //

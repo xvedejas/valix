@@ -106,8 +106,8 @@ void putch(u8 c)
         outb(0x3f8, c);
     else
         printf("[%x]", c);
-    if (videoInstalled)
-        printChar(c);
+    //if (videoInstalled)
+    //    printChar(c);
 }
 
 void put(String str)
@@ -379,7 +379,7 @@ void pci()
 ThreadFunc testVM()
 {
     printf("mem used: %x\n", memUsed());
-    String input = "| i | i = 0. { i < 5 } whileTrue: { Console print: \"!\". i = i + 1. }";
+    String input = "| i | i = 0. { i < 5 } whileTrue: { Console printNl: i. i = i + 1. }";
     printf("\n%s\n", input);
     u8 *bytecode = compile(input);
     printf("compiled.\n");

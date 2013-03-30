@@ -20,11 +20,14 @@
 #include <main.h>
 #include <vm.h>
 #include <Number.h>
+#include <String.h>
+#include <cstring.h>
 #include <mm.h>
+
+#define value32(obj) (*((u32*)obj->data))
 
 Object *integer32_new(Object *self, s32 value)
 {
-	printf("i32 new\n");
     Object *new = object_send(self, symbol("new"));
     s32 *numberData = malloc(sizeof(s32));
     new->data = numberData;
@@ -41,111 +44,113 @@ Object *integer64_new(Object *self, s64 value)
     return new;
 }
 
-Object *integer32_add(s32 self, s32 other)
+Object *integer32_add(Object *self, Object *other)
 {
-	return integer32_new(integer32Proto, self + other);
+	return integer32_new(integer32Proto, value32(self) + value32(other));
 	/// todo: check for overflow
 }
 
-Object *integer32_sub(s32 self, s32 other)
+Object *integer32_sub(Object *self, Object *other)
 {
-	return integer32_new(integer32Proto, self - other);
+	return integer32_new(integer32Proto, value32(self) - value32(other));
 	/// todo: check for underflow
 }
 
-Object *integer32_mul(s32 self, s32 other)
+Object *integer32_mul(Object *self, Object *other)
 {
-	return integer32_new(integer32Proto, self * other);
+	return integer32_new(integer32Proto, value32(self) * value32(other));
 	/// todo: check for overflow
 }
 
-Object *integer32_div(s32 self, s32 other)
+Object *integer32_div(Object *self, Object *other)
 {
-	return integer32_new(integer32Proto, self / other);
+	return integer32_new(integer32Proto, value32(self) / value32(other));
 	/// todo: check for zero division
 }
 
-Object *integer32_eq(s32 self, s32 other)
+Object *integer32_eq(Object *self, Object *other)
 {
-	if (self == other)
+	if (value32(self) == value32(other))
 		return trueObject;
 	return falseObject;
 }
 
-Object *integer32_gt(s32 self, s32 other)
+Object *integer32_gt(Object *self, Object *other)
 {
-	if (self > other)
+	if (value32(self) > value32(other))
 		return trueObject;
 	return falseObject;
 }
 
-Object *integer32_lt(s32 self, s32 other)
+Object *integer32_lt(Object *self, Object *other)
 {
-	if (self < other)
+	if (value32(self) < value32(other))
 		return trueObject;
 	return falseObject;
 }
 
-Object *integer32_gte(s32 self, s32 other)
+Object *integer32_gte(Object *self, Object *other)
 {
-	if (self >= other)
+	if (value32(self) >= value32(other))
 		return trueObject;
 	return falseObject;
 }
 
-Object *integer32_lte(s32 self, s32 other)
+Object *integer32_lte(Object *self, Object *other)
 {
-	if (self <= other)
+	if (value32(self) <= value32(other))
 		return trueObject;
 	return falseObject;
 }
 
-s32 integer32_asS32Int(Object *self)
+Object *integer32_toString(Object *self)
 {
-	return *((s32*)self->data);
+	char strBuffer[30];
+	sprintf(strBuffer, "%i", value32(self));
+	return string_new(stringProto, strdup(strBuffer));
 }
+
 
 void numberInstall()
 {
     numberProto = send(objectProto, "new");
     
     /* integerProto */
-    
     integerProto = send(numberProto, "new");
     Object *integerMT = methodTable_new(methodTableMT, 1);
     integerProto->methodTable = integerMT;
     
     methodTable_addClosure(integerMT, symbol("isInteger"),
-        closure_newInternal(closureProto, returnTrue, "oo"));
+        closure_newInternal(closureProto, returnTrue, 1));
     
     /// todo: automatic conversion between the different subtypes of integer
     
     integer32Proto = send(integerProto, "new");
-    Object *integer32MT = methodTable_new(methodTableMT, 12);
+    Object *integer32MT = methodTable_new(methodTableMT, 11);
     integer32Proto->methodTable = integer32MT;
     
     methodTable_addClosure(integer32MT, symbol("new:"),
-        closure_newInternal(closureProto, integer32_new, "os"));
+        closure_newInternal(closureProto, integer32_new, 1));
     methodTable_addClosure(integer32MT, symbol("+"),
-        closure_newInternal(closureProto, integer32_add, "oss"));
+        closure_newInternal(closureProto, integer32_add, 2));
     methodTable_addClosure(integer32MT, symbol("-"),
-        closure_newInternal(closureProto, integer32_sub, "oss"));
+        closure_newInternal(closureProto, integer32_sub, 2));
     methodTable_addClosure(integer32MT, symbol("*"),
-        closure_newInternal(closureProto, integer32_mul, "oss"));
+        closure_newInternal(closureProto, integer32_mul, 2));
     methodTable_addClosure(integer32MT, symbol("/"),
-        closure_newInternal(closureProto, integer32_div, "oss"));
+        closure_newInternal(closureProto, integer32_div, 2));
     methodTable_addClosure(integer32MT, symbol("=="),
-        closure_newInternal(closureProto, integer32_eq, "oss"));
+        closure_newInternal(closureProto, integer32_eq, 2));
     methodTable_addClosure(integer32MT, symbol(">"),
-        closure_newInternal(closureProto, integer32_gt, "oss"));
+        closure_newInternal(closureProto, integer32_gt, 2));
     methodTable_addClosure(integer32MT, symbol("<"),
-        closure_newInternal(closureProto, integer32_lt, "oss"));
+        closure_newInternal(closureProto, integer32_lt, 2));
     methodTable_addClosure(integer32MT, symbol(">="),
-        closure_newInternal(closureProto, integer32_gte, "oss"));
+        closure_newInternal(closureProto, integer32_gte, 2));
     methodTable_addClosure(integer32MT, symbol("<="),
-        closure_newInternal(closureProto, integer32_lte, "oss"));
-    methodTable_addClosure(integer32MT, symbol("asS32Int"),
-        closure_newInternal(closureProto, integer32_asS32Int, "so"));
+        closure_newInternal(closureProto, integer32_lte, 2));
+    methodTable_addClosure(integer32MT, symbol("toString"),
+        closure_newInternal(closureProto, integer32_toString, 1));
     
     // 
 }

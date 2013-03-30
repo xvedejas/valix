@@ -167,7 +167,7 @@ void parseStructureDebug(ParseStructure *root)
  *     Block           { :x :y | var1 var2 | x + y }
  * */
 
-#define PARSER_DEBUG
+// #define PARSER_DEBUG
 
 u8 *compile(String source)
 {

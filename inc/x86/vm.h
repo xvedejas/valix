@@ -35,11 +35,11 @@ typedef enum
 typedef struct closure
 {
     closureType type;
+    Size argc;
     union
     {
         struct // internalClosure
         {
-            String argString;
             void *function;
         };
         struct // userDefinedClosure
@@ -96,8 +96,8 @@ typedef struct scope
 	Object *caller; // scope that this scope was called from
 	/* The following data is for storage when executing a child scope */
 	Object *closure;
-	Size IP;
-	u8 *bytecode;
+	u8 *bytecode; // beginning of bytecode
+    Size IP; // index of bytecode
 } Scope;
 
 typedef struct process
@@ -105,9 +105,9 @@ typedef struct process
 	Object *parent; // parent process
     Stack values; // stack for saving values during statement execution
     Stack scopes; // the "current scope" is the top of the stack
+    Object **symbols; // array of symbols (for de-interning)
     u8 *bytecode; // beginning of bytecode
     Size IP; // index of bytecode
-    Object **symbols; // array of symbols (for de-interning)
 } Process;
 
 typedef struct world
@@ -127,14 +127,14 @@ extern Object *object_new(Object *self);
 extern Object *object_bind(Object *self, Object *symbol);
 extern void vmInstall();
 extern void methodTable_addClosure(Object *self, Object *symbol, Object *closure);
-extern Object *closure_newInternal(Object *self, void *function, String argString);
+extern Object *closure_newInternal(Object *self, void *function, Size argc);
 extern Object *returnTrue(Object *self);
 extern Object *returnFalse(Object *self);
 extern Object *closure_with(Object *self, ...);
 extern Object *methodTable_new(Object *self, u32 size);
 extern Object *currentProcess();
 extern Object *currentWorld();
-extern void interpret();
+extern Object *interpret();
 extern void interpretBytecode(u8 *bytecode);
 
 #define object_send(self, message, ...)\

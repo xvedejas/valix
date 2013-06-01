@@ -26,6 +26,7 @@
 #include <stdarg.h>
 #include <VarList.h>
 #include <Number.h>
+#include <Array.h>
 #include <cstring.h>
 #include <String.h>
 #include <parser.h>
@@ -245,14 +246,12 @@ Object *__attribute__ ((pure)) object_bind(Object *self, Object *symbol)
               "(can't send message to null!)", symbol->data);
     
     Object *methodTable = self->methodTable;
-    /*
     // Check the cache
     Size methodCacheHash = (((Size)methodTable << 2) ^ ((Size)symbol >> 3)) &
         (sizeof(MethodCache) / sizeof(struct methodCacheEntry) - 1);
     struct methodCacheEntry *entry = MethodCache + methodCacheHash;
     if (entry->methodTable == methodTable && entry->symbol == symbol)
         return entry->method;
-    */
     
     Object *method = NULL;
     if ((symbol == getSymbol || symbol == bindSymbol) &&
@@ -267,11 +266,9 @@ Object *__attribute__ ((pure)) object_bind(Object *self, Object *symbol)
 		if (method == NULL && self->parent != NULL)
 			method = send(self->parent, "bind:", symbol);
     }
-    /*
-		entry->methodTable = methodTable;
-		entry->symbol = symbol;
-		entry->method = method;
-	*/
+	entry->methodTable = methodTable;
+	entry->symbol = symbol;
+	entry->method = method;
     return method;
 }
 
@@ -446,6 +443,12 @@ Object *currentProcess()
 	return getCurrentThread()->process;
 }
 
+Object *scope_world(Object *self)
+{
+	Scope *scope = self->data;
+	return scope->thisWorld;
+}
+
 Object *currentWorld()
 {
 	Process *process = getCurrentThread()->process->data;
@@ -561,6 +564,21 @@ Object *boolean_not(Object *self, Object *other)
 		return trueObject;
 }
 
+Object *world_spawn(Object *self)
+{
+	
+}
+
+Object *world_eval(Object *self, Object *block)
+{
+	
+}
+
+Object *world_commit(Object *self)
+{
+	
+}
+
 /* This function must be called before any VM actions may be done. After this
  * function is called, any VM actions should be done in a thread with a
  * Process defined for it. Helper functions may be created for this later, but
@@ -664,27 +682,6 @@ void vmInstall()
     
     
     /* 4. Install other base components */
-    numberInstall();
-    stringInstall();
-    
-    Object *consoleMT = object_send(methodTableMT, symbol("new:"), 5);
-    Object *console = object_send(objectProto, newSymbol);
-    console->methodTable = consoleMT;
-    printf("Console at %x\n", console);
-    
-    methodTable_addClosure(consoleMT, symbol("printTest"),
-		closure_newInternal(closureProto, console_printTest, 1));
-    methodTable_addClosure(consoleMT, symbol("print:"),
-		closure_newInternal(closureProto, console_print, 2));
-    methodTable_addClosure(consoleMT, symbol("printNl:"),
-		closure_newInternal(closureProto, console_printNl, 2));
-    methodTable_addClosure(consoleMT, symbol("new"),
-		closure_newInternal(closureProto, newDisallowed, 1));
-    methodTable_addClosure(consoleMT, symbol("toString"),
-		closure_newInternal(closureProto, console_toString, 1));
-    
-    send(console, "print:", console);
-    send(console, "printTest"); // should print VM CHECK: Success!
     
     Object *booleanMT = object_send(methodTableMT, symbol("new:"), 10);
     Object *boolean = object_send(objectProto, newSymbol);
@@ -714,6 +711,42 @@ void vmInstall()
     methodTable_addClosure(booleanMT, symbol("toString"),
 		closure_newInternal(closureProto, boolean_toString, 1));
     
+    numberInstall();
+    stringInstall();
+    arrayInstall();
+    
+    /* the current world is referenced by "this world", where "this" is a
+     * special variable returning the current scope object */
+    Object *worldMT = object_send(methodTableMT, symbol("new:"), 3);
+    Object *worldProto = object_send(objectProto, newSymbol);
+    worldProto->methodTable = worldMT;
+    
+    methodTable_addClosure(worldMT, symbol("spawn"),
+		closure_newInternal(closureProto, world_spawn, 1));
+    methodTable_addClosure(worldMT, symbol("commit"),
+		closure_newInternal(closureProto, world_commit, 1));
+    methodTable_addClosure(worldMT, symbol("eval:"),
+		closure_newInternal(closureProto, world_eval, 2));
+    
+    Object *consoleMT = object_send(methodTableMT, symbol("new:"), 5);
+    Object *console = object_send(objectProto, newSymbol);
+    console->methodTable = consoleMT;
+    printf("Console at %x\n", console);
+    
+    methodTable_addClosure(consoleMT, symbol("printTest"),
+		closure_newInternal(closureProto, console_printTest, 1));
+    methodTable_addClosure(consoleMT, symbol("print:"),
+		closure_newInternal(closureProto, console_print, 2));
+    methodTable_addClosure(consoleMT, symbol("printNl:"),
+		closure_newInternal(closureProto, console_printNl, 2));
+    methodTable_addClosure(consoleMT, symbol("new"),
+		closure_newInternal(closureProto, newDisallowed, 1));
+    methodTable_addClosure(consoleMT, symbol("toString"),
+		closure_newInternal(closureProto, console_toString, 1));
+    
+    send(console, "print:", console);
+    send(console, "printTest"); // should print VM CHECK: Success!
+    
     Object *traitMT = methodTable_new(methodTableMT, 1);
     Object *traitProto = object_new(objectProto);
     traitProto->methodTable = traitMT;
@@ -726,9 +759,10 @@ void vmInstall()
     Object *scopeProto = object_new(objectProto);
     scopeProto->methodTable = scopeMT;
     
-    Object *worldMT = methodTable_new(methodTableMT, 1);
-    Object *worldProto = object_new(objectProto);
-    worldProto->methodTable = worldMT;
+    methodTable_addClosure(scopeMT, symbol("world"),
+		closure_newInternal(closureProto, scope_world, 1));
+    //methodTable_addClosure(scopeMT, symbol("return"),
+	//	closure_newInternal(closureProto, scope_return, 1));
     
     /* 6. Make components accessible by defining global variables */
     
@@ -750,15 +784,17 @@ void vmInstall()
 }
 
 /* This is looking up a variable, beginning with the local scope. The chain of
- * lookup is to try the current world in the current scope, then the current
- * world in the parent scope, then the parent world in the parent scope, etc.
+ * lookup is to try the current world in the current scope, then the parent
+ * world in the current scope, then the current world in the parent scope, etc.
  * 
  * The worst case runtime is highly dependent on the number of scopes we have
  * to look through. That should be more reason to prefer more-local variables
  * to more-global ones. */
 Object *scope_lookupVar(Object *self, Object *symbol)
 {
-	/// todo: throw error instead of panicking
+	/// todo: throw errors instead of panicking
+	if (symbol == symbol("this"))
+		return self;
 	Scope *scope = self->data;
 	assert(scope != NULL, "lookup error");
     Object *world = scope->thisWorld;
@@ -944,6 +980,8 @@ Object *interpret(Object *closure)
 				Scope *scopeData = scope->data;
 				scopeData->IP = processData->IP;
 				scopeData->bytecode = processData->bytecode;
+				
+				/// spawn thread?
 				
 				Object *result = closure_withArray(method, args);
 				

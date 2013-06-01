@@ -379,7 +379,14 @@ void pci()
 ThreadFunc testVM()
 {
     printf("mem used: %x\n", memUsed());
-    String input = "| i | i = 0. { i < 5 } whileTrue: { Console printNl: i. i = i + 1. }";
+    String input = "| i A | "
+				   "i = 2. "
+				   "A = this world spawn. "
+                   "A eval: { i = 3. }. "
+                   "Console printNl: i. "
+                   "A eval: { Console printNl: i }. "
+                   "A commit. "
+                   "Console printNl: i.";
     printf("\n%s\n", input);
     u8 *bytecode = compile(input);
     printf("compiled.\n");

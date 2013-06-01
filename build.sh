@@ -110,7 +110,7 @@ for FILE in ${CFILES}; do
         notice "CC" "${FILE}"
         ${CC} ${AUTODEFINES} -nostdlib -nodefaultlibs -fno-stack-protector \
             -ffreestanding -fno-stack-limit -fno-stack-check -fno-builtin \
-            -fno-signed-char -Wextra \
+            -fno-signed-char -Wextra -Wno-unused-parameter \
             -O3 -nostdinc -Werror -g ${CCARGS} ${ARCHARGS} -Wall ${INCLUDE} -c \
             -Wno-unused -o $OUTPUT $FILE || error "C compilation failed"
     fi

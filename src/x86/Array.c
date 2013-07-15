@@ -33,7 +33,7 @@
 Object *sequence_map(Object *self, Object *block)
 {
 	Object *iterator = send(self, "iter");
-	Size count = send(send(self, "count"), "toCInt");
+	Size count = (Size)send(send(self, "count"), "toCInt");
 	Object *array[count];
 	Size i = 0;
 	Object *item;
@@ -69,9 +69,9 @@ void arrayInstall()
 	Object *sequenceMT = methodTable_new(methodTableMT, 2);
 	Object *sequenceProto = object_new(objectProto);
 	
-	methodTable_addClosure(arrayMT, symbol("new"),
+	methodTable_addClosure(sequenceMT, symbol("new"),
 		closure_newInternal(closureProto, newDisallowed, 1));
-	methodTable_addClosure(arrayMT, symbol("map:"),
+	methodTable_addClosure(sequenceMT, symbol("map:"),
 		closure_newInternal(closureProto, sequence_map, 2));
 	
     Object *arrayMT = methodTable_new(methodTableMT, 9);

@@ -106,8 +106,8 @@ void putch(u8 c)
         outb(0x3f8, c);
     else
         printf("[%x]", c);
-    //if (videoInstalled)
-    //    printChar(c);
+    //if (videoInstalled) // for some reason too slow on qemu...
+    //    printChar(c);   // just use console output for now
 }
 
 void put(String str)
@@ -381,7 +381,7 @@ ThreadFunc testVM()
     printf("mem used: %x\n", memUsed());
     String input = "| i A | "
 				   "i = 2. "
-				   "A = this world spawn. "
+				   "A = this spawnWorld. "
                    "A eval: { i = 3. }. "
                    "Console printNl: i. "
                    "A eval: { Console printNl: i }. "

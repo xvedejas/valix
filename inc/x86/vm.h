@@ -47,6 +47,7 @@ typedef struct closure
             u8 *bytecode;
             /* The "parent" is the _scope_ in which this closure was defined */ 
             Object *parent;
+            Object *world;
         };
     };
 } Closure;
@@ -90,7 +91,7 @@ typedef struct scope
      * requires a new scope. By default, scopes defined within a world also
      * exist in that world. The real effect is on the state of variables seen in
      * the parent scope, not in the current one. */
-	Object *thisWorld;
+	Object *world;
     // parent scope (where this was declared) that we can look for variables in
 	Object *containing;
 	Object *caller; // scope that this scope was called from
@@ -112,17 +113,17 @@ typedef struct process
 
 typedef struct world
 {
-    /* World of the parent scope, recorded here for faster lookup */
-    Object *parent;
+    Object *parent; // world of the parent scope
 } World;
 
 #define symbol(str) (symbol_new(symbolProto, str))
 
 Object *objectProto, *objectMT, *symbolProto, *methodTableMT, *varTableProto,
     *closureProto, *scopeProto, *bindSymbol, *getSymbol, *trueObject,
-    *falseObject, *newSymbol, *DNUSymbol;
+    *falseObject, *newSymbol, *DNUSymbol, *worldProto;
 
 extern Object *symbol_new(Object *self, String string);
+extern Object *newDisallowed(Object *self);
 extern Object *object_new(Object *self);
 extern Object *object_bind(Object *self, Object *symbol);
 extern void vmInstall();

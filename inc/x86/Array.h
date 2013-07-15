@@ -16,9 +16,8 @@
  *  Maintained by:
  *      Xander Vedėjas <xvedejas@gmail.com>
  */
-#ifndef __Number_h__
-#define __Number_h__
-#include <Number.h>
+#ifndef __Array_h__
+#define __Array_h__
 #include <main.h>
 #include <vm.h>
 

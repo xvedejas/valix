@@ -186,7 +186,7 @@ Object *__attribute__ ((pure)) symbol_new(Object *self, String string)
 }
 
 Object *scope_new(Object *self, Object *process, Object *containing,
-                  Object *caller, bool readBytecode);
+                  Object *caller, Object *world, bool readBytecode);
 
 Object *_closure_with(Object *self, va_list argptr)
 {
@@ -262,6 +262,7 @@ Object *__attribute__ ((pure)) object_bind(Object *self, Object *symbol)
     else
     {
 		Object *table = self->methodTable;
+        assert(table != NULL, "Null method table to object at %x", self);
 		method = send(table, "get:", symbol);
 		if (method == NULL && self->parent != NULL)
 			method = send(self->parent, "bind:", symbol);
@@ -310,6 +311,7 @@ Object *closure_new(Object *self, Object *process)
     closureData->parent = scope;
     closureData->bytecode = bytecode + IP;
     closureData->argc = bytecode[IP + 1];
+    closureData->world = ((Scope*)scope->data)->world;
 	return closure;
 }
 
@@ -387,14 +389,15 @@ void scope_setVar(Object *self, Object *symbol, Object *value);
 /* Reads from the bytecode a list of symbols. Note: the scope's closure must
  * be set outside of this function. */
 Object *scope_new(Object *self, Object *process, Object *containing,
-                  Object *caller, bool readBytecode)
+                  Object *caller, Object *world, bool readBytecode)
 {
     Process *processData = process->data;
     
     Object *scope = object_new(self);
+    assert(self != NULL, "scope has no parent")
     Scope *scopeData = malloc(sizeof(Scope));
     scope->data = scopeData;
-    scopeData->thisWorld = ((Scope*)caller->data)->thisWorld;
+    scopeData->world = world;
     scopeData->containing = containing;
     scopeData->caller = caller;
     /* Now we make a mapping from the index that, in the bytecode, represents
@@ -446,16 +449,16 @@ Object *currentProcess()
 Object *scope_world(Object *self)
 {
 	Scope *scope = self->data;
-	return scope->thisWorld;
+	return scope->world;
 }
 
 Object *currentWorld()
 {
 	Process *process = getCurrentThread()->process->data;
 	if (process == NULL)
-		return ((Scope*)globalScope->data)->thisWorld;
+		return ((Scope*)globalScope->data)->world;
 	Scope *scope = ((Object*)stackTop(&process->scopes))->data;
-	return scope->thisWorld;
+	return scope->world;
 }
 
 /* This does not create a new thread for the process. This only tries to make a
@@ -564,19 +567,36 @@ Object *boolean_not(Object *self, Object *other)
 		return trueObject;
 }
 
-Object *world_spawn(Object *self)
+Object *world_new(Object *self, Object *parent)
 {
+    Object *world = object_new(self);
+    
+    World *data = malloc(sizeof(World));
+    world->data = data;
+    data->parent = parent;
 	
+    return world;
+}
+
+Object *scope_spawnWorld(Object *self)
+{
+    Scope *scope = self->data;
+    Scope *parent = scope->containing->data;
+    Object *world = world_new(scope->world, parent->world);
+    return world; 
 }
 
 Object *world_eval(Object *self, Object *block)
 {
-	
+    ((Closure*)block->data)->world = self;
+    return send(block, "eval");
 }
 
 Object *world_commit(Object *self)
 {
-	
+    /// commit "self" to thisWorld (the world being called from)
+    panic("not implemented");
+	return NULL;
 }
 
 /* This function must be called before any VM actions may be done. After this
@@ -718,11 +738,11 @@ void vmInstall()
     /* the current world is referenced by "this world", where "this" is a
      * special variable returning the current scope object */
     Object *worldMT = object_send(methodTableMT, symbol("new:"), 3);
-    Object *worldProto = object_send(objectProto, newSymbol);
+    worldProto = object_send(objectProto, newSymbol);
     worldProto->methodTable = worldMT;
     
-    methodTable_addClosure(worldMT, symbol("spawn"),
-		closure_newInternal(closureProto, world_spawn, 1));
+    methodTable_addClosure(worldMT, symbol("new"),
+		closure_newInternal(closureProto, world_new, 1));
     methodTable_addClosure(worldMT, symbol("commit"),
 		closure_newInternal(closureProto, world_commit, 1));
     methodTable_addClosure(worldMT, symbol("eval:"),
@@ -755,12 +775,14 @@ void vmInstall()
     methodTable_addClosure(traitMT, symbol("new"),
         closure_newInternal(closureProto, trait_new, 1));
     
-    Object *scopeMT = methodTable_new(methodTableMT, 1);
-    Object *scopeProto = object_new(objectProto);
+    Object *scopeMT = methodTable_new(methodTableMT, 2);
+    scopeProto = object_new(objectProto);
     scopeProto->methodTable = scopeMT;
     
     methodTable_addClosure(scopeMT, symbol("world"),
 		closure_newInternal(closureProto, scope_world, 1));
+    methodTable_addClosure(scopeMT, symbol("spawnWorld"),
+		closure_newInternal(closureProto, scope_spawnWorld, 1));
     //methodTable_addClosure(scopeMT, symbol("return"),
 	//	closure_newInternal(closureProto, scope_return, 1));
     
@@ -778,7 +800,7 @@ void vmInstall()
     globalScope = object_new(objectProto);
     Scope *globalScopeData = malloc(sizeof(Scope));
     globalScope->data = globalScopeData;
-    globalScopeData->thisWorld = object_new(worldProto);
+    globalScopeData->world = world_new(worldProto, NULL);
     globalScopeData->variables =
 		varListDataNewPairs(symbols_array_len, symbols);
 }
@@ -797,7 +819,7 @@ Object *scope_lookupVar(Object *self, Object *symbol)
 		return self;
 	Scope *scope = self->data;
 	assert(scope != NULL, "lookup error");
-    Object *world = scope->thisWorld;
+    Object *world = scope->world;
     Object *thisWorld = world;
     Object *value;
     while (true)
@@ -805,23 +827,31 @@ Object *scope_lookupVar(Object *self, Object *symbol)
         value = varListLookup(scope->variables, symbol, world);
         if (value != NULL)
             return value;
-        if (world == scope->thisWorld)
+        // we want to go up in worlds before going up in scopes.
+        // check that there are more worlds.
+        /// the topmost world should have a null parent, but I'm not sure if
+        /// this is how it's currently setup
+        if (((World*)world->data)->parent == NULL)
         {
+            // now we advance our scope:
             if (scope == (Scope*)globalScope->data)
-                panic("lookup Error: variable '%s' not found!", symbol);
+            {
+                varListDebug(((Scope*)globalScope->data)->variables);
+                panic("lookup Error: variable '%s' not found!", symbol->data);
+            }
+            world = thisWorld; // back to first world
             assert(scope->containing != NULL, "lookup error");
             Scope *containing = scope->containing->data;
-            if (scope == containing) // root
+            if (scope == containing) // scope is the root scope 
                 panic("lookup Error: scope does not lead back to global scope");
             scope = containing; // scope = scope->containing
             world = thisWorld;
         }
         else
         {
-			panic("not implemented");
+            // check next world
             world = ((World*)world->data)->parent;
-            if (unlikely(world == NULL))
-                panic("lookup Error");
+            assert(isObject(world), "error");
         }
     }
     return NULL;
@@ -834,7 +864,7 @@ Object *scope_lookupVar(Object *self, Object *symbol)
 void scope_setVar(Object *self, Object *symbol, Object *value)
 {
 	Scope *scope = self->data;
-	Object *world = scope->thisWorld;
+	Object *world = scope->world;
 	bool set;
 	while (true)
 	{
@@ -881,6 +911,7 @@ Object *interpret(Object *closure)
 		}
 		closure = closure_new(closureProto, process);
 		closureData = closure->data;
+        closureData->world = ((Scope*)globalScope->data)->world;
     }
     else
     {
@@ -895,7 +926,8 @@ Object *interpret(Object *closure)
      * Note that scope_new reads bytecode to create its varlist. */
     {
 		Object *scope = scope_new(scopeProto, process, closureData->parent,
-								  stackTop(scopeStack), true);
+								  stackTop(scopeStack), closureData->world,
+                                  true);
 		Scope *scopeData = scope->data;
 		scopeData->closure = closure;
 		stackPush(scopeStack, scope);

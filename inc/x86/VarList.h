@@ -26,6 +26,13 @@
 
 typedef struct object Object;
 
+typedef struct accessPair
+{
+    Object *accessing_world;
+    Object *expected_value;
+    struct accessPair *next;
+} AccessPair;
+
 typedef struct varListItem
 {
     Object *world, *value;
@@ -36,6 +43,11 @@ typedef struct varBucket
 {
     Object *var;
     struct varListItem *next;
+    // list of (world that read/set this value), (value expected by that world)
+    // pairs.
+    // If the world changed the value itself before reading it, then no entry
+    // must be kept.
+    AccessPair *access_table;
 } VarBucket;
 
 typedef struct
@@ -55,6 +67,7 @@ extern bool varListDataSet(VarList *table, Object *var, Object *world, Object *v
 /* Get the value of a variable in a given world. If the world isn't found or
  * the variable isn't found, returns NULL */
 extern Object *varListLookup(VarList *table, Object *var, Object *world);
+extern bool varListCheckConsistent(VarList *table, Object *world);
 extern void varListDebug(VarList *table);
 
 #endif

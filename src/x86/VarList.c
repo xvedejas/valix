@@ -20,6 +20,7 @@
 #include <data.h>
 #include <vm.h>
 #include <cstring.h>
+#include <linkedlists.h>
 
 /* Note on implementation:
  * 
@@ -157,13 +158,74 @@ Object *varListLookup(VarList *table, Object *var, Object *world)
 	}
 	if (!found) return NULL;
     VarListItem *item = buckets[hash].next;
-    while (item != NULL)
+    for (; item != NULL; item = item->next)
     {
         if (item->world == world)
             return item->value;
-        item = item->next;
+    }
+    
+    // Try again, extending the search to the parent world (and then its parent,
+    // etc)
+    
+    while ((world = as(world, World)->parent) != NULL)
+    {
+        item = buckets[hash].next;
+        
+        for (; item != NULL; item = item->next)
+        {
+            if (item->world == world)
+            {
+                // We need to mark this access so that on world commit, we can
+                // check for consistency. Don't add pair iff there is already an
+                // identical pair.
+                AccessPair *pair = ll_find2(buckets[hash].access_table,
+                                ->accessing_world == world,
+                                ->expected_value == item->value);
+                if (pair == NULL)
+                    return item->value;
+                    
+                pair = ll_append_new(buckets[hash].access_table, AccessPair);
+                pair->accessing_world = world;
+                pair->expected_value = item->value;
+                return item->value;
+            }
+        }
     }
     return NULL;
+}
+
+bool varListCheckConsistent(VarList *table, Object *world)
+{
+    Size i;
+    Object *parentWorld = as(world, World)->parent;
+	VarBucket *buckets = table->buckets;
+	for (i = 0; i < table->size; i++)
+	{
+		Object *variable = buckets[i].var;
+		VarListItem *itemList = buckets[i].next;
+        AccessPair *access_table = buckets[i].access_table;
+        
+        if (itemList == NULL)
+            continue;
+        
+        VarListItem *item = ll_find(itemList, ->world == parentWorld);
+        if (item == NULL)
+            continue;
+        
+        // Go through the access table and make sure that the value for the
+        // parent world is the same as all the accessed values
+        
+        bool check_consistent(AccessPair *pair)
+        {
+            if (pair->accessing_world == world)
+                return pair->expected_value == variable;
+            return true;
+        }
+        
+        if (!ll_all(access_table, check_consistent))
+            return false;
+	}
+	return true;
 }
 
 void varListDebug(VarList *table)

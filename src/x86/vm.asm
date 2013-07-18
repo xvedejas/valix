@@ -18,9 +18,9 @@ include '../../inc/x86/asm.inc'
 
 ; This function is some magic to basically get past the C type system and pass
 ; arbitrary arguments of arbitrary type to a function of arbitrary type.
-; Instead, we rely on the VM's ability to check types and perform implicit
+; (Instead, we rely on the VM's ability to check types and perform implicit
 ; conversions by sending messages to objects to obtain the desired C type if an
-; object is given instead.
+; object is given.)
 func callInternal
     function equ [ebp+8]
     argc     equ [ebp+12]

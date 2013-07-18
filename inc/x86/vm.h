@@ -113,7 +113,8 @@ typedef struct process
 
 typedef struct world
 {
-    Object *parent; // world of the parent scope
+    Object *parent; // world of the parent scope (parent world)
+    Object *scope; // scope that this world was defined in
 } World;
 
 #define symbol(str) (symbol_new(symbolProto, str))
@@ -156,5 +157,7 @@ extern void interpretBytecode(u8 *bytecode);
 
 #define send(obj, messagestr, ...)\
     object_send(obj, symbol(messagestr), ## __VA_ARGS__)
+
+#define as(obj, T) ((T*)(obj)->data)
 
 #endif

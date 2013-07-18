@@ -36,7 +36,7 @@
 /* The code in this file is some of the most complex in this project. Any
  * changes to this code must be reviewed by Xander before the changes are
  * pushed. */
-
+ 
 // call as readValue(process->bytecode, &process->IP);
 // This function reads in a value from bytecode which may be encoded in
 // 1, 2, or 4 bytes depending on format.
@@ -128,7 +128,7 @@ Object *closure_toString(Object *self)
 
 Object *symbol_toString(Object *self)
 {
-	return string_new(stringProto, strdup(self->data));
+	return string_new(stringProto, strdup(as(self, char)));
 }
 
 Object *boolean_toString(Object *self)
@@ -164,7 +164,7 @@ Object *methodTable_new(Object *self, u32 size)
 
 bool object_isSymbol(Object *self)
 {
-    return (stringMapGet(globalSymbolTable, self->data) == self);
+    return (stringMapGet(globalSymbolTable, as(self, char)) == self);
 }
 
 /* A symbol's data is a pointer to the string (not necessarily unique) that was
@@ -200,7 +200,7 @@ Object *_closure_with(Object *self, va_list argptr)
 	// an error will be raised elsewhere.
 	
 	/// todo: if the arguments given are fewer than the required, do currying
-	Closure *closure = self->data;
+	Closure *closure = as(self, Closure);
 	switch (closure->type)
 	{
 		case userDefinedClosure:
@@ -243,7 +243,7 @@ Object *__attribute__ ((pure)) object_bind(Object *self, Object *symbol)
         panic("sending something not a symbol");
     if (unlikely(self == NULL))
         panic("Binding symbol '%s' to null value not implemented "
-              "(can't send message to null!)", symbol->data);
+              "(can't send message to null!)", as(symbol, char));
     
     Object *methodTable = self->methodTable;
     // Check the cache
@@ -257,7 +257,7 @@ Object *__attribute__ ((pure)) object_bind(Object *self, Object *symbol)
     if ((symbol == getSymbol || symbol == bindSymbol) &&
         self == self->methodTable)
     {
-        method = methodTableDataGet(self->data, symbol);
+        method = methodTableDataGet(as(self, MethodTable), symbol);
     }
     else
     {
@@ -300,7 +300,7 @@ Object *newDisallowed(Object *self)
  * scope created each time it is being executed. */
 Object *closure_new(Object *self, Object *process)
 {
-    Process *processData = process->data;
+    Process *processData = as(process, Process);
 	u8 *bytecode = processData->bytecode - 1;
 	Size IP = processData->IP;	
     Object *closure = object_new(self);
@@ -311,7 +311,7 @@ Object *closure_new(Object *self, Object *process)
     closureData->parent = scope;
     closureData->bytecode = bytecode + IP;
     closureData->argc = bytecode[IP + 1];
-    closureData->world = ((Scope*)scope->data)->world;
+    closureData->world = as(scope, Scope)->world;
 	return closure;
 }
 
@@ -323,12 +323,12 @@ void closure_whileTrue(Object *self, Object *block)
 
 Object *methodTable_get(Object *self, Object *symbol)
 {
-	return methodTableDataGet(self->data, symbol);
+	return methodTableDataGet(as(self, MethodTable), symbol);
 }
 
 void methodTable_addClosure(Object *self, Object *symbol, Object *closure)
 {
-    MethodTable *table = self->data;
+    MethodTable *table = as(self, MethodTable);
     methodTableDataAdd(table, symbol, closure);
 }
 
@@ -368,7 +368,7 @@ void object_doesNotUnderstand(Object *self, Object *symbol)
 {
     /* Overrideable method called whenever an object does not understand some
      * symbol. */
-    printf("%S does not understand symbol '%s'\n", self, symbol->data);
+    printf("%S does not understand symbol '%s'\n", self, as(symbol, char));
     panic("Error handling not currently implemented");
 }
 
@@ -391,7 +391,7 @@ void scope_setVar(Object *self, Object *symbol, Object *value);
 Object *scope_new(Object *self, Object *process, Object *containing,
                   Object *caller, Object *world, bool readBytecode)
 {
-    Process *processData = process->data;
+    Process *processData = as(process, Process);
     
     Object *scope = object_new(self);
     assert(self != NULL, "scope has no parent")
@@ -448,17 +448,16 @@ Object *currentProcess()
 
 Object *scope_world(Object *self)
 {
-	Scope *scope = self->data;
+	Scope *scope = as(self, Scope);
 	return scope->world;
 }
 
 Object *currentWorld()
 {
-	Process *process = getCurrentThread()->process->data;
+	Process *process = as(getCurrentThread()->process, Process);
 	if (process == NULL)
-		return ((Scope*)globalScope->data)->world;
-	Scope *scope = ((Object*)stackTop(&process->scopes))->data;
-	return scope->world;
+		return as(globalScope, Scope)->world;
+	return as((Object*)stackTop(&process->scopes), Scope)->world;
 }
 
 /* This does not create a new thread for the process. This only tries to make a
@@ -567,36 +566,84 @@ Object *boolean_not(Object *self, Object *other)
 		return trueObject;
 }
 
-Object *world_new(Object *self, Object *parent)
+// "scope" is the scope in which this world is being defined.
+Object *world_new(Object *self, Object *scope)
 {
-    Object *world = object_new(self);
+    Object *parentWorld;
+    if (scope != NULL)
+    {
+        Object *parentScope = as(scope, Scope)->containing;
+        parentWorld = as(parentScope, Scope)->world;
+    }
+    else
+    {
+        parentWorld = NULL;
+    }
     
+    Object *world = object_new(self);
     World *data = malloc(sizeof(World));
     world->data = data;
-    data->parent = parent;
-	
+    data->scope = scope;
+    data->parent = parentWorld;
     return world;
 }
 
 Object *scope_spawnWorld(Object *self)
 {
-    Scope *scope = self->data;
-    Scope *parent = scope->containing->data;
-    Object *world = world_new(scope->world, parent->world);
+    Scope *scope = as(self, Scope);
+    Object *world = world_new(scope->world, self);
     return world; 
 }
 
 Object *world_eval(Object *self, Object *block)
 {
-    ((Closure*)block->data)->world = self;
+    as(block, Closure)->world = self;
     return send(block, "eval");
 }
 
+// commit "self" to its parent world
 Object *world_commit(Object *self)
 {
-    /// commit "self" to thisWorld (the world being called from)
-    panic("not implemented");
-	return NULL;
+    // In the current scope (and its parents) find each instance of variables
+    // modified in world "self" and set the values of world self->parent to
+    // these values.
+    Object *thisScope = as(self, World)->scope;
+    
+    /// I'm not sure how hard this requirement should be. I need to re-read the paper.
+    //assert(thisScope == stackTop(scopeStack), "Can only commit world in the "
+    //       "scope it was defined in");
+    
+    Object *parentScope = as(thisScope, Scope)->containing;
+    VarList *table = as(thisScope, Scope)->variables;
+    
+    // First we need to guarantee consistency. For each variable in the varList,
+    // there is a list of accesses of the variable from any world that read from
+    // it.
+    
+    // for now, return false. In the future an error might be thrown instead.
+    if (!varListCheckConsistent(table, self))
+        return falseObject;
+    
+    Size i;
+	VarBucket *buckets = table->buckets;
+	for (i = 0; i < table->size; i++)
+	{
+		Object *variable = buckets[i].var;
+		VarListItem *item = buckets[i].next;
+		if (variable != NULL) // something present at this position
+		{
+            printf("Found variable %s\n", as(variable, char));
+            // there are multiple entries per variable. loop through those:
+			for (; item != NULL; item = item->next)
+            {
+                if (item->world == self)
+                {
+                    scope_setVar(thisScope, variable, item->value);
+                }
+            }
+		}
+	}
+	return trueObject;
 }
 
 /* This function must be called before any VM actions may be done. After this
@@ -817,7 +864,7 @@ Object *scope_lookupVar(Object *self, Object *symbol)
 	/// todo: throw errors instead of panicking
 	if (symbol == symbol("this"))
 		return self;
-	Scope *scope = self->data;
+	Scope *scope = as(self, Scope);
 	assert(scope != NULL, "lookup error");
     Object *world = scope->world;
     Object *thisWorld = world;
@@ -829,19 +876,19 @@ Object *scope_lookupVar(Object *self, Object *symbol)
             return value;
         // we want to go up in worlds before going up in scopes.
         // check that there are more worlds.
-        /// the topmost world should have a null parent, but I'm not sure if
-        /// this is how it's currently setup
-        if (((World*)world->data)->parent == NULL)
+        // the topmost world should have a null parent.
+        if (as(world, World)->parent == NULL)
         {
             // now we advance our scope:
-            if (scope == (Scope*)globalScope->data)
+            if (scope == as(globalScope, Scope))
             {
-                varListDebug(((Scope*)globalScope->data)->variables);
-                panic("lookup Error: variable '%s' not found!", symbol->data);
+                varListDebug(as(globalScope, Scope)->variables);
+                panic("lookup Error: variable '%s' not found!",
+                      as(symbol, char));
             }
             world = thisWorld; // back to first world
             assert(scope->containing != NULL, "lookup error");
-            Scope *containing = scope->containing->data;
+            Scope *containing = as(scope->containing, Scope);
             if (scope == containing) // scope is the root scope 
                 panic("lookup Error: scope does not lead back to global scope");
             scope = containing; // scope = scope->containing
@@ -850,7 +897,7 @@ Object *scope_lookupVar(Object *self, Object *symbol)
         else
         {
             // check next world
-            world = ((World*)world->data)->parent;
+            world = as(world, World)->parent;
             assert(isObject(world), "error");
         }
     }
@@ -863,19 +910,19 @@ Object *scope_lookupVar(Object *self, Object *symbol)
  * of by the varList routine). */
 void scope_setVar(Object *self, Object *symbol, Object *value)
 {
-	Scope *scope = self->data;
+	Scope *scope = as(self, Scope);
 	Object *world = scope->world;
 	bool set;
 	while (true)
 	{
-		Scope *containing = scope->containing->data;
+		Scope *containing = as(scope->containing, Scope);
         set = varListDataSet(scope->variables, symbol, world, value);
         if (set)
 			break;
-		if (scope == (Scope*)globalScope->data)
-            panic("setVar Error: variable '%s' not found!", symbol->data);
-        scope = scope->containing->data;
-        /// todo: worlds (?)
+		if (scope == as(globalScope, Scope))
+            panic("setVar Error: variable '%s' not found!", as(symbol, char));
+        scope = as(scope->containing, Scope);
+        /// todo: worlds (?) ////////////////////////////////////////
     }
 }
 
@@ -884,7 +931,7 @@ Object *interpret(Object *closure)
     Object *process = currentProcess();
     assert(process != NULL, "Create a new process first.");
     
-    Process *processData = process->data;
+    Process *processData = as(process, Process);
     Object **symbols = processData->symbols;
     Stack *valueStack = &processData->values;
     Stack *scopeStack = &processData->scopes;
@@ -910,12 +957,12 @@ Object *interpret(Object *closure)
 			processData->symbols = symbols;
 		}
 		closure = closure_new(closureProto, process);
-		closureData = closure->data;
-        closureData->world = ((Scope*)globalScope->data)->world;
+		closureData = as(closure, Closure);
+        closureData->world = as(globalScope, Scope)->world;
     }
     else
     {
-		closureData = closure->data;
+		closureData = as(closure, Closure);
 		processData->IP = closureData->bytecode - processData->bytecode;
 	}
     
@@ -928,7 +975,7 @@ Object *interpret(Object *closure)
 		Object *scope = scope_new(scopeProto, process, closureData->parent,
 								  stackTop(scopeStack), closureData->world,
                                   true);
-		Scope *scopeData = scope->data;
+		Scope *scopeData = as(scope, Scope);
 		scopeData->closure = closure;
 		stackPush(scopeStack, scope);
 	}
@@ -977,7 +1024,7 @@ Object *interpret(Object *closure)
 				// increment bytecode until the end of closure definition
 				while (readValue(bytecode, IP) != endBC) {}
 				stackPush(valueStack, closureNew);
-				Closure *data = closureNew->data;
+				//Closure *data = as(closureNew, Closure); // why is this line here?
 			}
             break;
 			case variableBC:
@@ -999,17 +1046,17 @@ Object *interpret(Object *closure)
 				Size argc = readValue(bytecode, IP);
 				Object **args = (Object**)stackAt(valueStack, argc);
 				Object *recipient = args[0];
-			    //printf("Sending %s to %S, argc %i\n", symbol->data, recipient, argc);
+			    //printf("Sending %s to %S, argc %i\n", as(symbol, char), recipient, argc);
 			    Object *method = object_bind(recipient, symbol);
 			    if (method == NULL)
 			    {
 					printf("Sent '%s' to %S, found no method\n",
-							symbol->data, recipient);
+							as(symbol, char), recipient);
 					panic("null method");
 				}
 				
 				Object *scope = stackTop(scopeStack);
-				Scope *scopeData = scope->data;
+				Scope *scopeData = as(scope, Scope);
 				scopeData->IP = processData->IP;
 				scopeData->bytecode = processData->bytecode;
 				
@@ -1035,7 +1082,7 @@ Object *interpret(Object *closure)
 			{
 				stackPop(scopeStack);
 				Object *scope = stackTop(scopeStack);
-				Scope *scopeData = scope->data;
+				Scope *scopeData = as(scope, Scope);
 				processData->IP = scopeData->IP;
 				processData->bytecode = scopeData->bytecode;
 				return stackPop(valueStack);
@@ -1062,7 +1109,7 @@ void interpretBytecode(u8 *bytecode)
 	Object *process = currentProcess();
 	if (process == NULL) // create new process
 		process = process_new(objectProto);
-	Process *processData = process->data;
+	Process *processData = as(process, Process);
 	processData->bytecode = bytecode;
 	processData->IP = 0;
 	interpret(NULL);

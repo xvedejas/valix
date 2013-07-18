@@ -44,6 +44,9 @@
 #define assert(boolean, message, args...)\
     { if (unlikely(!(boolean))) {panic(message, ## args);} }
 
+/* Force a compilation error if condition is false */
+#define BUILD_ASSERT(condition) ((void)sizeof(char[1 - 2*!!!(condition)]))
+
 typedef unsigned char  u8;
 typedef          char  s8;
 typedef unsigned short u16;

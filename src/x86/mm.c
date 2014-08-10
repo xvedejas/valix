@@ -1,4 +1,4 @@
-/*  Copyright (C) 2012 Xander Vedejas <xvedejas@gmail.com>
+/*  Copyright (C) 2014 Xander Vedejas <xvedejas@gmail.com>
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -14,7 +14,7 @@
  *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *
  *  Maintained by:
- *      Xander Vedėjas <xvedejas@gmail.com>
+ *      Xander Vedejas <xvedejas@gmail.com>
  */
 #include <main.h>
 #include <mm.h>
@@ -52,12 +52,14 @@ void mmInstall(MultibootStructure *multiboot)
             return;
 
         MemoryHeader *header = (MemoryHeader*)base;
-        header->size         = length - sizeof(MemoryHeader);
-        header->startMagic   = mmMagic;
-        header->next         = NULL;
-        header->previous     = NULL;
-        header->free         = true;
-        header->endMagic     = mmMagic;
+        header->memoryBlockStart = (void*)base;
+        header->size             = length - sizeof(MemoryHeader);
+        header->startMagic       = mmMagic;
+        header->next             = NULL;
+        header->previous         = NULL;
+        header->free             = true;
+        header->endMagic         = mmMagic;
+        
 
         // Add the block header to the list
         if (firstFreeBlock == NULL)
@@ -76,20 +78,30 @@ void mmInstall(MultibootStructure *multiboot)
             u32 mmap_end = mmap->baseAddr + mmap->length;
 
             if (mmap->baseAddr >= kernelStart && mmap_end <= kernelEnd)
+            {
                 continue; /* kernel completely covers block */
+            }
             else if (mmap->baseAddr >= kernelStart && mmap->baseAddr <= kernelEnd)
+            {
                 /* kernel partially covers block at beginning of block */
                 addFreeBlock(kernelEnd, mmap->length + mmap->baseAddr - kernelEnd);
+            }
             else if (mmap_end >= kernelStart && mmap_end <= kernelEnd)
+            {
                 /* kernel partially covers block at end of block */
                 addFreeBlock(mmap->baseAddr, kernelStart - mmap->baseAddr);
+            }
             else if (kernelStart >= mmap->baseAddr && kernelEnd <= mmap_end)
-            {   /* kernel is within the block */
+            {   
+                /* kernel is within the block */
                 addFreeBlock(mmap->baseAddr, kernelStart - mmap->baseAddr);
                 addFreeBlock(kernelEnd, mmap_end - kernelEnd);
             }
-            else /* everything is alright */
+            else
+            {
+                /* everything is alright */
                 addFreeBlock(mmap->baseAddr, mmap->length);
+            }
         }
         mmap = (MMapField*)((Size)mmap + mmap->size + sizeof(mmap->size));
     }
@@ -181,7 +193,23 @@ inline void addToUsedList(MemoryHeader *block)
     firstUsedBlock = block;
 }
 
-void *_kalloc(Size size, Thread *thread, char *file, Size line)
+/* Move the block to the first aligned position after block->memoryBlockStart.
+ * Never call this while the block is in the free or used lists. */
+MemoryHeader *alignBlock(MemoryHeader *block, Size alignment)
+{
+    // Find the first aligned address after memoryBlockStart + sizeof(MemoryHeader)
+    Size earliest_possible_start = (Size)block->memoryBlockStart +
+                                   sizeof(MemoryHeader);
+    Size aligned_start_offset = alignment -
+                                (earliest_possible_start % alignment);
+    MemoryHeader *new_block = (void*)earliest_possible_start +
+                              aligned_start_offset - sizeof(MemoryHeader);
+    memmove(new_block, block, sizeof(MemoryHeader));
+    return new_block;
+}
+
+/* Use alignment=1 if alignment is not necessary. */
+void *_kalloc(Size size, Thread *thread, char *file, Size line, Size alignment)
 {
     // next line useful for debugging mm errors
     //printf("allocating from %s, line %i\n", file, line);
@@ -192,6 +220,14 @@ void *_kalloc(Size size, Thread *thread, char *file, Size line)
     assert(size != 0,
         "Cannot allocate 0-length memory block (called from %s line %i)",
         file, line);
+    
+    assert(alignment > 0, "cannot into alignment %s %i %i", file, line, alignment);
+    /* If the amount of memory being allocated isn't an exact multiple of
+     * the requested alignment, we make it an exact multiple. */
+    Size remainder = size % alignment;
+    size += alignment - remainder;
+    assert(size % alignment == 0, "Failed to align size");
+    
     MemoryHeader *currentBlock = firstFreeBlock;
     sweep();
     while (true)
@@ -199,18 +235,26 @@ void *_kalloc(Size size, Thread *thread, char *file, Size line)
         assert(currentBlock != NULL,
             "Out of Memory! Was looking for %i bytes (called from %s line %i)",
                 size, file, line);
-            
-        if (unlikely(currentBlock->size >= size &&
-            (currentBlock->size <= size + sizeof(MemoryHeader))))
+        
+        // Extra unused space in a block is given by extra_space
+        Size extra_space = alignment - ((Size)&currentBlock->start % alignment);
+        // Usable space in a block is given by usable_size
+        Size usable_size = currentBlock->size - extra_space;
+        // The next aligned address after the start of the block:
+        void *next_aligned_address = currentBlock->start + extra_space;
+        
+        if (unlikely(usable_size >= size &&
+            (usable_size <= size + sizeof(MemoryHeader))))
         {   
             // Block is just large enough to be used, not large enough to split
             removeFromFreeList(currentBlock);
             currentBlock->free = false;
+            currentBlock = alignBlock(currentBlock, alignment);
             addToUsedList(currentBlock);
             sweep();
-            mutexReleaseLock(&mmLockMutex);
             currentBlock->thread = thread;
-            return (void*)&currentBlock->start;
+            mutexReleaseLock(&mmLockMutex);
+            return (void*)currentBlock->start;
         }
         else if (currentBlock->size > size)
         {   
@@ -224,6 +268,7 @@ void *_kalloc(Size size, Thread *thread, char *file, Size line)
             newBlock->previous = NULL;
             newBlock->next = NULL;
             newBlock->endMagic = mmMagic;
+            newBlock->memoryBlockStart = newBlock;
             addToFreeList(newBlock);
 
             assert(newBlock->size + size + sizeof(MemoryHeader) ==
@@ -231,12 +276,13 @@ void *_kalloc(Size size, Thread *thread, char *file, Size line)
 
             currentBlock->size = size;
             currentBlock->free = false;
+            currentBlock = alignBlock(currentBlock, alignment);
             addToUsedList(currentBlock);
 
             sweep();
             currentBlock->thread = thread;
             mutexReleaseLock(&mmLockMutex);
-            return (void*)&currentBlock->start;
+            return (void*)currentBlock->start;
         }
         else // Block not large enough. Next.
             currentBlock = currentBlock->next;
@@ -251,39 +297,49 @@ void *realloc(void *memory, Size size)
     mutexAcquireLock(&mmLockMutex);
     sweep();
     MemoryHeader *block = (MemoryHeader*)((Size)memory - sizeof(MemoryHeader));
-    MemoryHeader *nextBlock = (MemoryHeader*)((Size)&block->start + block->size);
-    if (nextBlock->startMagic == mmMagic && nextBlock->endMagic == mmMagic && nextBlock->free)
-    {
-        if (block->size + 2 * sizeof(MemoryHeader) + nextBlock->size < size)
-        {
-            /* Big enough to split nextBlock */
-            Size room = block->size + nextBlock->size;
-            removeFromFreeList(nextBlock);
-            block->size = size;
-            MemoryHeader *newBlock = /* For leftover memory */
-                (MemoryHeader*)(&block->start + size);
-            newBlock->size = room - size;
-            newBlock->free = true;
-            newBlock->startMagic = mmMagic;
-            newBlock->previous = NULL;
-            newBlock->next = NULL;
-            newBlock->endMagic = mmMagic;
-            addToFreeList(newBlock);
-            sweep();
-            mutexReleaseLock(&mmLockMutex);
-            return memory;
-        }
-        else if (block->size + sizeof(MemoryHeader) + nextBlock->size < size)
-        {
-            /* Big enough to use nextBlock, not big enough to split */
-            removeFromFreeList(nextBlock);
-            block->size += sizeof(MemoryHeader) + nextBlock->size;
-            sweep();
-            mutexReleaseLock(&mmLockMutex);
-            return memory;
-        }
-        /* else, not big enough, continue */
-    }
+    /// Need to rewrite this for the changes that allow memory alignment, which
+    /// mean that the header for a block of memory are not necessarily at the
+    /// start of that block but rather right before the beginning of the region
+    /// of allocated memory
+    //~ MemoryHeader *nextBlock = (MemoryHeader*)((Size)&block->start + block->size);
+    //~ if (nextBlock->startMagic == mmMagic && nextBlock->endMagic == mmMagic &&
+        //~ nextBlock->free)
+    //~ {
+        //~ ///
+        //~ 
+        //~ 
+        //~ if (block->size + 2 * sizeof(MemoryHeader) + nextBlock->size < size)
+        //~ {
+            //~ /* Big enough to split nextBlock */
+            //~ Size room = block->size + nextBlock->size;
+            //~ removeFromFreeList(nextBlock);
+            //~ block->size = size;
+            //~ MemoryHeader *newBlock = /* For leftover memory */
+                //~ (MemoryHeader*)(&block->start + size);
+            //~ newBlock->size = room - size;
+            //~ newBlock->free = true;
+            //~ newBlock->startMagic = mmMagic;
+            //~ newBlock->previous = NULL;
+            //~ newBlock->next = NULL;
+            //~ newBlock->endMagic = mmMagic;
+            //~ newBlock->memoryBlockStart = newBlock;
+            //~ newBlock = alignBlock(newBlock);
+            //~ addToFreeList(newBlock);
+            //~ sweep();
+            //~ mutexReleaseLock(&mmLockMutex);
+            //~ return memory;
+        //~ }
+        //~ else if (block->size + sizeof(MemoryHeader) + nextBlock->size < size)
+        //~ {
+            //~ /* Big enough to use nextBlock, not big enough to split */
+            //~ removeFromFreeList(nextBlock);
+            //~ block->size += sizeof(MemoryHeader) + nextBlock->size;
+            //~ sweep();
+            //~ mutexReleaseLock(&mmLockMutex);
+            //~ return memory;
+        //~ }
+        //~ /* else, not big enough, continue */
+    //~ }
     void *new_mem = malloc(size);
     memcpy(new_mem, memory, size);
     free(memory);
@@ -401,9 +457,9 @@ void freeThread(Thread *thread)
         {
             #ifndef __release__
             printf("Dying thread '%s' failed to free %x, size %x, freeing.\n",
-                thread->name, &currentBlock->start, currentBlock->size);
+                thread->name, currentBlock->start, currentBlock->size);
             #endif
-            free(&currentBlock->start);
+            free(currentBlock->start);
         }
         currentBlock = next;
     }
@@ -416,7 +472,7 @@ void meminfo()
     MemoryHeader *currentBlock = firstFreeBlock;
     printf("=========== MemInfo ===========\n");
     do printf("free block at %x, size %x, magic %x %x\n",
-        &currentBlock->start,
+        currentBlock->start,
         currentBlock->size, currentBlock->startMagic, currentBlock->endMagic);
     while ((currentBlock = currentBlock->next) != NULL);
 
@@ -424,7 +480,7 @@ void meminfo()
     if (currentBlock == NULL)
         return;
     do printf("used block at %x, size %x, magic %x %x\n",
-        &currentBlock->start,
+        currentBlock->start,
         currentBlock->size, currentBlock->startMagic, currentBlock->endMagic);
     while ((currentBlock = currentBlock->next) != NULL);
 }
@@ -443,6 +499,7 @@ Size memUsed()
     return amount;
 }
 
+// Amount of memory free
 Size memFree()
 {
     Size amount = 0;
@@ -469,7 +526,8 @@ void sweep() // quick tests
         assert(currentBlock->startMagic == mmMagic, "Sweep failed, possible buffer overflow");
         assert(currentBlock->endMagic == mmMagic, "Sweep failed, possible buffer underflow");
         assert(currentBlock->free, "Sweep failed");
-        assert((Size)&currentBlock->start ==
+        assert((Size)currentBlock->memoryBlockStart <= (Size)currentBlock, "Sweep failed, memory header not within block");
+        assert((Size)currentBlock->start ==
             (Size)currentBlock + sizeof(MemoryHeader), "Sweep failed");
     } while ((currentBlock = currentBlock->next) >= (MemoryHeader*)0x100000);
 
@@ -485,7 +543,8 @@ void sweep() // quick tests
         assert(currentBlock->startMagic == mmMagic, "Sweep failed, possible buffer overflow");
         assert(currentBlock->endMagic == mmMagic, "Sweep failed, possible buffer underflow");
         assert(!currentBlock->free, "Sweep failed");
-        assert((Size)&currentBlock->start ==
+        assert((Size)currentBlock->memoryBlockStart <= (Size)currentBlock, "Sweep failed, memory header not within block");
+        assert((Size)currentBlock->start ==
             (Size)currentBlock + sizeof(MemoryHeader), "Sweep failed");
     } while ((currentBlock = currentBlock->next) >= (MemoryHeader*)0x100000);
     mutexReleaseLock(&mmLockMutex);

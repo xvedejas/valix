@@ -1,4 +1,4 @@
-/*  Copyright (C) 2012 Xander Vedejas <xvedejas@gmail.com>
+/*  Copyright (C) 2014 Xander Vedejas <xvedejas@gmail.com>
  *  Conversion functions Copyright 1988 Regents of the University of California
  *
  *  This program is free software: you can redistribute it and/or modify

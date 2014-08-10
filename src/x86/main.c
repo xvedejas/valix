@@ -1,4 +1,4 @@
-/*  Copyright (C) 2012 Xander Vedejas <xvedejas@gmail.com>
+/*  Copyright (C) 2014 Xander Vedejas <xvedejas@gmail.com>
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -14,7 +14,7 @@
  *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *
  *  Maintained by:
- *      Xander Vedėjas <xvedejas@gmail.com>
+ *      Xander Vedejas <xvedejas@gmail.com>
  */
 
 #include <data.h>
@@ -379,15 +379,12 @@ void pci()
 ThreadFunc testVM()
 {
     //printf("mem used: %x\n", memUsed());
-    while (true)
-    {
-        String input = getstring();
-        //printf("\n%s\n", input);
-        //printf("compiling\n");
-        u8 *bytecode = compile(input);
-        //printf("compiled.\n");
-        interpretBytecode(bytecode); // uncomment to test interpreter
-    }
+    String input = "Console print: (1, \"a\", 3, \"b\").";
+    printf("\n%s\n", input);
+    //printf("compiling\n");
+    u8 *bytecode = compile(input);
+    //printf("compiled.\n");
+    interpretBytecode(bytecode);
     //printf("mem used: %x\n", memUsed());
 }
 
@@ -422,6 +419,7 @@ void kmain(u32 magic, MultibootStructure *multiboot, void *stackPointer)
     //compile_test();
     
     spawn("VM interactive shell", testVM);
+    sweep();
     while (true);
     
     //pci();

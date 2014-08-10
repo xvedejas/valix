@@ -1,4 +1,4 @@
-/*  Copyright (C) 2012 Xander Vedejas <xvedejas@gmail.com>
+/*  Copyright (C) 2014 Xander Vedejas <xvedejas@gmail.com>
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -84,12 +84,13 @@ typedef struct multibootStructure MultibootStructure;
 typedef struct memoryHeader
 {
     u32 startMagic;
+    void *memoryBlockStart;
     Size size;
     struct thread *thread;
     bool free;
     struct memoryHeader *previous, *next;
     u32 endMagic;
-    Size start[0]; // use &start to get the memory directly after the header
+    Size start[0];
 } MemoryHeader;
 
 extern void sweep();
@@ -101,11 +102,13 @@ extern void mmInstall(MultibootStructure *multiboot);
  * current thread. When the thread ends, it will automatically free the memory
  * that it keeps track of. Use kalloc() for memory which has a lifetime not
  * associated with the current thread. */
-#define malloc(_size) _kalloc(_size, getCurrentThread(), __FILE__, __LINE__)
-#define kalloc(_size, _thread) _kalloc(_size, _thread, __FILE__, __LINE__)
+#define malloc(_size) _kalloc(_size, getCurrentThread(), __FILE__, __LINE__, 1)
+#define kalloc(_size, _thread) _kalloc(_size, _thread, __FILE__, __LINE__, 1)
+#define aalloc(_size, _align) _kalloc(_size, getCurrentThread(), __FILE__, __LINE__, _align)
 #define free(_mem) _free(_mem, __FILE__, __LINE__)
 
-extern void *_kalloc(Size size, struct thread *thread, char *file, Size line);
+extern void *_kalloc(Size size, struct thread *thread, char *file, Size line,
+                     Size alignment);
 extern void *calloc(Size amount, Size elementSize);
 extern bool isAllocated(void *memory);
 extern void _free(void *memory, char *file, Size line);

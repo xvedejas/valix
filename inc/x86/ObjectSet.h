@@ -1,4 +1,4 @@
-/*  Copyright (C) 2012 Xander Vedejas <xvedejas@gmail.com>
+/*  Copyright (C) 2014 Xander Vedejas <xvedejas@gmail.com>
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -14,7 +14,7 @@
  *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *
  *  Maintained by:
- *      Xander Vedėjas <xvedejas@gmail.com>
+ *      Xander Vedejas <xvedejas@gmail.com>
  */
 #ifndef __ObjectSet_h__
 #define __ObjectSet_h__

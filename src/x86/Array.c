@@ -64,23 +64,61 @@ Object *sequence_map(Object *self, Object *block)
 // intersect:
 // difference:
 
+Object *array_new(Object *self, Object **objects, Size length)
+{
+    Object *array = object_new(self);
+    ArrayData *data = malloc(sizeof(ArrayData) + sizeof(Object*) * length);
+    Size i;
+    for (i = 0; i < length; i++)
+        data->objects[i] = objects[i];
+    data->len = length;
+    array->data = data;
+    return array;
+}
+
+Object *sequence_toString(Object *self)
+{
+    ArrayData *data = self->data;
+    Size i;
+    Size len = data->len;
+    Object *string = NULL;
+    for (i = 0; i < len; i++)
+    {
+        Object *nextString = send(data->objects[i], "toString");
+        if (string != NULL)
+        {
+            // Concatenate the two strings
+            string = send(string, "+", nextString);
+        }
+        else
+        {
+            string = nextString;
+        }
+    }
+    return string;
+}
+
 void arrayInstall()
 {
-	Object *sequenceMT = methodTable_new(methodTableMT, 2);
-	Object *sequenceProto = object_new(objectProto);
+	Object *sequenceMT = methodTable_new(methodTableMT, 3);
+	sequenceProto = object_new(objectProto);
+    sequenceProto->methodTable = sequenceMT;
 	
 	methodTable_addClosure(sequenceMT, symbol("new"),
 		closure_newInternal(closureProto, newDisallowed, 1));
 	methodTable_addClosure(sequenceMT, symbol("map:"),
 		closure_newInternal(closureProto, sequence_map, 2));
-	
-    Object *arrayMT = methodTable_new(methodTableMT, 9);
-    Object *arrayProto = object_new(objectProto);
+	methodTable_addClosure(sequenceMT, symbol("toString"),
+		closure_newInternal(closureProto, sequence_toString, 1));
+    
+    Object *arrayMT = methodTable_new(methodTableMT, 1);
+    arrayProto = object_new(sequenceProto);
     arrayProto->methodTable = arrayMT;
     
+    // Todo: have an array creation routine that can take anything iterable
+    methodTable_addClosure(arrayMT, symbol("new"),
+		closure_newInternal(closureProto, newDisallowed, 1));
     /*
-    methodTable_addClosure(arrayMT, symbol("new:"),
-		closure_newInternal(closureProto, array_new, 2));
     methodTable_addClosure(arrayMT, symbol("at:"),
 		closure_newInternal(closureProto, array_at, 2));
     methodTable_addClosure(arrayMT, symbol("at:put:"),

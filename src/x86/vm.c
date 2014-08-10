@@ -107,6 +107,8 @@ Object *object_new(Object *self)
 
 Object *object_toString(Object *self)
 {
+    printf("self %x parent %x gparent %x\n", self, self->parent, self->parent->parent);
+    printf("arrayproto %x sequenceproto %x objectproto %x\n", arrayProto, sequenceProto, objectProto);
 	char strBuffer[30];
 	sprintf(strBuffer, "<Object at %x>", self);
 	return string_new(stringProto, strdup(strBuffer));
@@ -646,6 +648,14 @@ Object *world_commit(Object *self)
 	return trueObject;
 }
 
+/* This is the main method for catching errors. A new world is spawned in which
+ * execution proceeds. */
+Object *closure_on_catch(Object *self, Object *array_of_errors, Object *block)
+{
+    panic("Not Implemented");
+    return NULL;
+}
+
 /* This function must be called before any VM actions may be done. After this
  * function is called, any VM actions should be done in a thread with a
  * Process defined for it. Helper functions may be created for this later, but
@@ -1016,7 +1026,20 @@ Object *interpret(Object *closure)
 				panic("not implemented");
             break;
 			case arrayBC:
-				panic("not implemented");
+            {
+                Size elementCount = readValue(bytecode, IP);
+                Object *objects[elementCount];
+                
+                Size i = elementCount;
+                while (i --> 0)
+                    objects[i] = stackPop(valueStack);
+                
+                Object *arrayNew = array_new(arrayProto,
+                                             (Object**)objects,
+                                             elementCount);
+                
+                stackPush(valueStack, arrayNew);
+            }
             break;
 			case blockBC:
 			{

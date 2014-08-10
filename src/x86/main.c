@@ -106,8 +106,8 @@ void putch(u8 c)
         outb(0x3f8, c);
     else
         printf("[%x]", c);
-    //if (videoInstalled) // for some reason too slow on qemu...
-    //    printChar(c);   // just use console output for now
+    if (videoInstalled) // for some reason too slow on qemu...
+        printChar(c);   // just use console output for now
 }
 
 void put(String str)
@@ -122,7 +122,7 @@ void _sprintf(char *strBuffer, const char *format, va_list argptr)
 {
 	if (format == NULL)
 	{
-        strcpy(strBuffer, "<<NULLSTR>>");
+        strcpy(strBuffer, "<<NULL>>");
         return;
 	}
 	char numBuff[20];
@@ -198,7 +198,7 @@ void _sprintf(char *strBuffer, const char *format, va_list argptr)
 				{   
 					String s = va_arg(argptr, String);
 					if (s == NULL)
-						s = "<<NULLSTR>>";
+						s = "<<NULL>>";
 					Size len = strlen(s);
 					memcpy(strBuffer, s, len);
 					strBuffer += len;
@@ -274,13 +274,13 @@ void printf(const char *format, ...)
 {
 	va_list argptr;
 	va_start(argptr, format);
-	char strBuffer[128];
-	_sprintf(strBuffer, format, argptr);
+	char str_buffer[1024];
+	_sprintf(str_buffer, format, argptr);
 	va_end(argptr);
 	Size i;
 	for (i = 0; i < indention; i++)
 	    put("--");
-	put(strBuffer);
+	put(str_buffer);
 }
 
 void _panic(char *file, u32 line)
@@ -378,20 +378,17 @@ void pci()
 
 ThreadFunc testVM()
 {
-    printf("mem used: %x\n", memUsed());
-    String input = "| i A | "
-				   "i = 2. "
-				   "A = this spawnWorld. "
-                   "A eval: { i = 3. }. "
-                   "Console printNl: i. "
-                   "A eval: { Console printNl: i }. "
-                   "A commit. "
-                   "Console printNl: i.";
-    printf("\n%s\n", input);
-    u8 *bytecode = compile(input);
-    printf("compiled.\n");
-    interpretBytecode(bytecode); // uncomment to test interpreter
-    printf("mem used: %x\n", memUsed());
+    //printf("mem used: %x\n", memUsed());
+    while (true)
+    {
+        String input = getstring();
+        //printf("\n%s\n", input);
+        //printf("compiling\n");
+        u8 *bytecode = compile(input);
+        //printf("compiled.\n");
+        interpretBytecode(bytecode); // uncomment to test interpreter
+    }
+    //printf("mem used: %x\n", memUsed());
 }
 
 /* This is the very first C function to be called. Here we initialize the various

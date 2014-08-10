@@ -21,8 +21,9 @@
 #include <main.h>
 #include <vm.h>
 
-Object *arrayProto;
+Object *arrayProto, *sequenceProto;
 
 extern void arrayInstall();
+extern Object *array_new(Object *self, Object **objects, Size length);
 
 #endif

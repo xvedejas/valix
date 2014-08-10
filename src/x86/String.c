@@ -37,12 +37,31 @@ Object *string_toString(Object *self)
 	return self;
 }
 
+Object *string_concat(Object *self, Object *other)
+{
+    StringData *selfData = self->data;
+    StringData *otherData = other->data;
+    Size len = selfData->len;
+    Size otherlen = otherData->len;
+    Size newlen = len + otherData->len;
+    
+    StringData *newData = malloc(sizeof(StringData) + sizeof(char) * newlen);
+    newData->len = newlen;
+    
+    memcpy(newData->string, selfData->string, len);
+    memcpy(newData->string + len, otherData->string, otherlen);
+    
+    Object *newString = object_send(self, symbol("new"));
+    newString->data = newData;
+    return newString;
+}
+
 void stringInstall()
 {
     stringProto = object_send(objectProto, symbol("new"));
     
     /* Add a method table */
-    Object *stringMT = methodTable_new(methodTableMT, 2);
+    Object *stringMT = methodTable_new(methodTableMT, 3);
     stringProto->methodTable = stringMT;
     
     // string.new
@@ -51,4 +70,7 @@ void stringInstall()
     // string.toString
     methodTable_addClosure(stringMT, symbol("toString"),
         closure_newInternal(closureProto, string_toString, 1));
+    // string +
+    methodTable_addClosure(stringMT, symbol("+"),
+        closure_newInternal(closureProto, string_concat, 2));
 }

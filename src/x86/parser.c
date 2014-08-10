@@ -229,8 +229,8 @@ u8 *compile(String source)
             strcat(messageName, ":"); 
         }
         Size interned = intern(messageName);
-        /// don't free, this string belongs to the interntable now
-        ///free(messageName);
+        // don't free, this string belongs to the interntable now
+        //free(messageName);
         return interned;
     }
     
@@ -548,7 +548,7 @@ u8 *compile(String source)
         indention += 1;
         #endif // PARSER_DEBUG
         bool assignment = (lookahead(1)->type == eqToken);
-        Size keyword; // interned variable if assignment is true
+        Size keyword = 0; // interned variable if assignment is true
         if (assignment)
         {
             expectToken(keywordToken, "assignment variable name");
@@ -804,6 +804,7 @@ u8 *compile(String source)
                  *   (,)
                  *   (,element)
                  * 
+                 * Currently just single-dimensional arrays.
                  */
                 bool seenComma = false;
                 Size elementCount = 0;
@@ -813,8 +814,8 @@ u8 *compile(String source)
                     parseStmt();
                     elementCount++;
                     parserRequire(curToken->type == commaToken ||
-                        curToken->type == closeParenToken,
-                        "Expected ')' token or ',' token");
+                    curToken->type == closeParenToken,
+                    "Expected ')' token or ',' token");
                     if (curToken->type == commaToken)
                     {
                         seenComma = true;

@@ -562,6 +562,8 @@ void vmInstall()
     
     scopeInstall(global_symbols, symbols_array_len);
     
+    printf("vmInstall done\n");
+    
 }
 
 Object *interpret(Object *closure)
@@ -608,23 +610,38 @@ Object *interpret(Object *closure)
 			"Expected block: malformed bytecode (IP=%i)", *IP-1);
     
     // We've just begun executing a block, so create the scope for that block.
+    Object *scope;
     Size argCount = readValue(bytecode, IP);
     Size varCount = readValue(bytecode, IP);
     Size symbolCount = argCount + varCount;
     
-    Object **localSymbols = malloc(sizeof(Object*) * symbolCount * 2);
-    /* Create a list of variables for the scope that is the proper size. */
-    Size i;
-    for (i = 0; i < symbolCount; i++)
+    if (symbolCount > 0)
     {
-        Size value = readValue(bytecode, IP);
-        localSymbols[2 * i] = symbols[value];
-        localSymbols[2 * i + 1] = stackPop(valueStack);
+        Object **localSymbols = malloc(sizeof(Object*) * symbolCount * 2);
+        /* Create a list of variables for the scope that is the proper size. */
+        Size i;
+        for (i = 0; i < symbolCount; i++)
+        {
+            Size value = readValue(bytecode, IP);
+            localSymbols[2 * i] = symbols[value];
+            // values are supplied only for args, not vars.
+            if (i < argCount)
+                localSymbols[2 * i + 1] = stackPop(valueStack);
+            else
+                localSymbols[2 * i + 1] = NULL;
+        }
+        scope = scope_new(scopeProto, process, closureData->parent,
+                          stackTop(scopeStack), closureData->world,
+                          argCount, varCount, localSymbols);
+        free(localSymbols);
     }
-    Object *scope = scope_new(scopeProto, process, closureData->parent,
-                              stackTop(scopeStack), closureData->world,
-                              argCount, varCount, localSymbols);
-    free(localSymbols);
+    else
+    {
+        scope = scope_new(scopeProto, process, closureData->parent,
+                          stackTop(scopeStack), closureData->world,
+                          0, 0, NULL);
+    }
+    
     Scope *scopeData = scope->scope;
     scopeData->closure = closure;
     stackPush(scopeStack, scope);
@@ -747,14 +764,15 @@ Object *interpret(Object *closure)
 				Scope *scopeData = scope->scope;
 				processData->IP = scopeData->IP;
 				processData->bytecode = scopeData->bytecode;
-				return stackPop(valueStack);
-			}
+			} // no break
+            case EOFBC:
+				if (valueStack->size)
+                    return stackPop(valueStack);
+                else
+                    return NULL;
             break;
 			case objectBC: /* Define an object */
 				panic("not implemented");
-            break;
-            case EOFBC:
-				return stackPop(valueStack);
             break;
 			default:
 				panic("invalid bytecode");

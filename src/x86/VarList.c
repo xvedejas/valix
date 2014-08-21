@@ -36,7 +36,7 @@ VarList *varListNew(Size capacity, void **symbols)
 	/* Given an array of symbols, create a new varList with those
 	 * symbols undefined */
     Size size = capacity + (capacity >> 1); // hashtable size is 150% capacity
-    VarList *table = malloc(sizeof(VarList) + sizeof(VarBucket) * size);
+    VarList *table = calloc(sizeof(VarList) + sizeof(VarBucket) * size, 1);
     table->capacity = capacity;
     VarBucket *buckets = table->buckets;
     table->size = size;
@@ -62,7 +62,8 @@ VarList *varListNewPairs(Size capacity, void **symbols, Object *world)
     /* Given an array of altenrating symbols and values, create a new varList
      * with those symbols defined */
     Size size = capacity + (capacity >> 1); // hashtable size is 150% capacity
-    VarList *table = malloc(sizeof(VarList) + sizeof(VarBucket) * size);
+    
+    VarList *table = calloc(sizeof(VarList) + sizeof(VarBucket) * size, 1);
     table->capacity = capacity;
     VarBucket *buckets = table->buckets;
     table->size = size;
@@ -77,10 +78,14 @@ VarList *varListNewPairs(Size capacity, void **symbols, Object *world)
 			hash = (hash + 1) % size;
         VarBucket *bucket = &table->buckets[hash];
         bucket->var = var;
-        bucket->items = malloc(sizeof(VarListItem));
-        bucket->items->value = symbols[i * 2 + 1];
-        bucket->items->world = world;
-        bucket->items->next = NULL;
+        void *value = symbols[i * 2 + 1];
+        if (value != NULL)
+        {
+            bucket->items = malloc(sizeof(VarListItem));
+            bucket->items->value = symbols[i * 2 + 1];
+            bucket->items->world = world;
+            bucket->items->next = NULL;
+        }
     }
     
     return table;

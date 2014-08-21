@@ -106,8 +106,8 @@ void putch(u8 c)
         outb(0x3f8, c);
     else
         printf("[%x]", c);
-    if (videoInstalled) // for some reason too slow on qemu...
-        printChar(c);   // just use console output for now
+    ///if (videoInstalled) // for some reason too slow on qemu...
+    ///    printChar(c);   // just use console output for now
 }
 
 void put(String str)
@@ -379,7 +379,7 @@ void pci()
 ThreadFunc testVM()
 {
     //printf("mem used: %x\n", memUsed());
-    String input = "this spawn: {}.";
+    String input = "| w A | w = this spawn. A = 5. w do: { A = 3. }. Console print: A. w do: { Console print: A. }.";
     printf("\n%s\n", input);
     //printf("compiling\n");
     u8 *bytecode = compile(input);

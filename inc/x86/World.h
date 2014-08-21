@@ -20,6 +20,7 @@
 #define __world_h__
 
 #include <vm.h>
+#include <StringMap.h>
 
 /* All variables are explicitly declared, associated with some scope. Those
  * variables can only be accessed from within the scope or inner scopes.
@@ -79,7 +80,7 @@ typedef struct world
     Object *parent; // world of the parent scope (parent world)
     Object *scope; // scope that this world was defined in
     Object **catches; // null-terminated list of errors which this world catches (todo)
-    Object **expectedParentState; // a list of (scope, varname, value)
+    StringMap *expectedParentState; // a mapping from varname to expected parent value
 } World;
 
 extern void worldInstall();

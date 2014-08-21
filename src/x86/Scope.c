@@ -74,8 +74,12 @@ Object *scope_lookupVar(Object *self, Object *symbol)
     }
     if (world != thisWorld)
     {
-        panic("not implemented");
-        /// todo: note/check consistency
+        StringMap *expectedState = thisWorld->world->expectedParentState;
+        void *expectedValue = stringMapGet(expectedState, symbol->symbol);
+        if (expectedValue == NULL)
+            stringMapSet(expectedState, symbol->symbol, value);
+        else
+            panic("inconsistent world");
     }
     return value;
 }
@@ -92,7 +96,7 @@ void scope_setVar(Object *self, Object *symbol, Object *value)
         if (set)
 			break;
 		if (scope == globalScope->scope)
-            panic("setVar Error: variable '%s' not found!", symbol->character);
+            panic("setVar Error: variable '%s' not found!", symbol->symbol);
         scope = scope->containing->scope;
     }
 }

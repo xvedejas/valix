@@ -96,7 +96,7 @@ struct object
         Scope *scope; // user-defined objects have a scope
         Process *process;
         World *world;
-        char *character;
+        char *symbol;
     };
 };
 

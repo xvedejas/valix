@@ -57,6 +57,7 @@ Object *world_new(Object *self, Object *scope)
     world->data = data;
     data->scope = scope;
     data->parent = parentWorld;
+    data->expectedParentState = stringMapNew();
     return world;
 }
 
@@ -70,6 +71,7 @@ Object *world_do(Object *self, Object *block)
 // commit "self" to its parent world
 Object *world_commit(Object *self)
 {
+    panic("not implemented");
     // In the current scope (and its parents) find each instance of variables
     // modified in world "self" and set the values of world self->parent to
     // these values.

@@ -126,7 +126,7 @@ Object *closure_toString(Object *self)
 
 Object *symbol_toString(Object *self)
 {
-	return string_new(stringProto, strdup(self->character));
+	return string_new(stringProto, strdup(self->symbol));
 }
 
 /* There is a global set that tells us if a pointer points to an object in the
@@ -148,7 +148,7 @@ Object *methodTable_new(Object *self, u32 size)
 
 bool object_isSymbol(Object *self)
 {
-    return (stringMapGet(globalSymbolTable, self->character) == self);
+    return (stringMapGet(globalSymbolTable, self->symbol) == self);
 }
 
 /* A symbol's data is a pointer to the string (not necessarily unique) that was
@@ -224,7 +224,7 @@ Object *__attribute__ ((pure)) object_bind(Object *self, Object *symbol)
         panic("sending something not a symbol");
     if (unlikely(self == NULL))
         panic("Binding symbol '%s' to null value not implemented "
-              "(can't send message to null!)", symbol->character);
+              "(can't send message to null!)", symbol->symbol);
     
     Object *methodTable = self->methodTable;
     // Check the cache
@@ -344,7 +344,7 @@ void object_doesNotUnderstand(Object *self, Object *symbol)
 {
     /* Overrideable method called whenever an object does not understand some
      * symbol. */
-    printf("%S does not understand symbol '%s'\n", self, symbol->character);
+    printf("%S does not understand symbol '%s'\n", self, symbol->symbol);
     panic("Error handling not currently implemented");
 }
 
@@ -725,12 +725,12 @@ Object *interpret(Object *closure)
 				Size argc = readValue(bytecode, IP);
 				Object **args = (Object**)stackAt(valueStack, argc);
 				Object *recipient = args[0];
-			    //printf("Sending %s to %S, argc %i\n", symbol->character, recipient, argc);
+			    //printf("Sending %s to %S, argc %i\n", symbol->symbol, recipient, argc);
 			    Object *method = object_bind(recipient, symbol);
 			    if (method == NULL)
 			    {
 					printf("Sent '%s' to %S, found no method\n",
-							symbol->character, recipient);
+							symbol->symbol, recipient);
 					panic("null method");
 				}
 				

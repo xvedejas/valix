@@ -22,9 +22,12 @@
 #include <threading.h>
 #include <data.h>
 #include <setjmp.h>
+#include <MethodTable.h>
 #include <VarList.h>
 
+typedef struct methodTable MethodTable;
 typedef struct object Object;
+typedef struct varList VarList;
 
 typedef enum
 {
@@ -73,12 +76,28 @@ typedef struct trait
     Object **closures;
 } Trait;
 
+typedef struct scope Scope;
+typedef struct process Process;
+typedef struct world World;
+
 struct object
 {
     struct object *parent;
     struct object *methodTable;
-    void *data; // with user-defined objects, the data is a scope object.
-                // with internally defined objects, the data can be anything.
+    union
+    {
+        void *data;
+        // if the object is a MethodTable, it has this second methodTable:
+        MethodTable *table;
+        Closure *closure;
+        StringData *string;
+        ArrayData *array;
+        Trait *trait;
+        Scope *scope; // user-defined objects have a scope
+        Process *process;
+        World *world;
+        char *character;
+    };
 };
 
 /* A scope is, in a sense, a running "instance" of a block/"closure". 
@@ -111,17 +130,11 @@ typedef struct process
     Size IP; // index of bytecode
 } Process;
 
-typedef struct world
-{
-    Object *parent; // world of the parent scope (parent world)
-    Object *scope; // scope that this world was defined in
-} World;
-
 #define symbol(str) (symbol_new(symbolProto, str))
 
 Object *objectProto, *objectMT, *symbolProto, *methodTableMT, *varTableProto,
     *closureProto, *scopeProto, *bindSymbol, *getSymbol, *trueObject,
-    *falseObject, *newSymbol, *DNUSymbol, *worldProto;
+    *falseObject, *newSymbol, *DNUSymbol, *worldProto, *console;
 
 extern Object *symbol_new(Object *self, String string);
 extern Object *newDisallowed(Object *self);
@@ -135,7 +148,6 @@ extern Object *returnFalse(Object *self);
 extern Object *closure_with(Object *self, ...);
 extern Object *methodTable_new(Object *self, u32 size);
 extern Object *currentProcess();
-extern Object *currentWorld();
 extern Object *interpret();
 extern void interpretBytecode(u8 *bytecode);
 

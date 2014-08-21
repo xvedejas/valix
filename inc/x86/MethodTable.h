@@ -19,16 +19,18 @@
 #ifndef __MethodTable_h__
 #define __MethodTable_h__
 
-#include <vm.h>
 #include <main.h>
+#include <vm.h>
 
 /* The MethodTable data type is a hashtable mapping symbol objects to
  * method objects. Its size is static, so the number of methods to put into the
  * table must be known on allocation. */
 
+typedef struct object Object;
+
 typedef Object *MethodTableBucket[2];
 
-typedef struct
+typedef struct methodTable
 {
     Size size; // each bucket is (2 * sizeof(Object*)) big
     Size capacity, entries; // capacity is constant, entries cannot exceed it

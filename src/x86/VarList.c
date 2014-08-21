@@ -27,20 +27,16 @@
  * This is a hash table with an open-addressing scheme. It is static at 150% of
  * the minimum size to hold all entries.
  * 
- * Each bucket contains a symbol and a linked list, and each item in the linked
- * list is a (world, value) pair. When the VarList is initialized, all buckets
- * are created with empty linked lists.
+ * See World.h for semantics.
  * 
- * ATTN: Currently it lacks a way to add worlds, this needs to be fixed before
- * anything will work because worlds are required.
  *  */
 
-VarList *varListDataNew(Size capacity, void **symbols)
+VarList *varListNew(Size capacity, void **symbols)
 {
 	/* Given an array of symbols, create a new varList with those
 	 * symbols undefined */
-    Size size = capacity + (capacity >> 1);
-    VarList *table = calloc(sizeof(VarList) + sizeof(VarBucket) * size, 1);
+    Size size = capacity + (capacity >> 1); // hashtable size is 150% capacity
+    VarList *table = malloc(sizeof(VarList) + sizeof(VarBucket) * size);
     table->capacity = capacity;
     VarBucket *buckets = table->buckets;
     table->size = size;
@@ -55,21 +51,21 @@ VarList *varListDataNew(Size capacity, void **symbols)
 			hash = (hash + 1) % size;
         VarBucket *bucket = &table->buckets[hash];
         bucket->var = var;
+        bucket->items = NULL;
     }
     
     return table;
 }
 
-VarList *varListDataNewPairs(Size capacity, void **symbols)
+VarList *varListNewPairs(Size capacity, void **symbols, Object *world)
 {
-    /* Given an array of objects where each even-indexed one is a symbol
-     * and each odd-indexed one is its value, create a new varlist */
-    Size size = capacity + (capacity >> 1);
-    VarList *table = calloc(sizeof(VarList) + sizeof(VarBucket) * size, 1);
+    /* Given an array of altenrating symbols and values, create a new varList
+     * with those symbols defined */
+    Size size = capacity + (capacity >> 1); // hashtable size is 150% capacity
+    VarList *table = malloc(sizeof(VarList) + sizeof(VarBucket) * size);
     table->capacity = capacity;
     VarBucket *buckets = table->buckets;
     table->size = size;
-    Object *world = currentWorld();
     
     Size hash;
     Size i;
@@ -81,22 +77,19 @@ VarList *varListDataNewPairs(Size capacity, void **symbols)
 			hash = (hash + 1) % size;
         VarBucket *bucket = &table->buckets[hash];
         bucket->var = var;
-        VarListItem *item = malloc(sizeof(VarListItem));
-        bucket->next = item;
-        item->world = world;
-        item->value = symbols[i * 2 + 1];
-        item->next = NULL;
+        bucket->items = malloc(sizeof(VarListItem));
+        bucket->items->value = symbols[i * 2 + 1];
+        bucket->items->world = world;
+        bucket->items->next = NULL;
     }
     
     return table;
 }
 
-/* Set the value of a variable in a given world. If the var/world isn't in this
- * list yet, it returns false. */
-bool varListDataSet(VarList *table, Object *var, Object *world, Object *value)
+VarBucket *_varListGetBucket(VarList *table, Object *var)
 {
     Size size = table->size;
-    if (size == 0) return false;
+    if (size == 0) return false; // avoid divide by zero; variable not found
     Size hash = valueHash(var) % size;
     VarBucket *buckets = table->buckets;
     bool found = false;
@@ -105,88 +98,84 @@ bool varListDataSet(VarList *table, Object *var, Object *world, Object *value)
     {
 		if (buckets[hash].var == var)
 		{
-			found = true;
+			found = true; // found that the variable is defined in this varList
 		    break;
 		}
 		hash = (hash + 1) % size;
 	}
-	if (!found) return false;
-    VarBucket *bucket = &buckets[hash];
-    
-    /* Find world */
-    VarListItem *item = bucket->next;
-    while (item != NULL)
-    {
-        if (item->world == world)
-        {
-            item->value = value;
-            return true;
-        }
-        item = item->next;
-    }
-    /* If we did not find an entry for this world, create one */
-	item = malloc(sizeof(VarListItem));
-	item->next = bucket->next;
-	bucket->next = item;
-	item->world = world;
-	item->value = value;
-    return true;
+    if (found)
+        return &buckets[hash];
+    else
+        return NULL;
 }
 
-/* Get the value of a variable in a given world. If the world isn't found or
- * the variable isn't found, returns NULL */
- /// todo: raise errors instead of returning NULL
-Object *varListLookup(VarList *table, Object *var, Object *world)
+/* Set the value of a variable in a given world. If the var isn't in this
+ * list yet, it returns false. */
+bool varListSet(VarList *table, Object *world, Object *var, Object *value)
 {
-    Size size = table->size;
-    if (size == 0) return NULL;
-    Size hash = valueHash(var) % size;
-    VarBucket *buckets = table->buckets;
-    bool found = false;
-    Size i;
-    for (i = 0; i < size; i++)
+    VarBucket *bucket = _varListGetBucket(table, var);
+	if (bucket == NULL)
+        return false; // variable not found
+    VarListItem *item = bucket->items;
+    
+    /* Find our specific world. If it's not yet in this list, add it. */
+    
+    if (item == NULL)
     {
-        if (buckets[hash].var == NULL)
-            return NULL;
-        else if (buckets[hash].var == var)
-        {
-			found = true;
-			break;
-		}
-        else
-            hash = (hash + 1) % size;
-	}
-	if (!found) return NULL;
-    VarListItem *item = buckets[hash].next;
-    for (; item != NULL; item = item->next)
-    {
-        if (item->world == world)
-            return item->value;
+        bucket->items = malloc(sizeof(VarListItem));
+        item = bucket->items;
     }
-    
-    // Try again, extending the search to the parent world (and then its parent,
-    // etc)
-    
-    while ((world = as(world, World)->parent) != NULL)
+    else
     {
-        item = buckets[hash].next;
-        
-        for (; item != NULL; item = item->next)
+        while (true)
         {
             if (item->world == world)
             {
-                // We need to mark this access so that on world commit, we can
-                // check for consistency. Don't add pair iff there is already an
-                // identical pair.
-                AccessPair *pair = ll_find2(buckets[hash].access_table,
-                                ->accessing_world == world,
-                                ->expected_value == item->value);
-                if (pair == NULL)
-                    return item->value;
-                    
-                pair = ll_append_new(buckets[hash].access_table, AccessPair);
-                pair->accessing_world = world;
-                pair->expected_value = item->value;
+                item->value = value;
+                return true;
+            }
+            else if (item->next == NULL)
+                break;
+            else
+                item = item->next;
+        }
+        item->next = malloc(sizeof(VarListItem));
+        item = item->next;
+    }
+
+    item->world = world;
+    item->value = value;
+    item->next = NULL;
+    return true;
+}
+
+/* Get the value of a variable, but specifically in the outermost world which is
+ * still an ancestor (or is identically) the given world.
+ * 
+ * Note that the asymptotic behavior of this function is O(1) if only one world
+ * is in use, but worst case more like O(n^2) if n is the number of worlds.
+ * 
+ * */
+Object *varListGet(VarList *table, Object *var, Object **world_ptr)
+{
+    VarBucket *bucket = _varListGetBucket(table, var);
+	if (bucket == NULL)
+        return NULL; // variable not found
+    VarListItem *first_item = bucket->items;
+    if (first_item == NULL)
+        return NULL; // variable not defined
+    VarListItem *item;
+    Object *world = *world_ptr;
+    
+    // iterate through world lineage
+    for (; world != NULL; world = world->world->parent)
+    {
+        // iterate through all world records for this variable
+        for (item = first_item; item != NULL; item = item->next)
+        {
+            if (item->world == world)
+            {
+                *world_ptr = world;
                 return item->value;
             }
         }
@@ -196,56 +185,5 @@ Object *varListLookup(VarList *table, Object *var, Object *world)
 
 bool varListCheckConsistent(VarList *table, Object *world)
 {
-    Size i;
-    Object *parentWorld = as(world, World)->parent;
-	VarBucket *buckets = table->buckets;
-	for (i = 0; i < table->size; i++)
-	{
-		Object *variable = buckets[i].var;
-		VarListItem *itemList = buckets[i].next;
-        AccessPair *access_table = buckets[i].access_table;
-        
-        if (itemList == NULL)
-            continue;
-        
-        VarListItem *item = ll_find(itemList, ->world == parentWorld);
-        if (item == NULL)
-            continue;
-        
-        // Go through the access table and make sure that the value for the
-        // parent world is the same as all the accessed values
-        
-        bool check_consistent(AccessPair *pair)
-        {
-            if (pair->accessing_world == world)
-                return pair->expected_value == variable;
-            return true;
-        }
-        
-        if (!ll_all(access_table, check_consistent))
-            return false;
-	}
-	return true;
-}
-
-void varListDebug(VarList *table)
-{
-	Size i;
-	VarBucket *buckets = table->buckets;
-	printf("====VarList debug====\n");
-	for (i = 0; i < table->size; i++)
-	{
-		Object *variable = buckets[i].var;
-		VarListItem *item = buckets[i].next;
-		if (variable != NULL)
-		{
-			printf("Variable '%s'\n", variable->data);
-			while (item != NULL)
-			{
-				printf("    world %x value %x\n", item->world, item->value);
-				item = item->next;
-			}
-		}
-	}
-	printf("====End VarList debug====\n");
+    return false;
 }

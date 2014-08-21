@@ -1,4 +1,4 @@
-/*  Copyright (C) 2014 Xander Vedejas <xvedejas@gmail.com>
+ /*  Copyright (C) 2014 Xander Vedejas <xvedejas@gmail.com>
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -20,37 +20,31 @@
 #define __VarList_h__
 
 #include <main.h>
+#include <vm.h>
+#include <World.h>
+
+typedef struct object Object;
 
 /* This is essentially a hash table mapping variable symbols to a list of
  * (world, value) tuples. */
 
-typedef struct object Object;
-
-typedef struct accessPair
-{
-    Object *accessing_world;
-    Object *expected_value;
-    struct accessPair *next;
-} AccessPair;
-
 typedef struct varListItem
 {
-    Object *world, *value;
-    struct varListItem *next;
+    /* If the current world used the value of this variable from the parent,
+     * then we record that value under the parent world. */
+    Object *world;
+    // If the variable is as of yet undefined, value == NULL
+    Object *value;
+    struct varListItem *next; // next item in linked list.
 } VarListItem;
 
 typedef struct varBucket
 {
     Object *var;
-    struct varListItem *next;
-    // list of (world that read/set this value), (value expected by that world)
-    // pairs.
-    // If the world changed the value itself before reading it, then no entry
-    // must be kept.
-    AccessPair *access_table;
+    struct varListItem *items; // start of linked list of items
 } VarBucket;
 
-typedef struct
+typedef struct varList
 {
     Size size, capacity;
     /* size: number of buckets (typically 1.5x the number of symbols)
@@ -59,15 +53,9 @@ typedef struct
 } VarList;
 
 /* The symbols we want to create variables for must be specified at creation. */
-extern VarList *varListDataNew(Size capacity, void **symbols);
-extern VarList *varListDataNewPairs(Size capacity, void **symbols);
-/* Set the value of a variable in a given world. If the world isn't in this
- * list yet, it returns false. */
-extern bool varListDataSet(VarList *table, Object *var, Object *world, Object *value);
-/* Get the value of a variable in a given world. If the world isn't found or
- * the variable isn't found, returns NULL */
-extern Object *varListLookup(VarList *table, Object *var, Object *world);
+extern VarList *varListNew(Size capacity, void **symbols);
+extern VarList *varListNewPairs(Size capacity, void **symbols_and_values, Object *world);
+extern bool varListSet(VarList *table, Object *world, Object *var, Object *value);
+extern Object *varListGet(VarList *table, Object *var, Object **world_ptr);
 extern bool varListCheckConsistent(VarList *table, Object *world);
-extern void varListDebug(VarList *table);
-
 #endif

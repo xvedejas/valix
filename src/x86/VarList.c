@@ -120,6 +120,7 @@ VarBucket *_varListGetBucket(VarList *table, Object *var)
  * list yet, it returns false. */
 bool varListSet(VarList *table, Object *world, Object *var, Object *value)
 {
+    assert(var != NULL, "varList error");
     VarBucket *bucket = _varListGetBucket(table, var);
 	if (bucket == NULL)
         return false; // variable not found
@@ -167,6 +168,7 @@ bool varListSet(VarList *table, Object *world, Object *var, Object *value)
  * */
 Object *varListGet(VarList *table, Object *var, Object **world_ptr)
 {
+    assert(var != NULL, "varList error");
     VarBucket *bucket = _varListGetBucket(table, var);
 	if (bucket == NULL)
         return NULL; // variable not found
@@ -199,13 +201,12 @@ void varListCommit(VarList *table, Object *world)
     Size i;
     Size size = table->size;
     Object *parent = world->world->parent;
-    VarBucket **buckets = (VarBucket**)&table->buckets;
     for (i = 0; i < size; i++)
     {
         Object *value = NULL;
-        if (buckets[i]->var == NULL)
+        if ((&table->buckets[i])->var == NULL)
             continue;
-        VarListItem *firstItem = buckets[i]->items;
+        VarListItem *firstItem = (&table->buckets[i])->items;
         assert(firstItem != NULL, "varList error");
         VarListItem *item = firstItem;
         VarListItem *previousItem = NULL;
@@ -219,7 +220,7 @@ void varListCommit(VarList *table, Object *world)
                 if (previousItem != NULL)
                     previousItem->next = item->next;
                 else
-                    buckets[i]->items = item->next;
+                    (&table->buckets[i])->items = item->next;
                 free(item);
                 break;
             }

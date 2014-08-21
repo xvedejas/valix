@@ -272,7 +272,8 @@ void stringMapIterNew(StringMap *stringMap, StringMapIter *iter)
     iter->bucketPosition = 0;
     iter->listPosition = 0;
     // Find the position of the first value:
-    stringMapIterNext(iter);
+    if ((&stringMap->A[0])->key == NULL)
+        stringMapIterNext(iter);
 }
 
 void *stringMapIterValue(StringMapIter *iter)

@@ -198,6 +198,43 @@ void *stringMapGet(StringMap *map, String key)
     return NULL;
 }
 
+void stringMapDel(StringMap *map)
+{
+    Size i;
+    StringMapBucket *bucket, *next;
+    
+    for (i = 0; i < map->sizeA; i++)
+    {
+        bucket = &map->A[i];
+        next = bucket->next;
+        while (next != NULL)
+        {
+            bucket->next = next->next;
+            free(next);
+            next = bucket->next;
+        }
+    }
+    free(map->A);
+    
+    if (map->B != NULL)
+    {
+        for (i = 0; i < map->sizeB; i++)
+        {
+            bucket = &map->B[i];
+            next = bucket->next;
+            while (next != NULL)
+            {
+                bucket->next = next->next;
+                free(next);
+                next = bucket->next;
+            }
+        }
+        free(map->B);
+    }
+    
+    free(map);
+}
+
 void stringMapDebug(StringMap *map)
 {
     Size i;
@@ -227,4 +264,120 @@ void stringMapDebug(StringMap *map)
         }
     }
     printf(" ===[end debug]===\n");
+}
+
+void stringMapIterNew(StringMap *stringMap, StringMapIter *iter)
+{
+    iter->stringMap = stringMap;
+    iter->bucketPosition = 0;
+    iter->listPosition = 0;
+    // Find the position of the first value:
+    stringMapIterNext(iter);
+}
+
+void *stringMapIterValue(StringMapIter *iter)
+{
+    StringMap *stringMap = iter->stringMap;
+    Size sizeA = stringMap->sizeA;
+    Size sizeB = stringMap->sizeB;
+    StringMapBucket *currentBucket;
+    Size bucketPosition = iter->bucketPosition;
+    if (bucketPosition < sizeA)
+    {
+        currentBucket = &stringMap->A[bucketPosition];
+    }
+    else if (bucketPosition < sizeA + sizeB)
+    {
+        currentBucket = &stringMap->B[bucketPosition - sizeA];
+    }
+    else
+    {
+        return NULL; // end of iteration
+    }
+    Size listPosition = iter->listPosition;
+    while (listPosition --> 0)
+    {
+        assert(currentBucket->next != NULL, "Iteration error");
+        currentBucket = currentBucket->next;
+    }
+    return currentBucket->value;
+}
+
+void *stringMapIterKey(StringMapIter *iter)
+{
+    StringMap *stringMap = iter->stringMap;
+    Size sizeA = stringMap->sizeA;
+    Size sizeB = stringMap->sizeB;
+    StringMapBucket *currentBucket;
+    Size bucketPosition = iter->bucketPosition;
+    if (bucketPosition < sizeA)
+    {
+        currentBucket = &stringMap->A[bucketPosition];
+    }
+    else if (bucketPosition < sizeA + sizeB)
+    {
+        currentBucket = &stringMap->B[bucketPosition - sizeA];
+    }
+    else
+    {
+        return NULL; // end of iteration
+    }
+    Size listPosition = iter->listPosition;
+    while (listPosition --> 0)
+    {
+        assert(currentBucket->next != NULL, "Iteration error");
+        currentBucket = currentBucket->next;
+    }
+    return currentBucket->key;
+}
+
+void stringMapIterNext(StringMapIter *iter)
+{
+    StringMap *stringMap = iter->stringMap;
+    StringMapBucket *currentBucket = &stringMap->A[iter->bucketPosition];
+    Size listPosition = iter->listPosition + 1;
+    // Go to the next list position
+    while (listPosition --> 0)
+    {
+        if (currentBucket->next == NULL)
+        {
+            listPosition = 0;
+            break;
+        }
+        currentBucket = currentBucket->next;
+    }
+    
+    if (listPosition > 0)
+    {
+        iter->listPosition = listPosition;
+        return;
+    }
+    
+    Size bucketPosition = iter->bucketPosition;
+    Size sizeA = stringMap->sizeA;
+    if (bucketPosition < sizeA)
+    {
+        while ((&stringMap->A[bucketPosition])->key == NULL)
+        {
+            bucketPosition++;
+            if (bucketPosition > sizeA)
+                break;
+        }
+    }
+    if (bucketPosition >= sizeA)
+    {
+        if (stringMap->B == NULL)
+        {
+            iter->bucketPosition = bucketPosition;
+            return;
+        }
+        while ((&stringMap->B[bucketPosition - sizeA])->key == NULL)
+        {
+            bucketPosition++;
+            if (bucketPosition > sizeA + stringMap->sizeB)
+                break;
+        }
+    }
+    
+    iter->bucketPosition = bucketPosition;
 }

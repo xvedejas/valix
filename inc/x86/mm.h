@@ -107,6 +107,7 @@ extern void mmInstall(MultibootStructure *multiboot);
 #define aalloc(_size, _align) _kalloc(_size, getCurrentThread(), __FILE__, __LINE__, _align)
 #define free(_mem) _free(_mem, __FILE__, __LINE__)
 
+extern bool alloc(Size address, Size size);
 extern void *_kalloc(Size size, struct thread *thread, char *file, Size line,
                      Size alignment);
 extern void *calloc(Size amount, Size elementSize);

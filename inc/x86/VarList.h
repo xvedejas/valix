@@ -57,5 +57,6 @@ extern VarList *varListNew(Size capacity, void **symbols);
 extern VarList *varListNewPairs(Size capacity, void **symbols_and_values, Object *world);
 extern bool varListSet(VarList *table, Object *world, Object *var, Object *value);
 extern Object *varListGet(VarList *table, Object *var, Object **world_ptr);
-extern bool varListCheckConsistent(VarList *table, Object *world);
+extern void varListCommit(VarList *table, Object *world);
+
 #endif

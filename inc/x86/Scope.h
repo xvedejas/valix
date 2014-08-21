@@ -21,6 +21,26 @@
 #include <mm.h>
 #include <vm.h>
 
+/* A scope is, in a sense, a running "instance" of a block/"closure". 
+ * It contains the values of local variables and knows about parent and calling
+ * scopes. */
+typedef struct scope
+{
+	VarList *variables; // Map<variable symbol, list of (world, value) pairs>
+    /* Each scope has a _single_ world. That is, when a new world is created, it
+     * requires a new scope. By default, scopes defined within a world also
+     * exist in that world. The real effect is on the state of variables seen in
+     * the parent scope, not in the current one. */
+	Object *world;
+    // parent scope (where this was declared) that we can look for variables in
+	Object *containing;
+	Object *caller; // scope that this scope was called from
+	/* The following data is for storage when executing a child scope */
+	Object *closure;
+	u8 *bytecode; // beginning of bytecode
+    Size IP; // index of bytecode
+} Scope;
+
 Object *globalScope;
 
 extern void scopeInstall(void **global_symbols, Size symbols_array_len);

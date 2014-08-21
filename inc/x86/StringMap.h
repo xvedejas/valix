@@ -40,6 +40,18 @@ typedef struct
 extern StringMap *stringMapNew();
 extern bool stringMapSet(StringMap *map, String key, void *value);
 extern void *stringMapGet(StringMap *map, String key);
+extern void stringMapDel(StringMap *map);
 extern void stringMapDebug(StringMap *map);
+
+typedef struct
+{
+    StringMap *stringMap;
+    Size bucketPosition, listPosition;
+} StringMapIter;
+
+extern void stringMapIterNew(StringMap *stringMap, StringMapIter *iter);
+extern void *stringMapIterValue(StringMapIter *iter);
+extern void *stringMapIterKey(StringMapIter *iter);
+extern void stringMapIterNext(StringMapIter *iter);
 
 #endif

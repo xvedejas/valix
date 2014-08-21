@@ -291,6 +291,13 @@ void *_kalloc(Size size, Thread *thread, char *file, Size line, Size alignment)
     return NULL; // here to make compiler happy
 }
 
+/* Tries to allocate a specific block of memory. Returns true if successful. */
+bool alloc(Size address, Size size)
+{
+    /// todo
+    return false;
+}
+
 void *realloc(void *memory, Size size)
 {
     // change the size of a single block of allocated memory

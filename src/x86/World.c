@@ -20,6 +20,7 @@
 #include <World.h>
 #include <mm.h>
 #include <VarList.h>
+#include <Scope.h>
 
 void worldInstall()
 {
@@ -54,7 +55,7 @@ Object *world_new(Object *self, Object *scope)
     
     Object *world = object_new(self);
     World *data = malloc(sizeof(World));
-    world->data = data;
+    world->world = data;
     data->scope = scope;
     data->parent = parentWorld;
     data->expectedParentState = stringMapNew();
@@ -71,27 +72,37 @@ Object *world_do(Object *self, Object *block)
 // commit "self" to its parent world
 Object *world_commit(Object *self)
 {
-    panic("not implemented");
-    // In the current scope (and its parents) find each instance of variables
-    // modified in world "self" and set the values of world self->parent to
-    // these values.
-    Object *thisScope = self->world->scope;
+    /* First, check that the state of the parent world is consistent with what
+     * the current world expects. */
+    World *world = self->world;
+    StringMap *expectedState = world->expectedParentState;
+    Object *parentScope = world->parent->world->scope;
     
-    /// I'm not sure how hard this requirement should be. I need to re-read the paper.
-    //assert(thisScope == stackTop(scopeStack), "Can only commit world in the "
-    //       "scope it was defined in");
+    /* Iterate through each key in expectedState and make sure things are
+     * consistent */
     
-    Object *parentScope = thisScope->scope->containing;
-    VarList *table = thisScope->scope->variables;
+    StringMapIter iter;
+    stringMapIterNew(expectedState, &iter);
+    void *varname;
+    for (; (varname = stringMapIterKey(&iter)) != NULL; stringMapIterNext(&iter))
+    {
+        Object *expectedValue = stringMapIterValue(&iter);
+        Object *value = scope_lookupVar(parentScope, symbol(varname));
+        if (value != expectedValue)
+            panic("inconsistent world state");
+    }
     
-    // First we need to guarantee consistency. For each variable in the varList,
-    // there is a list of accesses of the variable from any world that read from
-    // it.
+    /* Now iterate through all variables set by this world in parent scopes and
+     * apply them as the parent world. */
+    Object *scope = world->scope;
+    while (scope != NULL)
+    {
+        varListCommit(scope->scope->variables, self);
+        scope = scope->scope->containing;
+    }
+    /* Now we can clear the expectedState */
+    stringMapDel(expectedState);
+    world->expectedParentState = stringMapNew();
     
-    // for now, return false. In the future an error might be thrown instead.
-    if (!varListCheckConsistent(table, self))
-        return falseObject;
-    
-    
-	return trueObject;
+    return NULL;
 }

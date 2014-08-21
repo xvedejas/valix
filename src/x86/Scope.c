@@ -21,6 +21,9 @@ void scopeInstall(void **global_symbols, Size symbols_array_len)
     globalScopeData->variables = varListNewPairs(symbols_array_len,
                                                  global_symbols,
                                                  globalScopeData->world);
+    
+    globalScopeData->containing = NULL;
+    globalScopeData->caller = NULL;
 }
 
 /* Reads from the bytecode a list of symbols. Note: the scope's closure must
@@ -66,11 +69,8 @@ Object *scope_lookupVar(Object *self, Object *symbol)
         value = varListGet(scope->variables, symbol, &world);
         if (value != NULL)
             break;
-        assert(scope->containing != NULL, "lookup error");
-        Scope *containing = scope->containing->scope;
-        if (scope == containing) // scope is the root scope 
-            panic("lookup Error: scope does not lead back to global scope");
-        scope = containing;
+        assert(scope->containing != NULL, "lookup error, variable not found");
+        scope = scope->containing->scope;
     }
     if (world != thisWorld)
     {
@@ -79,7 +79,7 @@ Object *scope_lookupVar(Object *self, Object *symbol)
         if (expectedValue == NULL)
             stringMapSet(expectedState, symbol->symbol, value);
         else
-            panic("inconsistent world");
+            panic("inconsistent world: variable changed in parent");
     }
     return value;
 }

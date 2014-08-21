@@ -29,6 +29,8 @@
  * 
  * See World.h for semantics.
  * 
+ * VarList is almost exclusively used by the Scope object.
+ * 
  *  */
 
 VarList *varListNew(Size capacity, void **symbols)
@@ -157,6 +159,8 @@ bool varListSet(VarList *table, Object *world, Object *var, Object *value)
 /* Get the value of a variable, but specifically in the outermost world which is
  * still an ancestor (or is identically) the given world.
  * 
+ * In world_ptr, gives the world that the variable was found in.
+ * 
  * Note that the asymptotic behavior of this function is O(1) if only one world
  * is in use, but worst case more like O(n^2) if n is the number of worlds.
  * 
@@ -188,7 +192,54 @@ Object *varListGet(VarList *table, Object *var, Object **world_ptr)
     return NULL;
 }
 
-bool varListCheckConsistent(VarList *table, Object *world)
+/* If there are any variables in table defined by world, then copy the value to
+ * the world's parent and remove the world's record. */
+void varListCommit(VarList *table, Object *world)
 {
-    return false;
+    Size i;
+    Size size = table->size;
+    Object *parent = world->world->parent;
+    VarBucket **buckets = (VarBucket**)&table->buckets;
+    for (i = 0; i < size; i++)
+    {
+        Object *value = NULL;
+        if (buckets[i]->var == NULL)
+            continue;
+        VarListItem *firstItem = buckets[i]->items;
+        assert(firstItem != NULL, "varList error");
+        VarListItem *item = firstItem;
+        VarListItem *previousItem = NULL;
+        
+        do
+        {
+            if (item->world == world)
+            {
+                value = item->value;
+                // Remove the record from this world
+                if (previousItem != NULL)
+                    previousItem->next = item->next;
+                else
+                    buckets[i]->items = item->next;
+                free(item);
+                break;
+            }
+            previousItem = item;
+            item = item->next;
+        } while (item != NULL);
+        
+        // In the case that this world didn't record a value, continue
+        if (value == NULL)
+            continue;
+        
+        item = firstItem;
+        do
+        {
+            if (item->world == parent)
+            {
+                item->value = value;
+                break;
+            }
+            item = item->next;
+        } while (item != NULL);
+    }
 }

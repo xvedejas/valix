@@ -173,7 +173,7 @@ void stackPopMany(Stack *stack, Size n)
 	stack->size -= n;
 }
 
-/* Point to the nth item from the top of the stack */
+/* Point to the nth item from the top of the stack, zero-indexed */
 void **stackAt(Stack *stack, Size n)
 {
 	return stack->array + stack->size - (n + 1);
@@ -181,6 +181,8 @@ void **stackAt(Stack *stack, Size n)
 
 void *stackTop(Stack *stack)
 {
+    if (stack->size == 0)
+        panic("Stack underrun error");
     return stack->array[stack->size - 1];
 }
 
@@ -201,7 +203,8 @@ void stackDebug(Stack *stack)
 	Size i;
 	for (i = 0; i < stack->size; i++)
 	{
-		printf("  %x\n", stack->array[i]);
+		//printf("  %x\n", stack->array[i]);
+		printf("  %S\n", stack->array[i]);
 	}
 	printf("End stack debug.\n");
 }

@@ -16,7 +16,7 @@ void scopeInstall(void **global_symbols, Size symbols_array_len)
     globalScope = object_new(objectProto);
     Scope *globalScopeData = malloc(sizeof(Scope));
     globalScope->data = globalScopeData;
-    globalScopeData->world = world_new(worldProto, NULL);
+    globalScopeData->world = world_new(worldProto, NULL, NULL);
     
     globalScopeData->variables = varListNewPairs(symbols_array_len,
                                                  global_symbols,
@@ -101,15 +101,9 @@ void scope_setVar(Object *self, Object *symbol, Object *value)
     }
 }
 
-void scope_throw(Object *self, Object *error)
-{ 
-    panic("not implemented");
-    /// error not caught
-}
-
 Object *scope_spawn(Object *self)
 {
-    return world_new(self->scope->world, self);
+    return world_new(self->scope->world, self, NULL);
 }
 
 Object *scope_world(Object *self)

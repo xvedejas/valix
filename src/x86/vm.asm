@@ -24,27 +24,27 @@ include '../../inc/x86/asm.inc'
 ; This function depends heavily on the calling conventions used by the compiler.
 func callInternal
     function equ [ebp+8]
-    argc     equ [ebp+12]
+    argc     equ [ebp+12] ; including recipient. binary messages have argc=2
     va_list  equ [ebp+16]
     
     mov ecx, argc
     mov ebx, ecx
     
-    cmp ecx, 0
-    je @f
+    cmp ecx, 0            ; if (argc != 0)
+    je @f                 ; {
+                          ;
+    mov eax, va_list      ;     eax = va_list;
+    shl ebx, 2            ;     
+    add eax, ebx          ;     eax += argc * 4;
     
-    mov eax, va_list
-    ; eax += (ebx = 4*ecx)
-    shl ebx, 2
-    add eax, ebx
+top:                      ;     while (argc --> 0)
+                          ;     {
+    lea eax, [eax-4]      ;         eax = eax - 4
+    push dword [eax]      ;         push(eax);
+    loop top              ;     }
+@@:                       ; }
     
-top:    
-    lea eax, [eax-4]
-    push dword [eax]
-    loop top
-@@: 
-    
-    call dword function
-    add esp, ebx
+    call dword function   ; function();
+    add esp, ebx          ; pop(argc);
     ;add esp, 4
 endfunc

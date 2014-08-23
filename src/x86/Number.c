@@ -46,6 +46,7 @@ Object *integer64_new(Object *self, s64 value)
 
 Object *integer32_add(Object *self, Object *other)
 {
+    printf("Adding %i and %i", value32(self), value32(other));
 	return integer32_new(integer32Proto, value32(self) + value32(other));
 	/// todo: check for overflow
 }
@@ -58,6 +59,7 @@ Object *integer32_sub(Object *self, Object *other)
 
 Object *integer32_mul(Object *self, Object *other)
 {
+    printf("Multiplying %i and %i", value32(self), value32(other));
 	return integer32_new(integer32Proto, value32(self) * value32(other));
 	/// todo: check for overflow
 }

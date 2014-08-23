@@ -84,7 +84,7 @@ typedef struct world
 } World;
 
 extern void worldInstall();
-extern Object *world_new(Object *self, Object *scope);
+extern Object *world_new(Object *self, Object *scope, Object **catches);
 extern Object *world_do(Object *self, Object *block);
 extern Object *world_commit(Object *self);
 

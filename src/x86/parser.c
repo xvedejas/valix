@@ -462,10 +462,13 @@ u8 *compile(String source)
         Size binaryMessage = intern(curToken->data);
         nextToken();
         parseValue();
-        parseBinaryMsg();
+        
         outByte(messageBC, node); // bytecode "message"
         outVal(binaryMessage, node); // message name
         outVal(1, node); // argc
+        
+        parseBinaryMsg(); // more binary or unary messages may follow
+        
         
         #ifdef PARSER_DEBUG
         indention -= 1;

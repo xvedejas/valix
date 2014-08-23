@@ -186,11 +186,8 @@ Object *_closure_with(Object *self, va_list argptr)
 	{
 		case userDefinedClosure:
 			return interpret(self);
-		break;
 		case internalClosure:
-		{
 			return callInternal(closure->function, closure->argc, argptr);
-		}
 	}
 	return NULL;
 }
@@ -205,6 +202,13 @@ Object *closure_with(Object *self, ...)
 Object *closure_withArray(Object *self, Object **args)
 {
 	return _closure_with(self, (va_list)args);
+}
+
+/// Create a new world to execute the closure in, make sure the 
+Object *closure_catch(Object *self, Object *catchClosure)
+{
+    panic("Not implemented");
+    return NULL;
 }
 
 // This cache is to speed up lookups in object_bind
@@ -243,7 +247,7 @@ Object *__attribute__ ((pure)) object_bind(Object *self, Object *symbol)
     else
     {
 		Object *table = self->methodTable;
-        assert(table != NULL, "Null method table to object at %x", self);
+        assert(table != NULL, "Null method table to object %x, binding %s", self, symbol->symbol);
 		method = send(table, "get:", symbol);
 		if (method == NULL && self->parent != NULL)
 			method = send(self->parent, "bind:", symbol);
@@ -291,10 +295,11 @@ Object *closure_new(Object *self, Object *process)
 	return closure;
 }
 
-void closure_whileTrue(Object *self, Object *block)
+Object *closure_whileTrue(Object *self, Object *block)
 {
 	while (send(self, "eval") == trueObject)
 		send(block, "eval");
+    return NULL;
 }
 
 Object *methodTable_get(Object *self, Object *symbol)
@@ -308,19 +313,22 @@ void methodTable_addClosure(Object *self, Object *symbol, Object *closure)
     methodTableDataAdd(table, symbol, closure);
 }
 
-void console_printTest(Object *self)
+Object *console_printTest(Object *self)
 {
     printf("    VM CHECK: Success! console object at %x\n", self);
+    return NULL;
 }
 
-void console_print(Object *self, Object *str)
+Object *console_print(Object *self, Object *str)
 {
     printf("%S", str);
+    return NULL;
 }
 
-void console_printNl(Object *self, Object *str)
+Object *console_printNl(Object *self, Object *str)
 {
     printf("%S\n", str);
+    return NULL;
 }
 
 Object *console_toString(Object *self)
@@ -524,23 +532,7 @@ void vmInstall()
     methodTable_addClosure(closureMT, symbol("whileTrue:"),
         closure_newInternal(closureProto, closure_whileTrue, 2));
     
-    /* 3. Do asserts to make sure things all connected correctly */
-    assert(objectProto->parent == NULL, "vm error");
-    assert(objectProto->methodTable == objectMT, "vm error");
-    assert(objectMT->parent == methodTableMT, "vm error");
-    assert(objectMT->methodTable == methodTableMT, "vm error");
-    assert(methodTableMT->parent == objectProto, "vm error");
-    assert(methodTableMT->methodTable == methodTableMT, "vm error");
-    assert(symbolProto->parent == objectProto, "vm error");
-    assert(symbolProto->methodTable == symbolMT, "vm error");
-    assert(symbolMT->parent == methodTableMT, "vm error");
-    assert(symbolMT->methodTable == methodTableMT, "vm error");
-    assert(closureProto->parent == objectProto, "vm error");
-    assert(closureProto->methodTable == closureMT, "vm error");
-    assert(closureMT->parent == methodTableMT, "vm error");
-    assert(closureMT->methodTable == methodTableMT, "vm error");
-    
-    /* 4. Install other base components */
+    /* 3. Install other base components */
     booleanInstall(); // defines trueObject, falseObject
     numberInstall();
     stringInstall();
@@ -549,7 +541,7 @@ void vmInstall()
     consoleInstall(); // defines console
     traitInstall();
     
-    /* 5. Make certain components accessible by defining global variables */
+    /* 4. Make certain components accessible by defining global variables */
     
     Size symbols_array_len = 3;
     Object *symbols_array[] =
@@ -566,84 +558,16 @@ void vmInstall()
     
 }
 
-Object *interpret(Object *closure)
+Object *exec(Object *closure, Object *scope)
 {
     Object *process = currentProcess();
-    assert(process != NULL, "Create a new process first.");
-    
     Process *processData = process->process;
     Object **symbols = processData->symbols;
     Stack *valueStack = &processData->values;
     Stack *scopeStack = &processData->scopes;
-    
     u8 *bytecode = processData->bytecode;
     Size *IP = &processData->IP;
-    Closure *closureData;
     
-    if (closure == NULL) // new file
-    {
-        // Read the bytecode header defining interned symbols.
-        Size symbolCount = readValue(bytecode, IP);
-        if (symbolCount > 0)
-        {
-			// This is a process-wide symbol list unique to the given bytecode.
-			symbols = malloc(sizeof(Object*) * symbolCount);
-			Size i;
-			for (i = 0; i < symbolCount; i++)
-			{
-				String s = readString(bytecode, IP);
-				symbols[i] = symbol(s);
-			}
-			processData->symbols = symbols;
-		}
-		closure = closure_new(closureProto, process);
-		closureData = closure->closure;
-        closureData->world = globalScope->scope->world;
-    }
-    else
-    {
-		closureData = closure->closure;
-		processData->IP = closureData->bytecode - processData->bytecode;
-	}
-    
-    assert(readValue(bytecode, IP) == blockBC,
-			"Expected block: malformed bytecode (IP=%i)", *IP-1);
-    
-    // We've just begun executing a block, so create the scope for that block.
-    Object *scope;
-    Size argCount = readValue(bytecode, IP);
-    Size varCount = readValue(bytecode, IP);
-    Size symbolCount = argCount + varCount;
-    
-    if (symbolCount > 0)
-    {
-        Object **localSymbols = malloc(sizeof(Object*) * symbolCount * 2);
-        /* Create a list of variables for the scope that is the proper size. */
-        Size i;
-        for (i = 0; i < symbolCount; i++)
-        {
-            Size value = readValue(bytecode, IP);
-            localSymbols[2 * i] = symbols[value];
-            // values are supplied only for args, not vars.
-            if (i < argCount)
-                localSymbols[2 * i + 1] = stackPop(valueStack);
-            else
-                localSymbols[2 * i + 1] = NULL;
-        }
-        scope = scope_new(scopeProto, process, closureData->parent,
-                          stackTop(scopeStack), closureData->world,
-                          argCount, varCount, localSymbols);
-        free(localSymbols);
-    }
-    else
-    {
-        scope = scope_new(scopeProto, process, closureData->parent,
-                          stackTop(scopeStack), closureData->world,
-                          0, 0, NULL);
-    }
-    
-    Scope *scopeData = scope->scope;
-    scopeData->closure = closure;
     stackPush(scopeStack, scope);
     
 	while (true)
@@ -723,6 +647,7 @@ Object *interpret(Object *closure)
 				/* argc is the number of arguments not including recipient */
 				Object *symbol = symbols[readValue(bytecode, IP)];
 				Size argc = readValue(bytecode, IP);
+                
 				Object **args = (Object**)stackAt(valueStack, argc);
 				Object *recipient = args[0];
 			    //printf("Sending %s to %S, argc %i\n", symbol->symbol, recipient, argc);
@@ -739,11 +664,11 @@ Object *interpret(Object *closure)
 				scopeData->IP = processData->IP;
 				scopeData->bytecode = processData->bytecode;
 				
-				/// spawn thread?
-				
 				Object *result = closure_withArray(method, args);
-				
-				stackPopMany(valueStack, argc); // now args no longer needed on stack
+                // If the closure was internal, then it didn't pop the stack
+                // itself. Fix this.
+                if (method->closure->type == internalClosure)
+                    stackPopMany(valueStack, argc + 1);
 				stackPush(valueStack, result);
 			}
             break;
@@ -759,6 +684,7 @@ Object *interpret(Object *closure)
             break;
 			case endBC: /* Returns from the current block */
 			{
+                /// todo, be smarter about handling stack underrun errors
 				stackPop(scopeStack);
 				Object *scope = stackTop(scopeStack);
 				Scope *scopeData = scope->scope;
@@ -780,6 +706,86 @@ Object *interpret(Object *closure)
 		}
 	}
 	panic("not implemented");
+}
+
+Object *interpret(Object *closure)
+{
+    Object *process = currentProcess();
+    assert(process != NULL, "Create a new process first.");
+    
+    Process *processData = process->process;
+    Object **symbols = processData->symbols;
+    Stack *valueStack = &processData->values;
+    Stack *scopeStack = &processData->scopes;
+    
+    u8 *bytecode = processData->bytecode;
+    Size *IP = &processData->IP;
+    Closure *closureData;
+    
+    if (closure == NULL) // new file
+    {
+        // Read the bytecode header defining interned symbols.
+        Size symbolCount = readValue(bytecode, IP);
+        if (symbolCount > 0)
+        {
+			// This is a process-wide symbol list unique to the given bytecode.
+			symbols = malloc(sizeof(Object*) * symbolCount);
+			Size i;
+			for (i = 0; i < symbolCount; i++)
+			{
+				String s = readString(bytecode, IP);
+				symbols[i] = symbol(s);
+			}
+			processData->symbols = symbols;
+		}
+		closure = closure_new(closureProto, process);
+		closureData = closure->closure;
+        closureData->world = globalScope->scope->world;
+    }
+    else
+    {
+		closureData = closure->closure;
+		processData->IP = closureData->bytecode - processData->bytecode;
+	}
+    
+    assert(readValue(bytecode, IP) == blockBC,
+			"Expected block: malformed bytecode (IP=%i)", *IP-1);
+    
+    // We've just begun executing a block, so create the scope for that block.
+    Object *scope;
+    Size argCount = readValue(bytecode, IP);
+    Size varCount = readValue(bytecode, IP);
+    Size symbolCount = argCount + varCount;
+    
+    if (symbolCount > 0)
+    {
+        Object **localSymbols = malloc(sizeof(Object*) * symbolCount * 2);
+        /* Create a list of variables for the scope that is the proper size. */
+        Size i;
+        for (i = 0; i < symbolCount; i++)
+        {
+            Size value = readValue(bytecode, IP);
+            localSymbols[2 * (symbolCount - i - 1)] = symbols[value];
+        }
+        // values are supplied only for args, not vars.
+        for (i = 0; i < argCount; i++)
+            localSymbols[2 * i + 1] = stackPop(valueStack);
+        scope = scope_new(scopeProto, process, closureData->parent,
+                          stackTop(scopeStack), closureData->world,
+                          argCount, varCount, localSymbols);
+        free(localSymbols);
+    }
+    else
+    {
+        scope = scope_new(scopeProto, process, closureData->parent,
+                          stackTop(scopeStack), closureData->world,
+                          0, 0, NULL);
+    }
+    
+    Scope *scopeData = scope->scope;
+    scopeData->closure = closure;
+    
+    return exec(closure, scope);
 }
 
 void interpretBytecode(u8 *bytecode)

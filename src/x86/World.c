@@ -40,7 +40,7 @@ void worldInstall()
 
 
 // "scope" is the scope in which this world is being defined.
-Object *world_new(Object *self, Object *scope)
+Object *world_new(Object *self, Object *scope, Object **catches)
 {
     Object *parentWorld;
     if (scope != NULL)
@@ -58,6 +58,7 @@ Object *world_new(Object *self, Object *scope)
     world->world = data;
     data->scope = scope;
     data->parent = parentWorld;
+    data->catches = catches;
     data->expectedParentState = stringMapNew();
     return world;
 }

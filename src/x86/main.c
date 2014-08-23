@@ -380,7 +380,7 @@ ThreadFunc testVM()
 {
     //printf("mem used: %x\n", memUsed());
     /// this commit should work and print 3:
-    String input = "| w A | w = this spawn. A = 5. w do: { A = 3. }. A = 4. w commit. Console print: A.";
+    String input = "{ :x :y :z Console print: (x + y * z)} :2 :3 :5.";
     printf("\n%s\n", input);
     //printf("compiling\n");
     u8 *bytecode = compile(input);

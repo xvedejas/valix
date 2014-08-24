@@ -27,24 +27,21 @@ func callInternal
     argc     equ [ebp+12] ; including recipient. binary messages have argc=2
     va_list  equ [ebp+16]
     
-    mov ecx, argc
-    mov ebx, ecx
+    ; Note that we assume argc > 0 always
     
-    cmp ecx, 0            ; if (argc != 0)
-    je @f                 ; {
-                          ;
-    mov eax, va_list      ;     eax = va_list;
-    shl ebx, 2            ;     
-    add eax, ebx          ;     eax += argc * 4;
+    mov ecx, argc         ; ecx = argc
+    mov ebx, ecx          ; ebx = argc
     
-top:                      ;     while (argc --> 0)
-                          ;     {
-    lea eax, [eax-4]      ;         eax = eax - 4
-    push dword [eax]      ;         push(eax);
-    loop top              ;     }
-@@:                       ; }
+    mov eax, va_list      ; eax = va_list;
+    shl ebx, 2            ; ebx *= 4;
+    add eax, ebx          ; eax += ebx;
+    
+top:                      ; while (ecx --> 0)
+                          ; {
+    sub eax, 4            ;     eax -= 4
+    push dword [eax]      ;     push(eax);
+    loop top              ; }
     
     call dword function   ; function();
     add esp, ebx          ; pop(argc);
-    ;add esp, 4
 endfunc

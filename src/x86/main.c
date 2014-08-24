@@ -380,7 +380,7 @@ ThreadFunc testVM()
 {
     //printf("mem used: %x\n", memUsed());
     /// this commit should work and print 3:
-    String input = "{ :x :y :z Console print: (x + y * z)} :2 :3 :5.";
+    String input = "{ :x :y :z Console printNl: (x + y * z)} :2 :3 :5.";
     printf("\n%s\n", input);
     //printf("compiling\n");
     u8 *bytecode = compile(input);

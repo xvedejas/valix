@@ -167,10 +167,13 @@ void *stackPop(Stack *stack)
 	return stack->array[--stack->size];
 }
 
-void stackPopMany(Stack *stack, Size n)
+// Using this return value can be dangerous, since as soon as anything is
+// added to the stack, values will get overwritten.
+void **stackPopMany(Stack *stack, Size n)
 {
 	assert(stack->size >= n, "Stack underrun error");
 	stack->size -= n;
+    return &stack->array[stack->size];
 }
 
 /* Point to the nth item from the top of the stack, zero-indexed */

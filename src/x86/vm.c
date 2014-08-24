@@ -181,15 +181,11 @@ Object *_closure_with(Object *self, va_list argptr)
 	// an error will be raised elsewhere.
 	
 	/// todo: if the arguments given are fewer than the required, do currying
-	Closure *closure = self->closure;
-	switch (closure->type)
-	{
-		case userDefinedClosure:
-			return interpret(self);
-		case internalClosure:
-			return callInternal(closure->function, closure->argc, argptr);
-	}
-	return NULL;
+    Closure *closure = self->closure;
+	if (closure->type == userDefinedClosure)
+        return interpret(self, argptr);
+    else
+        return callInternal(closure->function, closure->argc, argptr);
 }
 
 Object *closure_with(Object *self, ...)
@@ -648,7 +644,7 @@ Object *exec(Object *closure, Object *scope)
 				Object *symbol = symbols[readValue(bytecode, IP)];
 				Size argc = readValue(bytecode, IP);
                 
-				Object **args = (Object**)stackAt(valueStack, argc);
+				Object **args = (Object**)stackPopMany(valueStack, argc + 1);
 				Object *recipient = args[0];
 			    //printf("Sending %s to %S, argc %i\n", symbol->symbol, recipient, argc);
 			    Object *method = object_bind(recipient, symbol);
@@ -663,13 +659,9 @@ Object *exec(Object *closure, Object *scope)
 				Scope *scopeData = scope->scope;
 				scopeData->IP = processData->IP;
 				scopeData->bytecode = processData->bytecode;
-				
+                
 				Object *result = closure_withArray(method, args);
-                // If the closure was internal, then it didn't pop the stack
-                // itself. Fix this.
-                if (method->closure->type == internalClosure)
-                    stackPopMany(valueStack, argc + 1);
-				stackPush(valueStack, result);
+                stackPush(valueStack, result);
 			}
             break;
 			case stopBC: /* Clears the current stack. Possibly will cause GC? */
@@ -685,6 +677,7 @@ Object *exec(Object *closure, Object *scope)
 			case endBC: /* Returns from the current block */
 			{
                 /// todo, be smarter about handling stack underrun errors
+                
 				stackPop(scopeStack);
 				Object *scope = stackTop(scopeStack);
 				Scope *scopeData = scope->scope;
@@ -708,7 +701,7 @@ Object *exec(Object *closure, Object *scope)
 	panic("not implemented");
 }
 
-Object *interpret(Object *closure)
+Object *interpret(Object *closure, va_list args)
 {
     Object *process = currentProcess();
     assert(process != NULL, "Create a new process first.");
@@ -765,11 +758,11 @@ Object *interpret(Object *closure)
         for (i = 0; i < symbolCount; i++)
         {
             Size value = readValue(bytecode, IP);
-            localSymbols[2 * (symbolCount - i - 1)] = symbols[value];
+            localSymbols[2 * i] = symbols[value];
+            // values are supplied only for args, not vars.
+            if (i < argCount)
+                localSymbols[2 * i + 1] = va_arg(args, Object*);
         }
-        // values are supplied only for args, not vars.
-        for (i = 0; i < argCount; i++)
-            localSymbols[2 * i + 1] = stackPop(valueStack);
         scope = scope_new(scopeProto, process, closureData->parent,
                           stackTop(scopeStack), closureData->world,
                           argCount, varCount, localSymbols);
@@ -798,5 +791,5 @@ void interpretBytecode(u8 *bytecode)
 	Process *processData = process->process;
 	processData->bytecode = bytecode;
 	processData->IP = 0;
-	interpret(NULL);
+	interpret(NULL, NULL);
 }

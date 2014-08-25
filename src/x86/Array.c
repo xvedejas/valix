@@ -25,6 +25,8 @@
 #include <data.h>
 #include <mm.h>
 
+Object *arrayIterProto;
+
 /* The method 'map' expects the following from a subclass of sequence:
  * - a method of iterating through each item of that subclass once
  * - a method of knowing the count of items in that subclass
@@ -43,6 +45,15 @@ Object *sequence_map(Object *self, Object *block)
 		array[i++] = send(block, ":", item);
 	}
 	return send(self, "new:", array);
+}
+
+Object *sequence_do(Object *self, Object *block)
+{
+    Object *iterator = send(self, "iter");
+    Object *item;
+    while ((item = send(iterator, "next")) != NULL)
+        send(block, ":", item);
+    return NULL;
 }
 
 // The following methods make sense only for ordered collections:
@@ -88,19 +99,41 @@ Object *sequence_toString(Object *self)
         if (string != NULL)
         {
             // Concatenate the two strings
+            string = send(string, "+", string_new(stringProto, ", "));
             string = send(string, "+", nextString);
         }
         else
         {
-            string = nextString;
+            string = send(string_new(stringProto, "Array("), "+", nextString);
         }
     }
+    string = send(string, "+", string_new(stringProto, ")"));
     return string;
+}
+
+/* the array iterator object points at the next index to read. */
+Object *array_iter(Object *self, Object *array)
+{
+    Object *iter = object_new(arrayIterProto);
+    ArrayIterData *data = malloc(sizeof(ArrayIterData));
+    data->pos = 0;
+    data->array = self;
+    iter->data = data;
+    return iter;
+}
+
+Object *arrayIter_next(Object *self)
+{
+    ArrayIterData *data = self->data;
+    ArrayData *array = data->array->data;
+    if (data->pos >= array->len)
+        return NULL;
+    return array->objects[data->pos++];
 }
 
 void arrayInstall()
 {
-	Object *sequenceMT = methodTable_new(methodTableMT, 3);
+	Object *sequenceMT = methodTable_new(methodTableMT, 4);
 	sequenceProto = object_new(objectProto);
     sequenceProto->methodTable = sequenceMT;
 	
@@ -108,16 +141,20 @@ void arrayInstall()
 		closure_newInternal(closureProto, newDisallowed, 1));
 	methodTable_addClosure(sequenceMT, symbol("map:"),
 		closure_newInternal(closureProto, sequence_map, 2));
+	methodTable_addClosure(sequenceMT, symbol("do:"),
+		closure_newInternal(closureProto, sequence_do, 2));
 	methodTable_addClosure(sequenceMT, symbol("toString"),
 		closure_newInternal(closureProto, sequence_toString, 1));
     
-    Object *arrayMT = methodTable_new(methodTableMT, 1);
+    Object *arrayMT = methodTable_new(methodTableMT, 2);
     arrayProto = object_new(sequenceProto);
     arrayProto->methodTable = arrayMT;
     
     // Todo: have an array creation routine that can take anything iterable
     methodTable_addClosure(arrayMT, symbol("new"),
 		closure_newInternal(closureProto, newDisallowed, 1));
+    methodTable_addClosure(arrayMT, symbol("iter"),
+		closure_newInternal(closureProto, array_iter, 1));
     /*
     methodTable_addClosure(arrayMT, symbol("at:"),
 		closure_newInternal(closureProto, array_at, 2));
@@ -135,4 +172,13 @@ void arrayInstall()
 		closure_newInternal(closureProto, array_sort, 1));
     methodTable_addClosure(arrayMT, symbol("copy"),
 		closure_newInternal(closureProto, array_copy, 1));*/
+    
+    Object *iterProto = object_new(objectProto);
+    
+    Object *arrayIterMT = methodTable_new(methodTableMT, 1);
+    arrayIterProto = object_new(iterProto);
+    arrayIterProto->methodTable = arrayIterMT;
+    
+    methodTable_addClosure(arrayIterMT, symbol("next"),
+        closure_newInternal(closureProto, arrayIter_next, 1));
 }

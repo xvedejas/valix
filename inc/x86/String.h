@@ -21,6 +21,12 @@
 #include <main.h>
 #include <vm.h>
 
+typedef struct stringData
+{
+    Size len;
+    char string[0];
+} StringData;
+
 extern Object *string_new(Object *self, String val);
 extern void stringInstall();
 

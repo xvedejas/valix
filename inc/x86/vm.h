@@ -24,10 +24,14 @@
 #include <setjmp.h>
 #include <MethodTable.h>
 #include <VarList.h>
+#include <String.h>
+#include <Array.h>
 
 typedef struct methodTable MethodTable;
 typedef struct object Object;
 typedef struct varList VarList;
+typedef struct arrayData ArrayData;
+typedef struct stringData StringData;
 
 typedef enum
 {
@@ -54,18 +58,6 @@ typedef struct closure
         };
     };
 } Closure;
-
-typedef struct
-{
-    Size len;
-    Object *objects[0];
-} ArrayData;
-
-typedef struct stringData
-{
-    Size len;
-    char string[0];
-} StringData;
 
 /* A trait is an array of closures that represent methods to be
  * added to method tables on their creation. */

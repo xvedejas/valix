@@ -21,6 +21,18 @@
 #include <main.h>
 #include <vm.h>
 
+typedef struct arrayData
+{
+    Size len;
+    Object *objects[0];
+} ArrayData;
+
+typedef struct
+{
+    Size pos;
+    Object *array;
+} ArrayIterData;
+
 Object *arrayProto, *sequenceProto;
 
 extern void arrayInstall();

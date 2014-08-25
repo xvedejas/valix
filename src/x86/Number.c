@@ -23,6 +23,7 @@
 #include <String.h>
 #include <cstring.h>
 #include <mm.h>
+#include <Array.h>
 
 #define value32(obj) (*((u32*)obj->data))
 
@@ -112,6 +113,52 @@ Object *integer32_toString(Object *self)
 	return string_new(stringProto, strdup(strBuffer));
 }
 
+typedef struct rangeData
+{
+    Size start, stop, step;
+} RangeData;
+
+typedef struct rangeIterData
+{
+    Size pos;
+    Object *range;
+} RangeIterData;
+
+Object *rangeProto, *rangeIterProto;
+
+Object *integer32_to(Object *self, Object *end)
+{
+    /* This method creates an integer range object which can be iterated through */
+    Object *range = object_new(rangeProto);
+    RangeData *data = malloc(sizeof(RangeData));
+    data->start = value32(self);
+    data->stop = value32(end);
+    data->step = 1;
+    range->data = data;
+    return range;
+}
+
+Object *range_iter(Object *self)
+{
+    Object *iter = object_new(rangeIterProto);
+    RangeIterData *data = malloc(sizeof(RangeIterData));
+    RangeData *range = self->data;
+    data->pos = range->start;
+    data->range = self;
+    iter->data = data;
+    return iter;
+}
+
+Object *rangeIter_next(Object *self)
+{
+    RangeIterData *data = self->data;
+    RangeData *range = data->range->data;
+    if (data->pos >= range->stop)
+        return NULL;
+    Object *value = integer32_new(integer32Proto, data->pos);
+    data->pos += range->step;
+    return value;
+}
 
 void numberInstall()
 {
@@ -128,7 +175,7 @@ void numberInstall()
     /// todo: automatic conversion between the different subtypes of integer
     
     integer32Proto = send(integerProto, "new");
-    Object *integer32MT = methodTable_new(methodTableMT, 11);
+    Object *integer32MT = methodTable_new(methodTableMT, 12);
     integer32Proto->methodTable = integer32MT;
     
     methodTable_addClosure(integer32MT, symbol("new:"),
@@ -151,8 +198,22 @@ void numberInstall()
         closure_newInternal(closureProto, integer32_gte, 2));
     methodTable_addClosure(integer32MT, symbol("<="),
         closure_newInternal(closureProto, integer32_lte, 2));
+    methodTable_addClosure(integer32MT, symbol("to:"),
+        closure_newInternal(closureProto, integer32_to, 2));
     methodTable_addClosure(integer32MT, symbol("toString"),
         closure_newInternal(closureProto, integer32_toString, 1));
     
-    // 
+    rangeProto = object_new(sequenceProto);
+    Object *rangeMT = methodTable_new(methodTableMT, 1);
+    rangeProto->methodTable = rangeMT;
+    
+    methodTable_addClosure(rangeMT, symbol("iter"),
+        closure_newInternal(closureProto, range_iter, 1));
+    
+    rangeIterProto = send(iterProto, "new");
+    Object *rangeIterMT = methodTable_new(methodTableMT, 1);
+    rangeIterProto->methodTable = rangeIterMT;
+    
+    methodTable_addClosure(rangeIterMT, symbol("next"),
+        closure_newInternal(closureProto, rangeIter_next, 1));
 }

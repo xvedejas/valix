@@ -33,7 +33,7 @@ typedef struct
     Object *array;
 } ArrayIterData;
 
-Object *arrayProto, *sequenceProto;
+Object *arrayProto, *sequenceProto, *iterProto;
 
 extern void arrayInstall();
 extern Object *array_new(Object *self, Object **objects, Size length);

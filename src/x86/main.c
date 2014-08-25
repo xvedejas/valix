@@ -379,7 +379,7 @@ void pci()
 ThreadFunc testVM()
 {
     //printf("mem used: %x\n", memUsed());
-    String input = "Console printNl: (1, 2, 3)";
+    String input = "(3 to: 8) do: {:i Console printNl: i}";
     printf("\n%s\n", input);
     //printf("compiling\n");
     u8 *bytecode = compile(input);

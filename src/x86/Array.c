@@ -173,7 +173,7 @@ void arrayInstall()
     methodTable_addClosure(arrayMT, symbol("copy"),
 		closure_newInternal(closureProto, array_copy, 1));*/
     
-    Object *iterProto = object_new(objectProto);
+    iterProto = object_new(objectProto);
     
     Object *arrayIterMT = methodTable_new(methodTableMT, 1);
     arrayIterProto = object_new(iterProto);

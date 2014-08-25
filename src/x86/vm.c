@@ -530,9 +530,13 @@ void vmInstall()
     
     /* 3. Install other base components */
     booleanInstall(); // defines trueObject, falseObject
-    numberInstall();
-    stringInstall();
+    printf("A\n");
     arrayInstall();
+    printf("B\n");
+    numberInstall();
+    printf("C\n");
+    stringInstall();
+    printf("D\n");
     worldInstall();
     consoleInstall(); // defines console
     traitInstall();
@@ -623,7 +627,6 @@ Object *exec(Object *closure, Object *scope)
 				// increment bytecode until the end of closure definition
 				while (readValue(bytecode, IP) != endBC) {}
 				stackPush(valueStack, closureNew);
-				//Closure *data = closureNew->closure; // why is this line here?
 			}
             break;
 			case variableBC:
